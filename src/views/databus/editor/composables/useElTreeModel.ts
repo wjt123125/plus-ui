@@ -234,6 +234,7 @@ function serializeNode(node: ElNode): CmpProperty | null {
   }
   if (node.children && node.children.length > 0) {
     const mapped = node.children
+      .filter((c): c is ElNode => !!c)
       .map(serializeNode)
       .filter((c): c is CmpProperty => c !== null);
     if (mapped.length > 0) prop.children = mapped;
@@ -367,6 +368,7 @@ function projectThen(node: ElNode, ctx: ProjectContext): Port {
   let firstStart: string | undefined;
   for (let i = 0; i < children.length; i++) {
     const child = children[i];
+    if (!child) continue; // THEN 顺序链不应有空洞，稀疏数组跳过防崩
     const cp = projectNode(child, ctx, node.id);
     if (!firstStart) firstStart = cp.startId;
     if (prevEnd) {
@@ -410,45 +412,47 @@ function projectWhen(node: ElNode, ctx: ProjectContext): Port {
   ctx.nodes.push(junctionNode);
   ctx.produced.add(junctionId);
 
-  for (let i = 0; i < children.length; i++) {
-    const cp = projectNode(children[i], ctx, node.id);
-    if (cp.startId) {
+  for (let i = 0; i < branchCount; i++) {
+    const child = children[i];
+    if (child) {
+      const cp = projectNode(child, ctx, node.id);
+      if (cp.startId) {
+        ctx.edges.push(
+          buildEdge(
+            `e_${gatewayId}_${i}`, gatewayId, cp.startId, 'branch', outlets[i].handle,
+            undefined, undefined,
+            { parentId: gatewayId, branchIndex: i }
+          )
+        );
+      }
+      if (cp.endId) {
+        ctx.edges.push(
+          buildEdge(
+            `e_${i}_${junctionId}`, cp.endId, junctionId, 'merge',
+            undefined, undefined, outlets[i].handle,
+            { parentId: gatewayId, branchIndex: i }
+          )
+        );
+      }
+    } else {
+      // 空分支槽（稀疏数组空洞/超出 children.length）：补 placeholder
+      const phId = `${gatewayId}_ph_${outlets[i].handle}`;
+      buildPlaceholder(ctx, phId, `空${outlets[i].label}`, gatewayId, outlets[i].handle);
       ctx.edges.push(
         buildEdge(
-          `e_${gatewayId}_${i}`, gatewayId, cp.startId, 'branch', outlets[i].handle,
-          undefined, undefined,
+          `e_${gatewayId}_${outlets[i].handle}_ph`, gatewayId, phId, 'jump', outlets[i].handle, outlets[i].label,
+          undefined,
           { parentId: gatewayId, branchIndex: i }
         )
       );
-    }
-    if (cp.endId) {
       ctx.edges.push(
         buildEdge(
-          `e_${i}_${junctionId}`, cp.endId, junctionId, 'merge',
+          `e_ph_${outlets[i].handle}_${junctionId}`, phId, junctionId, 'merge',
           undefined, undefined, outlets[i].handle,
           { parentId: gatewayId, branchIndex: i }
         )
       );
     }
-  }
-  // 空分支占位
-  for (let i = children.length; i < branchCount; i++) {
-    const phId = `${gatewayId}_ph_${outlets[i].handle}`;
-    buildPlaceholder(ctx, phId, `空${outlets[i].label}`, gatewayId, outlets[i].handle);
-    ctx.edges.push(
-      buildEdge(
-        `e_${gatewayId}_${outlets[i].handle}_ph`, gatewayId, phId, 'jump', outlets[i].handle, outlets[i].label,
-        undefined,
-        { parentId: gatewayId, branchIndex: i }
-      )
-    );
-    ctx.edges.push(
-      buildEdge(
-        `e_ph_${outlets[i].handle}_${junctionId}`, phId, junctionId, 'merge',
-        undefined, undefined, outlets[i].handle,
-        { parentId: gatewayId, branchIndex: i }
-      )
-    );
   }
   return { startId: gatewayId, endId: junctionId };
 }
@@ -489,43 +493,45 @@ function projectIf(node: ElNode, ctx: ProjectContext): Port {
 
   const children = node.children ?? [];
   const labels = ['true', 'false'];
-  for (let i = 0; i < Math.min(children.length, 2); i++) {
-    const cp = projectNode(children[i], ctx, node.id);
-    if (cp.startId) {
+  for (let i = 0; i < 2; i++) {
+    const child = children[i];
+    if (child) {
+      const cp = projectNode(child, ctx, node.id);
+      if (cp.startId) {
+        ctx.edges.push(
+          buildEdge(
+            `e_${condId}_${labels[i]}`, condId, cp.startId, 'branch', labels[i], labels[i] === 'true' ? '真' : '假',
+            undefined,
+            { parentId: node.id, branchIndex: i }
+          )
+        );
+      }
+      if (cp.endId) {
+        ctx.edges.push(
+          buildEdge(
+            `e_${labels[i]}_${junctionId}`, cp.endId, junctionId, 'merge', undefined, undefined, labels[i],
+            { parentId: node.id, branchIndex: i }
+          )
+        );
+      }
+    } else {
+      // 空分支槽（稀疏数组空洞/未初始化）：补 placeholder
+      const phId = `${condId}_ph_${labels[i]}`;
+      buildPlaceholder(ctx, phId, i === 0 ? '空真分支' : '空假分支', condId, labels[i]);
       ctx.edges.push(
         buildEdge(
-          `e_${condId}_${labels[i]}`, condId, cp.startId, 'branch', labels[i], labels[i] === 'true' ? '真' : '假',
+          `e_${condId}_${labels[i]}_ph`, condId, phId, 'jump', labels[i], labels[i] === 'true' ? '真' : '假',
           undefined,
           { parentId: node.id, branchIndex: i }
         )
       );
-    }
-    if (cp.endId) {
       ctx.edges.push(
         buildEdge(
-          `e_${labels[i]}_${junctionId}`, cp.endId, junctionId, 'merge', undefined, undefined, labels[i],
+          `e_ph_${labels[i]}_${junctionId}`, phId, junctionId, 'merge', undefined, undefined, labels[i],
           { parentId: node.id, branchIndex: i }
         )
       );
     }
-  }
-  // 空分支用占位
-  for (let i = children.length; i < 2; i++) {
-    const phId = `${condId}_ph_${labels[i]}`;
-    buildPlaceholder(ctx, phId, i === 0 ? '空真分支' : '空假分支', condId, labels[i]);
-    ctx.edges.push(
-      buildEdge(
-        `e_${condId}_${labels[i]}_ph`, condId, phId, 'jump', labels[i], labels[i] === 'true' ? '真' : '假',
-        undefined,
-        { parentId: node.id, branchIndex: i }
-      )
-    );
-    ctx.edges.push(
-      buildEdge(
-        `e_ph_${labels[i]}_${junctionId}`, phId, junctionId, 'merge', undefined, undefined, labels[i],
-        { parentId: node.id, branchIndex: i }
-      )
-    );
   }
   return { startId: condId, endId: junctionId };
 }
@@ -563,35 +569,37 @@ function projectSwitch(node: ElNode, ctx: ProjectContext): Port {
   ctx.nodes.push(junctionNode);
   ctx.produced.add(junctionId);
 
-  for (let i = 0; i < children.length; i++) {
-    const cp = projectNode(children[i], ctx, node.id);
+  for (let i = 0; i < caseCount; i++) {
+    const child = children[i];
     const handle = outlets[i].handle;
     const label = outlets[i].label;
-    if (cp.startId) {
+    if (child) {
+      const cp = projectNode(child, ctx, node.id);
+      if (cp.startId) {
+        ctx.edges.push(
+          buildEdge(`e_${condId}_${handle}`, condId, cp.startId, 'branch', handle, label, undefined,
+            { parentId: node.id, branchIndex: i })
+        );
+      }
+      if (cp.endId) {
+        ctx.edges.push(
+          buildEdge(`e_${handle}_${junctionId}`, cp.endId, junctionId, 'merge', undefined, undefined, handle,
+            { parentId: node.id, branchIndex: i })
+        );
+      }
+    } else {
+      // 空分支槽（稀疏数组空洞/超出 children.length）：补 placeholder
+      const phId = `${condId}_ph_${handle}`;
+      buildPlaceholder(ctx, phId, `空${label}`, condId, handle);
       ctx.edges.push(
-        buildEdge(`e_${condId}_${handle}`, condId, cp.startId, 'branch', handle, label, undefined,
+        buildEdge(`e_${condId}_${handle}_ph`, condId, phId, 'jump', handle, label, undefined,
+          { parentId: node.id, branchIndex: i })
+      );
+      ctx.edges.push(
+        buildEdge(`e_ph_${handle}_${junctionId}`, phId, junctionId, 'merge', undefined, undefined, handle,
           { parentId: node.id, branchIndex: i })
       );
     }
-    if (cp.endId) {
-      ctx.edges.push(
-        buildEdge(`e_${handle}_${junctionId}`, cp.endId, junctionId, 'merge', undefined, undefined, handle,
-          { parentId: node.id, branchIndex: i })
-      );
-    }
-  }
-  // 空槽占位
-  for (let i = children.length; i < caseCount; i++) {
-    const phId = `${condId}_ph_${outlets[i].handle}`;
-    buildPlaceholder(ctx, phId, `空${outlets[i].label}`, condId, outlets[i].handle);
-    ctx.edges.push(
-      buildEdge(`e_${condId}_${outlets[i].handle}_ph`, condId, phId, 'jump', outlets[i].handle, outlets[i].label, undefined,
-        { parentId: node.id, branchIndex: i })
-    );
-    ctx.edges.push(
-      buildEdge(`e_ph_${outlets[i].handle}_${junctionId}`, phId, junctionId, 'merge', undefined, undefined, outlets[i].handle,
-        { parentId: node.id, branchIndex: i })
-    );
   }
   return { startId: condId, endId: junctionId };
 }
@@ -622,8 +630,9 @@ function projectLoop(node: ElNode, ctx: ProjectContext): Port {
   ctx.produced.add(junctionId);
 
   const children = node.children ?? [];
-  if (children.length > 0) {
-    const cp = projectNode(children[0], ctx, node.id);
+  const child0 = children[0];
+  if (child0) {
+    const cp = projectNode(child0, ctx, node.id);
     if (cp.startId) {
       ctx.edges.push(buildEdge(`e_${condId}_do`, condId, cp.startId, 'branch', 'do', '循环体', undefined,
         { parentId: node.id, branchIndex: 0 }));
@@ -634,9 +643,8 @@ function projectLoop(node: ElNode, ctx: ProjectContext): Port {
           { parentId: node.id, branchIndex: 0 })
       );
     }
-  }
-  // 空 DO 槽占位
-  if (children.length === 0) {
+  } else {
+    // 空 DO 槽占位（children[0] 为 undefined/null 或 children 为空）
     const phId = `${condId}_ph_do`;
     buildPlaceholder(ctx, phId, '空循环体', condId, 'do');
     ctx.edges.push(buildEdge(`e_${condId}_do_ph`, condId, phId, 'jump', 'do', '循环体', undefined,
@@ -667,29 +675,31 @@ function projectCatch(node: ElNode, ctx: ProjectContext): Port {
   const children = node.children ?? [];
   const handles = ['try', 'catch'];
   const labels = ['主体', '异常'];
-  for (let i = 0; i < Math.min(children.length, 2); i++) {
-    const cp = projectNode(children[i], ctx, node.id);
-    if (cp.startId) {
-      ctx.edges.push(
-        buildEdge(`e_${gatewayId}_${handles[i]}`, gatewayId, cp.startId, 'branch', handles[i], labels[i], undefined,
-          { parentId: node.id, branchIndex: i })
-      );
+  for (let i = 0; i < 2; i++) {
+    const child = children[i];
+    if (child) {
+      const cp = projectNode(child, ctx, node.id);
+      if (cp.startId) {
+        ctx.edges.push(
+          buildEdge(`e_${gatewayId}_${handles[i]}`, gatewayId, cp.startId, 'branch', handles[i], labels[i], undefined,
+            { parentId: node.id, branchIndex: i })
+        );
+      }
+      if (cp.endId) {
+        ctx.edges.push(
+          buildEdge(`e_${handles[i]}_${junctionId}`, cp.endId, junctionId, 'merge', undefined, undefined, handles[i],
+            { parentId: node.id, branchIndex: i })
+        );
+      }
+    } else {
+      // 空分支槽：补 placeholder
+      const phId = `${gatewayId}_ph_${handles[i]}`;
+      buildPlaceholder(ctx, phId, `空${labels[i]}`, gatewayId, handles[i]);
+      ctx.edges.push(buildEdge(`e_${gatewayId}_${handles[i]}_ph`, gatewayId, phId, 'jump', handles[i], labels[i], undefined,
+        { parentId: node.id, branchIndex: i }));
+      ctx.edges.push(buildEdge(`e_ph_${handles[i]}_${junctionId}`, phId, junctionId, 'merge', undefined, undefined, handles[i],
+        { parentId: node.id, branchIndex: i }));
     }
-    if (cp.endId) {
-      ctx.edges.push(
-        buildEdge(`e_${handles[i]}_${junctionId}`, cp.endId, junctionId, 'merge', undefined, undefined, handles[i],
-          { parentId: node.id, branchIndex: i })
-      );
-    }
-  }
-  // 空槽占位（try 和 catch 都可能空）
-  for (let i = children.length; i < 2; i++) {
-    const phId = `${gatewayId}_ph_${handles[i]}`;
-    buildPlaceholder(ctx, phId, `空${labels[i]}`, gatewayId, handles[i]);
-    ctx.edges.push(buildEdge(`e_${gatewayId}_${handles[i]}_ph`, gatewayId, phId, 'jump', handles[i], labels[i], undefined,
-      { parentId: node.id, branchIndex: i }));
-    ctx.edges.push(buildEdge(`e_ph_${handles[i]}_${junctionId}`, phId, junctionId, 'merge', undefined, undefined, handles[i],
-      { parentId: node.id, branchIndex: i }));
   }
   return { startId: gatewayId, endId: junctionId };
 }
@@ -716,29 +726,31 @@ function projectBoolean(node: ElNode, ctx: ProjectContext): Port {
   ctx.nodes.push(junctionNode);
   ctx.produced.add(junctionId);
 
-  for (let i = 0; i < Math.min(children.length, childCount); i++) {
-    const cp = projectNode(children[i], ctx, node.id);
-    if (cp.startId) {
-      ctx.edges.push(
-        buildEdge(`e_${gatewayId}_b${i + 1}`, gatewayId, cp.startId, 'branch', `b${i + 1}`, edgeLabels, undefined,
-          { parentId: node.id, branchIndex: i })
-      );
+  for (let i = 0; i < childCount; i++) {
+    const child = children[i];
+    if (child) {
+      const cp = projectNode(child, ctx, node.id);
+      if (cp.startId) {
+        ctx.edges.push(
+          buildEdge(`e_${gatewayId}_b${i + 1}`, gatewayId, cp.startId, 'branch', `b${i + 1}`, edgeLabels, undefined,
+            { parentId: node.id, branchIndex: i })
+        );
+      }
+      if (cp.endId) {
+        ctx.edges.push(
+          buildEdge(`e_b${i + 1}_${junctionId}`, cp.endId, junctionId, 'merge', undefined, undefined, `b${i + 1}`,
+            { parentId: node.id, branchIndex: i })
+        );
+      }
+    } else {
+      // 空分支槽：补 placeholder
+      const phId = `${gatewayId}_ph_b${i + 1}`;
+      buildPlaceholder(ctx, phId, `空${labels[i]}`, gatewayId, `b${i + 1}`);
+      ctx.edges.push(buildEdge(`e_${gatewayId}_b${i + 1}_ph`, gatewayId, phId, 'jump', `b${i + 1}`, edgeLabels, undefined,
+        { parentId: node.id, branchIndex: i }));
+      ctx.edges.push(buildEdge(`e_ph_b${i + 1}_${junctionId}`, phId, junctionId, 'merge', undefined, undefined, `b${i + 1}`,
+        { parentId: node.id, branchIndex: i }));
     }
-    if (cp.endId) {
-      ctx.edges.push(
-        buildEdge(`e_b${i + 1}_${junctionId}`, cp.endId, junctionId, 'merge', undefined, undefined, `b${i + 1}`,
-          { parentId: node.id, branchIndex: i })
-      );
-    }
-  }
-  // 空槽占位
-  for (let i = children.length; i < childCount; i++) {
-    const phId = `${gatewayId}_ph_b${i + 1}`;
-    buildPlaceholder(ctx, phId, `空${labels[i]}`, gatewayId, `b${i + 1}`);
-    ctx.edges.push(buildEdge(`e_${gatewayId}_b${i + 1}_ph`, gatewayId, phId, 'jump', `b${i + 1}`, edgeLabels, undefined,
-      { parentId: node.id, branchIndex: i }));
-    ctx.edges.push(buildEdge(`e_ph_b${i + 1}_${junctionId}`, phId, junctionId, 'merge', undefined, undefined, `b${i + 1}`,
-      { parentId: node.id, branchIndex: i }));
   }
   return { startId: gatewayId, endId: junctionId };
 }
@@ -998,6 +1010,7 @@ function findInSubtree(node: ElNode, id: string): ElNode | null {
   }
   if (node.children) {
     for (const child of node.children) {
+      if (!child) continue;
       const found = findInSubtree(child, id);
       if (found) return found;
     }
@@ -1021,10 +1034,12 @@ function findParentInSubtree(node: ElNode, id: string): ParentPos | null {
   }
   if (node.children) {
     for (let i = 0; i < node.children.length; i++) {
-      if (node.children[i].id === id) {
+      const child = node.children[i];
+      if (!child) continue;
+      if (child.id === id) {
         return { parent: node, index: i, inCondition: false };
       }
-      const found = findParentInSubtree(node.children[i], id);
+      const found = findParentInSubtree(child, id);
       if (found) return found;
     }
   }

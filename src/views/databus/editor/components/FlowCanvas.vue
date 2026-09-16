@@ -1,5 +1,5 @@
 <template>
-  <div class="flow-canvas" @drop.prevent="onDrop" @dragover.prevent="onDragOver">
+  <div class="flow-canvas" @drop.prevent="onDrop" @dragover.prevent="onDragOver" @dragleave.prevent="onDragLeave">
     <VueFlow
       :nodes="nodes"
       :edges="edges"
@@ -57,6 +57,8 @@ import GatewayNode from './GatewayNode.vue';
 import JunctionNode from './JunctionNode.vue';
 import PlaceholderNode from './PlaceholderNode.vue';
 import { DND_MIME } from '../cmp-defs';
+import { useCanvasController } from '../composables/useCanvasController';
+import { NODE_H, NODE_W } from '../composables/useElTreeModel';
 import type { CmpNodeData } from '../cmp-tree';
 
 defineOptions({ name: 'FlowCanvas' });
@@ -102,6 +104,9 @@ const {
   onEdgeUpdateEnd
 } = useVueFlow();
 
+// 拖拽过程中让命中的 edge 显示 + 圆圈（A 范式视觉反馈，与 insertNodeAt 复用同一 findEdgeAt）
+const ctrl = useCanvasController();
+
 // 重连期间排除旧边自身，避免被线性校验误判为端点占用
 let reconnectingEdgeId: string | null = null;
 onEdgeUpdateStart(({ edge }) => {
@@ -138,15 +143,25 @@ function onDragOver(event: DragEvent) {
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = 'copy';
   }
+  // 把指针 flow 坐标按 NODE_W/NODE_H 减半，得到新节点左上角，再交给 findEdgeAt 命中检测。
+  // 与 onDrop 坐标换算一致，保证拖拽时显示 + 圆圈的那条边，与松手后 insertNodeAt 实际插入的边是同一条。
+  const position = screenToFlowCoordinate({ x: event.clientX, y: event.clientY });
+  ctrl.setDragOverEdge(position.x - NODE_W / 2, position.y - NODE_H / 2);
+}
+
+function onDragLeave() {
+  ctrl.clearDragOverEdge();
 }
 
 function onDrop(event: DragEvent) {
+  ctrl.clearDragOverEdge();
   const type = event.dataTransfer?.getData(DND_MIME);
   if (!type) {
     return;
   }
   const position = screenToFlowCoordinate({ x: event.clientX, y: event.clientY });
-  emit('drop-node', { type, x: position.x - 75, y: position.y - 28 });
+  // 与 onDragOver 一致：减 NODE_W/2、NODE_H/2 得到新节点左上角，交给 insertNodeAt 命中检测
+  emit('drop-node', { type, x: position.x - NODE_W / 2, y: position.y - NODE_H / 2 });
 }
 
 /**

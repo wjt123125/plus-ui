@@ -8,7 +8,7 @@
  * copy/paste/selectAll/deselect 保留在画布交互层（这些是 Vue Flow 原生能力）。
  */
 import { inject, provide, reactive, ref, type InjectionKey, type Ref } from 'vue';
-import { useVueFlow, type Node } from '@vue-flow/core';
+import { useVueFlow, type Node, type Rect } from '@vue-flow/core';
 import { ElMessage } from 'element-plus';
 import { getDef } from '../cmp-defs';
 import type { CmpNodeData } from '../cmp-tree';
@@ -101,13 +101,19 @@ export interface CanvasController {
   commit: () => void;
   /** 一键 dagre 排列全图，坐标同步写回树缓存（跨重投影保留） */
   autoLayout: () => void;
+  /** 拖拽过程中当前命中的 edge id（用于 CmpBezierEdge 显示 + 圆圈）；为 null 表示未命中任何边 */
+  dragOverEdgeId: Ref<string | null>;
+  /** 拖拽 dragover 时调：把 flow 坐标落点交给 findEdgeAt 检测，命中变化时才更新 ref（避免高频重渲染） */
+  setDragOverEdge: (x: number, y: number) => void;
+  /** 拖拽 drop/leave 时调：清掉 + 圆圈 */
+  clearDragOverEdge: () => void;
 }
 
 export const CANVAS_CTRL_KEY = Symbol('canvas-controller') as InjectionKey<CanvasController>;
 
 export function createCanvasController(options: CreateControllerOptions): CanvasController {
   const { treeModel, pushHistory, autoLayout: runAutoLayout } = options;
-  const { getNodes, getEdges, findNode, findEdge, removeEdges, setNodes, setEdges, addSelectedNodes } =
+  const { getNodes, getEdges, findNode, findEdge, removeEdges, setNodes, setEdges, addSelectedNodes, getIntersectingNodes } =
     useVueFlow();
 
   const selectedId = ref<string | null>(null);
@@ -165,10 +171,10 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
 
   // ── 拖拽落画布 ──
   /**
-   * 拖业务/算子到画布：
-   * - 落点在 placeholder 上：替换占位（IF 假分支/CATCH 异常槽/AND/OR 第二槽位 等）
-   * - 落点在空白：追加到主链末尾
-   * 不自动 dagre 重排——保留用户对节点位置的控制，需要时手动点工具栏「自动排列」
+   * 拖业务/算子到画布，按落点命中分三条路径：
+   * - 落点在 placeholder 上：replacePlaceholder + commit + runAutoLayout（重排）
+   * - 落点在 edge 上（A 范式）：insertOnEdge（内部已 commit + runAutoLayout）
+   * - 落点在空白：appendChildToRoot + commit（不重排，保留用户对节点位置的控制）
    */
   function insertNodeAt(type: string, x: number, y: number) {
     const def = getDef(type);
@@ -183,8 +189,20 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     if (phId) {
       if (replacePlaceholder(phId, type)) {
         commit();
+        // 替换 placeholder 改变了画布拓扑（语义空位被真实业务节点取代，下游链路与 merge 边路径随之变化），
+        // 跑一次不 fitView 的 dagre 重排，与 insertOnEdge 行为对齐；保留当前视口缩放/位置
+        runAutoLayout({ fitView: false });
         return;
       }
+    }
+
+    // 再检测落点是否命中已有 edge（A 范式：拖到线上自动插入，语义同 picker 的 insertOnEdge）。
+    // 必须放在 placeholder 之后、fallback 之前：placeholder 是空槽位、edge 是连线，两者视觉不重叠，顺序不冲突。
+    // insertOnEdge 内部已 commit() + runAutoLayout({ fitView: false })，这里不要重复调。
+    const hitEdgeId = findEdgeAt(x, y);
+    if (hitEdgeId) {
+      insertOnEdge(hitEdgeId, type);
+      return;
     }
 
     // 追加到根前：算一个合理的默认坐标，避免新节点和已有节点（特别是 dagre 排好的分支结构）重叠。
@@ -226,22 +244,98 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
   }
 
   /**
-   * 落点命中检测：返回画布上覆盖 (x,y) 的 placeholder 节点 id（无则 null）。
-   * placeholder 是固定尺寸（NODE_W × NODE_H），不依赖异步 dimensions 测量。
+   * 落点命中检测：返回画布上与落点 rect 相交的 placeholder 节点 id（无则 null）。
+   * 用官方 getIntersectingNodes(rect, partially=true) 检测，相比手写矩形相交：
+   *  - 命中坐标用 VueFlow 的 computedPosition（已应用 extent:'parent' 钳制、父容器位移等派生计算），
+   *    dagre 重排后立刻同步，避免 store 与 DOM 不一致导致命中失败
+   *  - 节点尺寸读取 VueFlow 内部异步测量后的 dimensions，placeholder 尺寸变化也能跟上
+   * x/y 是新节点左上角（已由 onDrop 减过 NODE_W/2、NODE_H/2 转换而来），
+   * 配上预估宽高组成 Rect 交给官方 API。
    */
   function findPlaceholderAt(x: number, y: number): string | null {
-    for (const n of getNodes.value) {
-      const d = n.data as CmpNodeData;
-      if (!d.placeholderOf) continue;
-      const w = NODE_W;
-      const h = NODE_H;
-      const nx = n.position.x;
-      const ny = n.position.y;
-      if (x >= nx && x <= nx + w && y >= ny && y <= ny + h) {
-        return n.id;
+    const rect: Rect = { x, y, width: NODE_W, height: NODE_H };
+    const hits = getIntersectingNodes(rect, true)
+      .filter((n) => (n.data as CmpNodeData | undefined)?.placeholderOf);
+    return hits[0]?.id ?? null;
+  }
+
+  /**
+   * 落点命中检测：返回与新节点矩形最近距离 <10px 的 edge id（无则 null）。
+   * 命中体用新节点矩形 9 点采样（4 角 + 4 边中点 + 中心）——视觉语义即"拖拽中的节点本体靠近边"，
+   * 而非鼠标点靠近，体感更直观。VueFlow 无"点是否在 edge 上"的官方 API，需自写点到线段距离。
+   * 边端点节点（source/target）中心用 computedPosition + dimensions 计算（已应用 extent 钳制等派生计算）。
+   */
+  function findEdgeAt(x: number, y: number): string | null {
+    const samples: ReadonlyArray<readonly [number, number]> = [
+      [x, y],
+      [x + NODE_W, y],
+      [x, y + NODE_H],
+      [x + NODE_W, y + NODE_H],
+      [x + NODE_W / 2, y],
+      [x + NODE_W / 2, y + NODE_H],
+      [x, y + NODE_H / 2],
+      [x + NODE_W, y + NODE_H / 2],
+      [x + NODE_W / 2, y + NODE_H / 2]
+    ];
+    let bestId: string | null = null;
+    let bestDist = 10; // 阈值 10px：采样点已覆盖整个节点矩形，阈值大就过度敏感
+    for (const edge of getEdges.value) {
+      const s = getNodes.value.find((n) => n.id === edge.source);
+      const t = getNodes.value.find((n) => n.id === edge.target);
+      if (!s || !t) continue;
+      const w1 = s.dimensions?.width ?? NODE_W;
+      const h1 = s.dimensions?.height ?? NODE_H;
+      const w2 = t.dimensions?.width ?? NODE_W;
+      const h2 = t.dimensions?.height ?? NODE_H;
+      const p1x = s.computedPosition.x + w1 / 2;
+      const p1y = s.computedPosition.y + h1 / 2;
+      const p2x = t.computedPosition.x + w2 / 2;
+      const p2y = t.computedPosition.y + h2 / 2;
+      for (const [px, py] of samples) {
+        const d = pointToSegmentDistance(px, py, p1x, p1y, p2x, p2y);
+        if (d < bestDist) {
+          bestDist = d;
+          bestId = edge.id;
+        }
       }
     }
-    return null;
+    return bestId;
+  }
+
+  function pointToSegmentDistance(
+    px: number, py: number,
+    x1: number, y1: number,
+    x2: number, y2: number
+  ): number {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const cx = x1 + t * dx;
+    const cy = y1 + t * dy;
+    return Math.hypot(px - cx, py - cy);
+  }
+
+  /**
+   * 拖拽过程中命中的 edge id（仅 CmpBezierEdge 用于显示 + 圆圈）。
+   * dragover 每秒触发数十次，仅在跨边界变化时写 ref——只有命中/失命中的两条 edge 重新计算 dragOverMe，
+   * 其他 edge 不重渲染。
+   */
+  const dragOverEdgeId = ref<string | null>(null);
+
+  function setDragOverEdge(x: number, y: number) {
+    const newId = findEdgeAt(x, y);
+    if (newId !== dragOverEdgeId.value) {
+      dragOverEdgeId.value = newId;
+    }
+  }
+
+  function clearDragOverEdge() {
+    if (dragOverEdgeId.value !== null) {
+      dragOverEdgeId.value = null;
+    }
   }
 
   /**
@@ -297,10 +391,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     } else if (/^case_(\d+)$/.test(handle)) {
       index = Number.parseInt(handle.slice('case_'.length), 10) - 1; // case_1 → 0
     }
-    // 占槽位：若索引超出当前长度，先用占位补齐到 index-1，再设 index
-    while (opNode.children.length < index) {
-      opNode.children.push({ ...treeModel.makeLeaf('boCreate'), parentOperatorId: opId });
-    }
+    // 直接设稀疏数组：JS 会把空洞位置自动置为 undefined，project 层检测到空位置会补 placeholder
     opNode.children[index] = leaf;
     return true;
   }
@@ -621,7 +712,10 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     selectAll,
     deselect,
     commit,
-    autoLayout
+    autoLayout,
+    dragOverEdgeId,
+    setDragOverEdge,
+    clearDragOverEdge
   };
 
   return controller;

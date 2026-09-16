@@ -25,7 +25,7 @@
       <button
         type="button"
         class="cmp-edge-add"
-        :class="{ 'is-visible': hover || selected }"
+        :class="{ 'is-visible': hover || selected || dragOverMe, 'is-dragover': dragOverMe }"
         :style="{ transform: `translate(-50%, -50%) translate(${edgePath[1]}px, ${edgePath[2]}px)` }"
         title="在连线中间插入节点"
         @click.stop="onAdd"
@@ -48,6 +48,8 @@ const props = defineProps<EdgeProps>();
 
 const ctrl = useCanvasController();
 const hover = ref(false);
+// 拖业务节点经过本边时，由 useCanvasController.dragOverEdgeId 驱动显示 + 圆圈（A 范式视觉反馈）
+const dragOverMe = computed(() => ctrl.dragOverEdgeId.value === props.id);
 
 // 节点移动时 sourceX/Y 等 props 变化，路径必须响应式重算
 const edgePath = computed(() =>
@@ -69,6 +71,7 @@ function onAdd(event: MouseEvent) {
 <style scoped>
 .cmp-edge-add {
   position: absolute;
+  z-index: 5; /* 在 edges 容器内提到最高，减少被其他 edge 元素遮挡 */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -86,7 +89,9 @@ function onAdd(event: MouseEvent) {
   transition:
     opacity 0.15s ease,
     color 0.15s ease,
-    border-color 0.15s ease;
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .cmp-edge-add.is-visible {
@@ -96,6 +101,14 @@ function onAdd(event: MouseEvent) {
 .cmp-edge-add:hover {
   color: var(--el-color-primary);
   border-color: var(--el-color-primary);
+}
+
+/* 拖拽命中时：主色填充背景+白字+加粗阴影，避免被节点遮挡时也足够显眼 */
+.cmp-edge-add.is-dragover {
+  color: #fff;
+  background-color: var(--el-color-primary);
+  border-color: var(--el-color-primary);
+  box-shadow: 0 2px 10px rgb(64 158 255 / 45%);
 }
 
 .cmp-edge-add .el-icon {

@@ -31,7 +31,7 @@ export interface AutoLayoutOptions {
 }
 
 export function useAutoLayout(treeModel: ElTreeModel) {
-  const { getNodes, getEdges, fitView, vueFlowRef } = useVueFlow();
+  const { getNodes, getEdges, setNodes, fitView, vueFlowRef } = useVueFlow();
 
   function autoLayout(options: AutoLayoutOptions = {}): void {
     const { fitView: shouldFit = true } = options;
@@ -87,15 +87,21 @@ export function useAutoLayout(treeModel: ElTreeModel) {
     dagre.layout(g);
 
     // dagre 输出中心点 → VueFlow position 是左上角；同时写回 treeModel 坐标缓存
-    for (const n of flowNodes) {
+    // 关键：用 setNodes 替换数组让 VueFlow 完全感知位置变更。
+    // 直接修改 flowNodes[i].position 在 Pinia reactive 下可能只部分生效——
+    // 某些内部派生状态（edges 端点、viewport bounds、DOM transform）不同步，
+    // 导致后续 drop 检测（findPlaceholderAt）用的 position 和用户视觉看到的位置不一致。
+    const laidNodes = flowNodes.map((n) => {
       const laid = g.node(n.id);
       if (laid) {
         const x = laid.x - laid.width / 2;
         const y = laid.y - laid.height / 2;
-        n.position = { x, y };
         treeModel.cachePosition(n.id, x, y);
+        return { ...n, position: { x, y } };
       }
-    }
+      return n;
+    });
+    setNodes(laidNodes);
 
     const host = vueFlowRef.value;
     host?.classList.add(LAYOUTING_CLASS);
