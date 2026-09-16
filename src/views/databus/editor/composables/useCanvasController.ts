@@ -1,18 +1,15 @@
 /**
- * 画布操作控制器（方案 B 网关范式）。
+ * 画布操作控制器。
  *
- * 所有编辑动作改为"改 ElNode 树 → 重投影 → setNodes/setEdges"，
- * 不再直接操作画布 nodes/edges。画布只是模型树的投影。
- *
- * 删除了容器范式下的 detectSlotAt/parentNode/extent/expandParent/slot/container 整套逻辑。
- * copy/paste/selectAll/deselect 保留在画布交互层（这些是 Vue Flow 原生能力）。
+ * 画布是 ElNode 模型树的投影：所有编辑动作都走「改树 → 重投影 → setNodes/setEdges」，
+ * 不直接增删画布上的 nodes/edges。结构变更后按需跑一次 autoLayout。
+ * copy/paste/selectAll/deselect 保留在画布交互层（Vue Flow 原生能力）。
  */
 import { inject, provide, reactive, ref, type InjectionKey, type Ref } from 'vue';
 import { useVueFlow, type Node, type Rect } from '@vue-flow/core';
 import { ElMessage } from 'element-plus';
 import { getDef } from '../cmp-defs';
-import type { CmpNodeData } from '../cmp-tree';
-import { getPlaceholderHandle, NODE_GAP_Y, NODE_H, NODE_W, type ElTreeModel, type NodeParentPos, type EdgeTreeAnchor } from './useElTreeModel';
+import { getPlaceholderHandle, getPlaceholderSlotIndex, GATEWAY_H, JUNCTION_H, NODE_GAP_Y, NODE_H, NODE_W, type CmpNodeData, type ElTreeModel, type EdgeTreeAnchor } from './useElTreeModel';
 
 /** 组件选择弹层的使用场景 */
 export type PickerMode = 'prepend' | 'append' | 'replace' | 'insertEdge';
@@ -39,7 +36,7 @@ export interface PickerState {
   nodeId: string | null;
   /** 锚点边：insertEdge 时存在 */
   edgeId: string | null;
-  /** 锚点组件类型（def.type）——弹窗无需引 Vue Flow 即可计算推荐 */
+  /** 锚点组件类型（def.type）——弹窗无需引 VueFlow 即可计算推荐 */
   anchorDefType: string | null;
   /** 需排除的组件类型（如已存在的 singleton：start/end） */
   excludedTypes: string[];
@@ -101,12 +98,15 @@ export interface CanvasController {
   commit: () => void;
   /** 一键 dagre 排列全图，坐标同步写回树缓存（跨重投影保留） */
   autoLayout: () => void;
-  /** 拖拽过程中当前命中的 edge id（用于 CmpBezierEdge 显示 + 圆圈）；为 null 表示未命中任何边 */
+  /** 拖拽过程中当前命中的 edge id（CmpBezierEdge 显示 + 圆圈）；与占位符命中互斥 */
   dragOverEdgeId: Ref<string | null>;
-  /** 拖拽 dragover 时调：把 flow 坐标落点交给 findEdgeAt 检测，命中变化时才更新 ref（避免高频重渲染） */
-  setDragOverEdge: (x: number, y: number) => void;
-  /** 拖拽 drop/leave 时调：清掉 + 圆圈 */
-  clearDragOverEdge: () => void;
+  /** 拖拽过程中当前命中的占位符 id（PlaceholderNode 虚框高亮）；与 edge 命中互斥 */
+  dragOverPlaceholderId: Ref<string | null>;
+  /** dragover 时调：统一裁决落点（虚框本体 → 填槽；边 → 线上插入；空白 → 追加链尾），
+   *  与 insertNodeAt 共用 resolveDropTarget，保证高亮的目标就是松手生效的目标 */
+  setDragOverTarget: (x: number, y: number) => void;
+  /** drop/dragleave 时调：清空边与占位符高亮 */
+  clearDragOverTarget: () => void;
 }
 
 export const CANVAS_CTRL_KEY = Symbol('canvas-controller') as InjectionKey<CanvasController>;
@@ -171,10 +171,14 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
 
   // ── 拖拽落画布 ──
   /**
-   * 拖业务/算子到画布，按落点命中分三条路径：
-   * - 落点在 placeholder 上：replacePlaceholder + commit + runAutoLayout（重排）
-   * - 落点在 edge 上（A 范式）：insertOnEdge（内部已 commit + runAutoLayout）
-   * - 落点在空白：appendChildToRoot + commit（不重排，保留用户对节点位置的控制）
+   * 拖业务/算子到画布，落点所见即所得（resolveDropTarget 统一裁决，与 dragover 高亮同源）：
+   * - 指针中心落在占位符虚框本体（含 4px 抗抖动）：填充该槽
+   * - 落在边上（即使边连着空槽）：一律按边自身语义在线上插入（insertOnEdge）——
+   *   不做「端点是占位符就改成填槽」的隐性重定向。空 THEN 邻接的 seq 边插入后
+   *   新节点进外层链路、虚框仍保留在画布上（用户看得到，可继续往里拖或删除）；
+   *   网关空槽的 jump/merge 边插入后分支包装成 THEN(新节点+尾部空槽)，
+   *   新节点在分支线上、虚框下移保留——空槽不再被线上插入悄悄吃掉
+   * - 落在空白：appendChildToRoot + commit（不重排，保留用户对节点位置的控制）
    */
   function insertNodeAt(type: string, x: number, y: number) {
     const def = getDef(type);
@@ -184,36 +188,23 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
       return;
     }
 
-    // 先检测落点是否命中已有 placeholder（IF 假分支/CATCH 异常槽/逻辑算子空槽 等）
-    const phId = findPlaceholderAt(x, y);
-    if (phId) {
-      if (replacePlaceholder(phId, type)) {
-        commit();
-        // 替换 placeholder 改变了画布拓扑（语义空位被真实业务节点取代，下游链路与 merge 边路径随之变化），
-        // 跑一次不 fitView 的 dagre 重排，与 insertOnEdge 行为对齐；保留当前视口缩放/位置
-        runAutoLayout({ fitView: false });
-        return;
-      }
-    }
-
-    // 再检测落点是否命中已有 edge（A 范式：拖到线上自动插入，语义同 picker 的 insertOnEdge）。
-    // 必须放在 placeholder 之后、fallback 之前：placeholder 是空槽位、edge 是连线，两者视觉不重叠，顺序不冲突。
-    // insertOnEdge 内部已 commit() + runAutoLayout({ fitView: false })，这里不要重复调。
-    const hitEdgeId = findEdgeAt(x, y);
-    if (hitEdgeId) {
-      insertOnEdge(hitEdgeId, type);
+    const target = resolveDropTarget(x, y);
+    if (target?.kind === 'placeholder') {
+      if (fillPlaceholder(target.id, type)) return;
+      // fillPlaceholder 理论上不会失败（target 来自现役占位符）；失败则继续往下走兜底
+    } else if (target?.kind === 'edge') {
+      // insertOnEdge 内部已 commit() + runAutoLayout({ fitView: false })，这里不要重复调
+      insertOnEdge(target.id, type);
       return;
     }
 
-    // 追加到根前：算一个合理的默认坐标，避免新节点和已有节点（特别是 dagre 排好的分支结构）重叠。
-    // 取所有节点的最大 bottom + NODE_GAP_Y，X 用主链末端节点的 X（或 START_X 兜底），让新节点排在主链正下方
+    // 追加到根前算一个默认坐标，避免新节点和已有节点（特别是 dagre 排好的分支结构）重叠：
+    // Y 取所有节点最大 bottom + NODE_GAP_Y，X 对齐主链末端节点，找不到就用落点 x，
+    // 让新节点排在主链正下方
     let newX = x;
     let newY = y;
     const canvasNodes = getNodes.value;
     if (canvasNodes.length > 0) {
-      const NODE_H = 56; // 与 useElTreeModel.NODE_H 一致
-      const GATEWAY_H = 56;
-      const JUNCTION_H = 16;
       const bottom = (n: typeof canvasNodes[number]) => {
         const d = n.data as CmpNodeData;
         const h = d.defType === 'junction' ? JUNCTION_H : (d.operator ? GATEWAY_H : NODE_H);
@@ -221,7 +212,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
       };
       const maxBottom = canvasNodes.reduce((m, n) => Math.max(m, bottom(n)), 0);
       newY = maxBottom + NODE_GAP_Y;
-      // X：找主链末端节点（非 virtual 非 junction 非 placeholder）的 position.x，兜底用 START_X
+      // X：主链末端节点（非 virtual 非 junction 非 placeholder）的 position.x，找不到就用落点 x
       const mainEnd = canvasNodes.toReversed().find((n) => {
         const d = n.data as CmpNodeData;
         return !d.virtual && !d.junctionOf && !d.placeholderOf;
@@ -243,20 +234,62 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     commit();
   }
 
+  /** 占位符命中容错（px）：以拖拽节点中心（即鼠标指针的 flow 坐标）为探测点，
+   *  进入虚框本体后仅外扩这一点点抗事件抖动。不能用大外扩带——分支线与虚框邻接时，
+   *  150×56 的拖拽节点在窄空隙里必然擦到虚框，会把「指针在线上」误判成填槽 */
+  const PH_HIT_PAD = 4;
+
   /**
-   * 落点命中检测：返回画布上与落点 rect 相交的 placeholder 节点 id（无则 null）。
+   * 落点命中检测：拖拽节点中心（=鼠标指针位置）进入 placeholder 虚框本体（含 PH_HIT_PAD
+   * 极小容错）时返回其 id，否则 null。中心命中制——「指向哪就是哪」：
+   * 指针在虚框内 → 填槽；指针在框外邻接的线上 → 交 findEdgeAt 判线上插入。
    * 用官方 getIntersectingNodes(rect, partially=true) 检测，相比手写矩形相交：
    *  - 命中坐标用 VueFlow 的 computedPosition（已应用 extent:'parent' 钳制、父容器位移等派生计算），
    *    dagre 重排后立刻同步，避免 store 与 DOM 不一致导致命中失败
    *  - 节点尺寸读取 VueFlow 内部异步测量后的 dimensions，placeholder 尺寸变化也能跟上
-   * x/y 是新节点左上角（已由 onDrop 减过 NODE_W/2、NODE_H/2 转换而来），
-   * 配上预估宽高组成 Rect 交给官方 API。
+   * x/y 是新节点左上角（已由 onDrop 减过 NODE_W/2、NODE_H/2 转换而来）。
    */
+
   function findPlaceholderAt(x: number, y: number): string | null {
-    const rect: Rect = { x, y, width: NODE_W, height: NODE_H };
+    const cx = x + NODE_W / 2;
+    const cy = y + NODE_H / 2;
+    const rect: Rect = {
+      x: cx - PH_HIT_PAD,
+      y: cy - PH_HIT_PAD,
+      width: PH_HIT_PAD * 2,
+      height: PH_HIT_PAD * 2
+    };
     const hits = getIntersectingNodes(rect, true)
       .filter((n) => (n.data as CmpNodeData | undefined)?.placeholderOf);
     return hits[0]?.id ?? null;
+  }
+
+  /**
+   * 拖拽落点的唯一裁决入口（insertNodeAt 松手与 setDragOverTarget 悬停共用，
+   * 保证高亮的目标就是实际生效的目标）：
+   *   1. 指针中心进入占位符虚框本体（含 4px 抗抖动）→ placeholder（填槽）
+   *   2. 其余任何命中边的情况 → edge（一律在线上插入，不看边端点是否为占位符；
+   *      空分支的 jump/merge 边会保槽包装成 THEN(新节点+空槽)，虚框不消失）
+   *   3. 都不命中 → null（追加到主链末尾）
+   */
+  function resolveDropTarget(x: number, y: number):
+    | { kind: 'placeholder'; id: string }
+    | { kind: 'edge'; id: string }
+    | null {
+    const phId = findPlaceholderAt(x, y);
+    if (phId) return { kind: 'placeholder', id: phId };
+    const edgeId = findEdgeAt(x, y);
+    return edgeId ? { kind: 'edge', id: edgeId } : null;
+  }
+
+  /** 填充占位符的统一收尾：改树成功 → commit + 不 fitView 重排，返回 false 表示槽位无效 */
+  function fillPlaceholder(phId: string, defType: string): boolean {
+    if (!replacePlaceholder(phId, defType)) return false;
+    commit();
+    // 填槽改变画布拓扑（语义空位被真实节点取代，下游链路与 merge 边路径随之变化），
+    // 跑一次不 fitView 的重排，与 insertOnEdge 行为对齐；保留当前视口缩放/位置
+    runAutoLayout({ fitView: false });
+    return true;
   }
 
   /**
@@ -319,35 +352,37 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
   }
 
   /**
-   * 拖拽过程中命中的 edge id（仅 CmpBezierEdge 用于显示 + 圆圈）。
-   * dragover 每秒触发数十次，仅在跨边界变化时写 ref——只有命中/失命中的两条 edge 重新计算 dragOverMe，
-   * 其他 edge 不重渲染。
+   * 拖拽过程中的两类高亮目标（互斥，由 resolveDropTarget 统一裁决）：
+   * - dragOverEdgeId：边命中，CmpBezierEdge 显示 + 圆圈
+   * - dragOverPlaceholderId：占位符虚框本体命中，PlaceholderNode 虚线框高亮
+   * dragover 每秒触发数十次，重复赋同值不触发响应式更新（Vue 按值比较），
+   * 只有真正跨边界时相关组件才重渲染。
    */
   const dragOverEdgeId = ref<string | null>(null);
+  const dragOverPlaceholderId = ref<string | null>(null);
 
-  function setDragOverEdge(x: number, y: number) {
-    const newId = findEdgeAt(x, y);
-    if (newId !== dragOverEdgeId.value) {
-      dragOverEdgeId.value = newId;
-    }
+  function setDragOverTarget(x: number, y: number) {
+    const target = resolveDropTarget(x, y);
+    dragOverEdgeId.value = target?.kind === 'edge' ? target.id : null;
+    dragOverPlaceholderId.value = target?.kind === 'placeholder' ? target.id : null;
   }
 
-  function clearDragOverEdge() {
-    if (dragOverEdgeId.value !== null) {
-      dragOverEdgeId.value = null;
-    }
+  function clearDragOverTarget() {
+    dragOverEdgeId.value = null;
+    dragOverPlaceholderId.value = null;
   }
 
   /**
-   * 替换 placeholder：找到 placeholder 所属算子，按 handle 把新节点放到对应 children 槽位。
-   * - THEN placeholder（id=THEN.id，无 placeholderOf）：拖入即 appendChildToRoot，走默认路径
-   * - IF/CATCH/AND/OR/NOT placeholder：handle 决定 children 索引
-   *   IF false→children[1]、CATCH catch→children[1]、AND/OR b2→children[1]，其余→children[0]
+   * 填槽：找到 placeholder 所属算子，把新叶子放进对应 children 槽位。
+   * - THEN 串行槽（handle='then'，含空 THEN 整槽与 THEN 内稀疏空槽）：按虚框携带的
+   *   slotIndex 精确回填，无 slotIndex 时填第一个空洞，再无空洞则追加到末尾——
+   *   只填空位，绝不覆盖已有节点
+   * - IF/CATCH/AND/OR/NOT/SWITCH/WHEN/循环 的分支槽：handle 决定 children 索引
+   *   （IF false→children[1]、CATCH catch→children[1]、AND/OR b2→children[1]，其余→children[0]）
    *
-   * 关键：placeholderOf 可能指向"算子自身"（WHEN/CATCH/AND/OR/NOT 的 gatewayId，或无独立 condition 的 IF/SWITCH/循环自身 id），
-   * 也可能指向"condition 组件"（有独立 condition 时）。前者直接用 condNode 当算子，
-   * 后者才需要向上找 parentOperatorId。之前两种情况一律多跳 parentOperatorId，
-   * 导致把算子节点本身从父级 children 里替换掉（整棵算子子树+连线全灭）。
+   * 关键：placeholderOf 可能指向"算子自身"（THEN 自身、WHEN/CATCH/AND/OR/NOT 的 gatewayId，
+   * 或无独立 condition 的 IF/SWITCH/循环自身 id），也可能指向"condition 组件"（有独立
+   * condition 时）。前者直接用 condNode 当算子，后者才需要向上找 parentOperatorId。
    */
   function replacePlaceholder(phCanvasId: string, defType: string): boolean {
     const phNode = getNodes.value.find((n) => n.id === phCanvasId);
@@ -380,7 +415,26 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     const leaf = treeModel.makeLeaf(defType);
     leaf.parentOperatorId = opId;
     if (!opNode.children) opNode.children = [];
-    // 根据 handle 推断 children 索引（算子 children 顺序与 outlets 顺序严格对应）：
+
+    if (handle === 'then') {
+      // THEN 串行槽（空 THEN 整槽 / THEN 内稀疏空槽）：
+      // 虚框带 slotIndex 且该位确为空洞时精确回填；否则填第一个空洞，再无空洞则追加末尾。
+      // 不能一律 children[0]=——THEN(节点+尾部空槽) 的虚框会覆盖掉已有节点。
+      const slotIdx = getPlaceholderSlotIndex(phData);
+      if (slotIdx !== undefined && !opNode.children[slotIdx]) {
+        opNode.children[slotIdx] = leaf;
+      } else {
+        const holeIdx = opNode.children.findIndex((c) => !c);
+        if (holeIdx >= 0) {
+          opNode.children[holeIdx] = leaf;
+        } else {
+          opNode.children.push(leaf);
+        }
+      }
+      return true;
+    }
+
+    // 根据 handle 推断分支槽 children 索引（顺序与网关 outlets 严格对应；handle='then' 已在上方处理）：
     // IF true→0 / false→1；CATCH try→0 / catch→1；AND/OR b1→0 / b2→1；NOT b1→0；
     // FOR/WHILE/ITERATOR do→0；WHEN branch_N→N；SWITCH case_N→N-1（case_1 对应 children[0]）
     let index = 0;
@@ -430,16 +484,35 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
   }
 
   /**
+   * 空分支线上插入的统一包装：children[idx] = THEN(newNode + 尾部空槽)。
+   * 新节点成为分支第一个内容，尾部稀疏空洞继续投影成虚框（placeholder 不被吃掉）；
+   * 空洞序列化时自动过滤。适用 jump（gateway→虚框）与空分支 merge（虚框→junction）两种边。
+   */
+  function wrapEmptyBranch(
+    parentNode: NonNullable<ReturnType<ElTreeModel['findNode']>>,
+    idx: number,
+    newNode: NonNullable<ReturnType<ElTreeModel['findNode']>>,
+    parentId: string
+  ) {
+    const wrapThen = treeModel.makeThenWithTailSlot(newNode);
+    wrapThen.parentOperatorId = parentId;
+    newNode.parentOperatorId = wrapThen.id;
+    parentNode.children![idx] = wrapThen;
+  }
+
+  /**
    * 在一条边的中点插入新节点。
    *
-   * 核心思路：读 edge.data.treeAnchor（投影时写入的语义锚点），直接定位 ElNode 树位置，
-   * 不再用画布节点 id 反推（junction/placeholder 不在树里会导致反推失败）。
+   * 定位方式：直接读 edge.data.treeAnchor（投影时写入的语义锚点）定位 ElNode 树位置。
+   * junction/placeholder 只是投影产物、不在模型树里，用画布节点 id 反推找不到对应节点。
    *
    * 四种边 kind 各有处理：
-   *   seq   → THEN seq 边：splice 到 parent.children[seqToIndex] 前
-   *   branch → gateway→child：把 children[branchIndex] 包装成 THEN(old, new)
-   *   merge  → child→junction：同 branch，也包装 children[branchIndex]
-   *   jump   → gateway→placeholder：空槽，直接把新节点塞进 children[branchIndex]
+   *   seq   → THEN 串行边（含空 THEN 虚框邻接的两条）：splice 到 parent.children[seqToIndex]，
+   *            新节点进外层链路，空槽虚框原样保留（点/拖的是边，就只做线上插入，不替用户填槽）
+   *   branch → gateway→child（分支非空）：把 children[branchIndex] 包装成 THEN(old, new)
+   *   merge  → child→junction：非空分支同 branch；空分支（虚框→junction）走 jump 同款保槽包装
+   *   jump   → gateway→虚框（空分支）：包装成 THEN(newNode + 尾部空槽)，
+   *            新节点在线上、虚框下移保留——不替用户把空槽填掉
    */
   function insertOnEdge(edgeId: string, defType: string) {
     const edge = findEdge(edgeId);
@@ -458,7 +531,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     const kind = (data.kind as string) ?? '';
     const anchor = data.treeAnchor as EdgeTreeAnchor | undefined;
 
-    // 降级：没有 treeAnchor 时 fallback 到根末尾（比之前的 findNodeParent 反推安全得多）
+    // 兜底：异常数据导致边没有 treeAnchor 时追加到根末尾，保证操作不丢失
     if (!anchor) {
       treeModel.appendChildToRoot(newNode);
       cacheMidpoint(newNode.id, canvasSource, canvasTarget);
@@ -482,14 +555,16 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
       const spliceIdx = anchor.seqToIndex ?? parentNode.children.length;
       parentNode.children.splice(spliceIdx, 0, newNode);
     } else if (kind === 'jump') {
-      // ── gateway → placeholder：空槽填充 ──
-      const idx = anchor.branchIndex ?? 0;
-      parentNode.children[idx] = newNode;
+      // ── gateway → 空槽虚框：空分支线上插入 ──
+      // 不直接填槽（那会吃掉虚框）：包装成 THEN(newNode + 尾部空槽)，
+      // 新节点落在分支线上、虚框下移保留（用户可继续往框里填或在后续 seq 边上插）。
+      wrapEmptyBranch(parentNode, anchor.branchIndex ?? 0, newNode, anchor.parentId);
     } else {
-      // ── branch / merge：分支边，包装成 THEN(old, new) ──
+      // ── branch / merge：分支边 ──
       const idx = anchor.branchIndex ?? 0;
       const oldChild = parentNode.children[idx];
       if (oldChild) {
+        // 非空分支：包装成 THEN(old, new)
         const wrapThen = treeModel.makeThen();
         wrapThen.children!.push(oldChild, newNode);
         wrapThen.parentOperatorId = anchor.parentId;
@@ -502,8 +577,8 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
           (oldChild.cachedPosition?.y ?? canvasTarget?.position.y ?? 0)
         );
       } else {
-        // 兜底：该分支位置本就空，直接塞
-        parentNode.children[idx] = newNode;
+        // 空分支的 merge 边（虚框 → junction）：与 jump 同款，包装 THEN(newNode + 尾部空槽) 保虚框
+        wrapEmptyBranch(parentNode, idx, newNode, anchor.parentId);
       }
     }
 
@@ -643,7 +718,10 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     }
   }
 
-  /** 删除连线（方案 B：画布边是投影产物，删边只影响视图，下次重投影恢复） */
+  /**
+   * 删除连线：边是模型树的投影产物，不对应树里的可删数据，
+   * 因此这里只从当前视图移除，下次重投影会按树结构重新生成。
+   */
   function requestDeleteEdge(id?: string) {
     const edgeId = id ?? menu.edgeId;
     if (!edgeId) return;
@@ -714,8 +792,9 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     commit,
     autoLayout,
     dragOverEdgeId,
-    setDragOverEdge,
-    clearDragOverEdge
+    dragOverPlaceholderId,
+    setDragOverTarget,
+    clearDragOverTarget
   };
 
   return controller;

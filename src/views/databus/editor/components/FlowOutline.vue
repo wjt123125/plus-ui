@@ -1,4 +1,4 @@
-<!-- 大纲（方案 B：直接遍历 ElNode 树，无需从画布重建拓扑） -->
+<!-- 大纲：直接遍历 ElNode 模型树，无需从画布重建拓扑 -->
 <template>
   <div class="flow-outline">
     <div class="flow-outline__list">
@@ -60,7 +60,8 @@ function traverse(node: ElNode, depth: number, items: OutlineItem[]) {
       traverse(node.condition, depth + 1, items);
     }
     if (node.children) {
-      node.children.forEach((c) => traverse(c, depth + 1, items));
+      // 稀疏空洞跳过；撤销快照 JSON 往返后空洞变 null，同样跳过（THEN 尾部空槽不进大纲）
+      node.children.forEach((c) => c && traverse(c, depth + 1, items));
     }
   } else {
     // 业务叶子

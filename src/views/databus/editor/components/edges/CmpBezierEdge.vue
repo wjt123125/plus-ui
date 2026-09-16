@@ -18,17 +18,23 @@
       fill="none"
       stroke="transparent"
       stroke-width="20"
-      @mouseenter="hover = true"
-      @mouseleave="hover = false"
+      @mouseenter="onHoverEnter"
+      @mouseleave="onHoverLeave"
     />
     <EdgeLabelRenderer>
       <button
         type="button"
         class="cmp-edge-add"
-        :class="{ 'is-visible': hover || selected || dragOverMe, 'is-dragover': dragOverMe }"
+        :class="{
+          'is-visible': hover || selected || dragOverMe || pickerOpenForMe,
+          'is-active': pickerOpenForMe,
+          'is-dragover': dragOverMe
+        }"
         :style="{ transform: `translate(-50%, -50%) translate(${edgePath[1]}px, ${edgePath[2]}px)` }"
         title="在连线中间插入节点"
         @click.stop="onAdd"
+        @mouseenter="onHoverEnter"
+        @mouseleave="onHoverLeave"
       >
         <el-icon><Plus /></el-icon>
       </button>
@@ -37,7 +43,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@vue-flow/core';
 import { Plus } from '@element-plus/icons-vue';
 import { useCanvasController } from '../../composables/useCanvasController';
@@ -48,8 +54,30 @@ const props = defineProps<EdgeProps>();
 
 const ctrl = useCanvasController();
 const hover = ref(false);
-// 拖业务节点经过本边时，由 useCanvasController.dragOverEdgeId 驱动显示 + 圆圈（A 范式视觉反馈）
+// 拖业务节点经过本边时，由 useCanvasController.dragOverEdgeId 驱动显示 + 圆圈
 const dragOverMe = computed(() => ctrl.dragOverEdgeId.value === props.id);
+// 本边的「线上插入」物料面板打开期间圆圈保持常亮：面板遮罩会盖住画布、立刻打断 hover，
+// 若圆圈随之消失，面板就失去了「我是从这条线唤起的」锚点，体感脱节
+const pickerOpenForMe = computed(
+  () => ctrl.picker.visible && ctrl.picker.mode === 'insertEdge' && ctrl.picker.edgeId === props.id
+);
+
+// 热区 path 与 + 按钮是两个叠放的元素（按钮在 EdgeLabelRenderer 层，会盖住中点处的热区）。
+// 鼠标从热区移到按钮的瞬间会先触发 path 的 mouseleave，若立即隐藏按钮，pointer-events 一断，
+// 命中目标又掉回热区、mouseenter 再触发，形成闪烁。故离开时延迟一小段时间再收起，
+// 进入按钮则立刻取消该计时，hover 状态在两者之间无缝衔接。
+let hoverOffTimer: ReturnType<typeof setTimeout> | undefined;
+function onHoverEnter() {
+  clearTimeout(hoverOffTimer);
+  hover.value = true;
+}
+function onHoverLeave() {
+  clearTimeout(hoverOffTimer);
+  hoverOffTimer = setTimeout(() => {
+    hover.value = false;
+  }, 120);
+}
+onBeforeUnmount(() => clearTimeout(hoverOffTimer));
 
 // 节点移动时 sourceX/Y 等 props 变化，路径必须响应式重算
 const edgePath = computed(() =>
@@ -84,23 +112,34 @@ function onAdd(event: MouseEvent) {
   border: 1px solid var(--el-border-color);
   border-radius: 50%;
   box-shadow: 0 1px 4px rgb(0 0 0 / 12%);
+  /* 未显示时必须彻底不接收点击：否则透明按钮叠在边中点，用户点线条会直接命中它弹出选择面板，
+     此时圆圈还没淡入、视觉上毫无提示（即「+ 没出现面板先出现」的误触）。is-visible 时才放开。 */
   opacity: 0;
-  pointer-events: all;
+  pointer-events: none;
   transition:
-    opacity 0.15s ease,
     color 0.15s ease,
     border-color 0.15s ease,
     background-color 0.15s ease,
     box-shadow 0.15s ease;
 }
 
+/* 显示/隐藏不做淡入：pointer-events 在类名加上的同一帧放开，圆圈必须同帧可见，
+   否则又会出现「能点到但还没看见」的时间差 */
 .cmp-edge-add.is-visible {
   opacity: 1;
+  pointer-events: all;
 }
 
 .cmp-edge-add:hover {
   color: var(--el-color-primary);
   border-color: var(--el-color-primary);
+}
+
+/* 物料面板由本边唤起：主色描边 + 轻光晕，标明「面板正在操作这条线」 */
+.cmp-edge-add.is-active {
+  color: var(--el-color-primary);
+  border-color: var(--el-color-primary);
+  box-shadow: 0 0 0 3px rgb(64 158 255 / 18%);
 }
 
 /* 拖拽命中时：主色填充背景+白字+加粗阴影，避免被节点遮挡时也足够显眼 */

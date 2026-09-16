@@ -29,7 +29,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { Handle, Position, type NodeProps } from '@vue-flow/core';
-import type { CmpNodeData } from '../cmp-tree';
+import type { CmpNodeData } from '../composables/useElTreeModel';
 import { getDef } from '../cmp-defs';
 
 const props = defineProps<NodeProps<CmpNodeData>>();

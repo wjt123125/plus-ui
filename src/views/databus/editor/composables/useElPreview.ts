@@ -1,9 +1,9 @@
 /**
- * EL 实时预览 composable（方案 B：直接从 ElNode 树序列化）。
+ * EL 实时预览 composable：直接从 ElNode 模型树序列化。
  *
  * - refresh() 调 treeModel.toCmpProperty() 拿到 CmpProperty，交后端 generateEl
- * - schedule() 由控制器在编辑动作完成后显式调用（不再订阅 Vue Flow 事件，
- *   因为画布只是投影，节点拖拽只改 cachedPosition 不改树结构）
+ * - schedule() 由控制器在编辑动作完成后显式调用（不订阅 Vue Flow 事件——
+ *   节点拖拽只改 cachedPosition 坐标缓存，不改树结构，无需刷新 EL）
  * - 后端 ExpressGenerator 权威生成，与保存路径同源
  * - active 由父组件控制（未选中节点时 true 才刷新，避免浪费请求）
  */

@@ -1,17 +1,15 @@
 /**
- * 画布撤销/重做历史栈（方案 B：ElNode 树快照）。
+ * 画布撤销/重做历史栈：快照内容是 ElNode 模型树（画布只是投影，不入栈）。
  *
- * 数据源从 nodes/edges 切换到 ElNode 树：
  * - snapshot() 调 treeModel.snapshot() 深拷贝 root
  * - apply(snap) 调 treeModel.replaceTree + project + setNodes/setEdges
- * - 结构变更由控制器显式调 push()（不再订阅 onNodesChange，画布只是投影）
- * - 节点拖拽位置回写 cachedPosition 不入栈（只是坐标缓存）
+ * - 结构变更由控制器在编辑动作完成后显式调 push()（不订阅 onNodesChange）
+ * - 节点拖拽只回写 cachedPosition 坐标缓存，不改树结构，不入栈
  */
 import { computed, nextTick, ref, type ComputedRef, type Ref } from 'vue';
 import type { Edge, Node } from '@vue-flow/core';
-import type { ElNode, ElTreeModel } from './useElTreeModel';
+import type { ElNode, ElTreeModel, CmpNodeData } from './useElTreeModel';
 import { cloneElNode } from './useElTreeModel';
-import type { CmpNodeData } from '../cmp-tree';
 
 export interface UseFlowHistoryOptions {
   /** 历史栈最大长度，超过后丢弃最早快照，默认 50 */

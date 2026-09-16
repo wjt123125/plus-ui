@@ -142,7 +142,7 @@ import FlowCanvas from './components/FlowCanvas.vue';
 import CmpProps from './components/CmpProps.vue';
 import FlowElPreview from './components/FlowElPreview.vue';
 import FlowOutline from './components/FlowOutline.vue';
-import { type CmpNodeData } from './cmp-tree';
+import { type CmpNodeData } from './composables/useElTreeModel';
 import { getMockPreset, MOCK_PRESETS } from './mock-presets';
 import { useFlowHistory } from './composables/useFlowHistory';
 import { provideCanvasController } from './composables/useCanvasController';
@@ -153,7 +153,7 @@ import { useAutoLayout } from './composables/useAutoLayout';
 
 defineOptions({ name: 'DatabusEditor' });
 
-// 方案 B：ElNode 模型树是唯一数据源，画布是其投影
+// ElNode 模型树是唯一数据源，画布是它的投影
 const treeModel = provideElTreeModel();
 
 const chainId = ref('databus_chain_1');
@@ -339,7 +339,7 @@ async function saveAsEl() {
     return;
   }
 
-  // 方案 B：直接从模型树序列化，不读画布 nodes/edges
+  // 直接从模型树序列化，不读画布 nodes/edges
   const cmpProperty = treeModel.toCmpProperty();
   if (!cmpProperty) {
     ElMessage.warning('画布上还没有真实组件');

@@ -2,7 +2,7 @@
  * 组件定义注册表。
  *
  * icon 为 Iconify 图标名称字符串（如 ph:play，Phosphor 集合）：
- * 与 RuoYi 菜单图标同一存储/渲染范式（SvgIcon 组件），字符串可直接入库；
+ * 与 RuoYi 菜单图标走同一套存储与渲染方式（SvgIcon 组件），字符串可直接入库；
  * 未来物料市场 jar 组件注册时，icon 可存 URL 或内联 SVG，渲染层再扩展分支。
  * 所有名称已通过 api.iconify.design 核实存在（2026-09-14）。
  */
@@ -17,8 +17,9 @@ export type ConditionKind = 'if' | 'switch' | 'for' | 'while' | 'iterator' | 'bo
  * 组件定义。
  * - virtual: 开始/结束是画布虚拟节点，不参与 EL 序列化
  * - singleton: 画布上只允许存在一个
- * - operator: 是否为 LiteFlow EL 编排算子（而非业务组件）
- *   方案 B 后算子在画布上是平级网关节点（非容器），结构由 useElTreeModel 投影器摊平
+ * - operator: 是否为 LiteFlow EL 编排算子（而非业务组件）。
+ *   算子在画布上渲染为 gateway/junction/placeholder 等平级结构节点（不做物理嵌套容器），
+ *   由 useElTreeModel 投影器从模型树摊平
  * - conditionKind: 算子需要的条件组件类型
  * - group: 物料面板分组
  */

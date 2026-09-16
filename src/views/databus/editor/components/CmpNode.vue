@@ -1,4 +1,4 @@
-<!-- 组件节点（方案 B 后仅渲染业务卡 / 虚拟起止节点；算子网关走 GatewayNode.vue） -->
+<!-- 组件节点：仅渲染业务卡与虚拟起止节点；算子网关走 GatewayNode.vue -->
 <template>
   <div
     class="cmp-node"
@@ -23,7 +23,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { Handle, Position, type NodeProps } from '@vue-flow/core';
-import type { CmpNodeData } from '../cmp-tree';
+import type { CmpNodeData } from '../composables/useElTreeModel';
 import { getDef } from '../cmp-defs';
 import CmpContextPad from './CmpContextPad.vue';
 

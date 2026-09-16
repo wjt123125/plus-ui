@@ -1,4 +1,4 @@
-<!-- 自动排列按钮：dagre 一次排全图（方案 B 平级节点，无容器递归子图） -->
+<!-- 自动排列按钮：dagre 一次排全图（所有节点平级，无容器递归子图） -->
 <template>
   <el-tooltip content="自动排列" placement="bottom">
     <el-button class="flow-tool-btn" size="small" circle :disabled="disabled" @click="onClick">

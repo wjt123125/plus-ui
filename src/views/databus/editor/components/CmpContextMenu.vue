@@ -60,7 +60,7 @@ import {
   Switch
 } from '@element-plus/icons-vue';
 import InsertNodeIcon from './InsertNodeIcon.vue';
-import type { CmpNodeData } from '../cmp-tree';
+import type { CmpNodeData } from '../composables/useElTreeModel';
 import type { PickerMode } from '../composables/useCanvasController';
 import { useCanvasController } from '../composables/useCanvasController';
 
@@ -69,22 +69,34 @@ defineOptions({ name: 'CmpContextMenu' });
 const ctrl = useCanvasController();
 const { onPaneContextMenu, onNodeContextMenu, onEdgeContextMenu } = useVueFlow();
 
+/**
+ * VueFlow 回调事件类型是 MouseEvent | TouchEvent，TouchEvent 上没有 clientX/clientY。
+ * 右键菜单实际只由鼠标（contextmenu）触发；触摸分支取触点坐标仅为类型完整与长按兜底。
+ */
+function getEventClientPos(event: MouseEvent | TouchEvent): { x: number; y: number } {
+  if ('clientX' in event) {
+    return { x: event.clientX, y: event.clientY };
+  }
+  const touch = event.touches[0] ?? event.changedTouches[0];
+  return { x: touch?.clientX ?? 0, y: touch?.clientY ?? 0 };
+}
+
 // 组件自包含注册右键事件，FlowCanvas 只需放一个标签
 onPaneContextMenu((event) => {
   event.preventDefault();
   ctrl.deselect();
-  ctrl.openMenu({ x: event.clientX, y: event.clientY, scene: 'blank' });
+  ctrl.openMenu({ ...getEventClientPos(event), scene: 'blank' });
 });
 
 onNodeContextMenu(({ event, node }) => {
   event.preventDefault();
   ctrl.select(node.id);
-  ctrl.openMenu({ x: event.clientX, y: event.clientY, scene: 'node', nodeId: node.id });
+  ctrl.openMenu({ ...getEventClientPos(event), scene: 'node', nodeId: node.id });
 });
 
 onEdgeContextMenu(({ event, edge }) => {
   event.preventDefault();
-  ctrl.openMenu({ x: event.clientX, y: event.clientY, scene: 'edge', edgeId: edge.id });
+  ctrl.openMenu({ ...getEventClientPos(event), scene: 'edge', edgeId: edge.id });
 });
 
 function openPickerAt(mode: PickerMode) {

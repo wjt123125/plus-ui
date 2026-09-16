@@ -58,8 +58,7 @@ import JunctionNode from './JunctionNode.vue';
 import PlaceholderNode from './PlaceholderNode.vue';
 import { DND_MIME } from '../cmp-defs';
 import { useCanvasController } from '../composables/useCanvasController';
-import { NODE_H, NODE_W } from '../composables/useElTreeModel';
-import type { CmpNodeData } from '../cmp-tree';
+import { NODE_H, NODE_W, type CmpNodeData } from '../composables/useElTreeModel';
 
 defineOptions({ name: 'FlowCanvas' });
 
@@ -75,7 +74,7 @@ const emit = defineEmits<{
   (e: 'drop-node', payload: { type: string; x: number; y: number }): void;
 }>();
 
-// 节点类型注册：方案 B 新增 gateway/junction/placeholder 三种平级节点
+// 节点类型注册：业务节点 cmp 与 gateway/junction/placeholder 三种结构节点平级
 const nodeTypes = markRaw({
   cmp: CmpNode,
   gateway: GatewayNode,
@@ -95,7 +94,6 @@ const {
   findEdge,
   addEdges,
   getEdges,
-  getNodes,
   onNodeClick,
   onPaneClick,
   onConnect,
@@ -104,7 +102,7 @@ const {
   onEdgeUpdateEnd
 } = useVueFlow();
 
-// 拖拽过程中让命中的 edge 显示 + 圆圈（A 范式视觉反馈，与 insertNodeAt 复用同一 findEdgeAt）
+// 拖拽过程中的落点高亮（边 + 圆圈 / 占位符槽位高亮），与 insertNodeAt 共用 resolveDropTarget
 const ctrl = useCanvasController();
 
 // 重连期间排除旧边自身，避免被线性校验误判为端点占用
@@ -143,18 +141,18 @@ function onDragOver(event: DragEvent) {
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = 'copy';
   }
-  // 把指针 flow 坐标按 NODE_W/NODE_H 减半，得到新节点左上角，再交给 findEdgeAt 命中检测。
-  // 与 onDrop 坐标换算一致，保证拖拽时显示 + 圆圈的那条边，与松手后 insertNodeAt 实际插入的边是同一条。
+  // 把指针 flow 坐标按 NODE_W/NODE_H 减半，得到新节点左上角，交给统一落点裁决。
+  // 与 onDrop 坐标换算一致，保证拖拽时高亮的目标（边/占位符），与松手后 insertNodeAt 实际生效的目标是同一个。
   const position = screenToFlowCoordinate({ x: event.clientX, y: event.clientY });
-  ctrl.setDragOverEdge(position.x - NODE_W / 2, position.y - NODE_H / 2);
+  ctrl.setDragOverTarget(position.x - NODE_W / 2, position.y - NODE_H / 2);
 }
 
 function onDragLeave() {
-  ctrl.clearDragOverEdge();
+  ctrl.clearDragOverTarget();
 }
 
 function onDrop(event: DragEvent) {
-  ctrl.clearDragOverEdge();
+  ctrl.clearDragOverTarget();
   const type = event.dataTransfer?.getData(DND_MIME);
   if (!type) {
     return;
@@ -165,8 +163,11 @@ function onDrop(event: DragEvent) {
 }
 
 /**
- * 阶段 1 只允许线性链路：每个节点至多一条入边、一条出边，
- * 保证拓扑排序必然对应一个 THEN(...)；待引入 WHEN/IF 控制节点后放开。
+ * 手连线合法性：
+ * - 不允许自连；
+ * - 每个出口（source + sourceHandle）至多一条出边、每个入口至多一条入边——
+ *   网关节点的每个分支 handle 各占一个槽位，因此分支扇出不受限，只禁止同一槽位重复接线；
+ * - 重连过程中排除旧边自身，否则旧边会把新位置误判成槽位已占用。
  */
 function isValidConnection(conn: Connection): boolean {
   return !!(

@@ -1,9 +1,8 @@
 /**
- * 画布示例数据（方案 B 网关范式）。
+ * 画布示例数据。
  *
  * 每个示例返回 CmpProperty 树，由 useElTreeModel.loadFromCmpProperty 解析为
- * ElNode 模型树，再由 projectToGraph 摊平为平级网关图。
- * 坐标交给 dagre 自动排列，不再手工排布。
+ * ElNode 模型树，再投影为画布平级节点图；坐标交给 dagre 自动排列。
  *
  * 命名约定：key 用「算子-特征」小写中划线；name 用短语；desc 写清测试点。
  *

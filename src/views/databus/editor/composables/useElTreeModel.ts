@@ -1,5 +1,5 @@
 /**
- * 方案 B 核心：ElNode 模型树 + 投影 + 坐标缓存 + 选中态恢复。
+ * ElNode 模型树 + 投影 + 坐标缓存 + 选中态恢复。
  *
  * 数据流：
  *   CmpProperty ──parseCmpProperty──▶ ElNode 树（唯一数据源）
@@ -8,8 +8,6 @@
  *
  * 编辑动作全部改树，然后 projectToGraph 整体重投影；
  * 坐标缓存（id→{x,y}）跨重投影保留用户拖拽后的位置，选中态按 id 恢复。
- *
- * 参考：liteflow-editor-client 的 ELNode + toCells，但 reconcile 策略自研（整体重投影+坐标缓存）。
  */
 
 import { inject, provide, ref, type InjectionKey, type Ref } from 'vue';
@@ -59,27 +57,26 @@ export const GATEWAY_W = 56;
 export const GATEWAY_H = 56;
 export const JUNCTION_W = 16;
 export const JUNCTION_H = 16;
-/** 默认起始坐标（start 节点位置） */
-export const START_X = 40;
-export const START_Y = 40;
+/** 默认起始坐标（start 节点位置；仅投影器内部使用） */
+const START_X = 40;
+const START_Y = 40;
 /** 默认节点间距（投影时初始摆放，dagre 会重排）
- *  方案 B 后默认走 TB 方向：cursorY 递增、cursorX 固定，
+ *  默认走 TB 方向：cursorY 递增、cursorX 固定，
  *  与 handle Top/Bottom 方位一致，避免横向排布导致连线绕圈。 */
 export const NODE_GAP_X = 210;
 export const NODE_GAP_Y = 100;
 
 // ────────────────────────────────────────────────────────────────
-// 3. CmpNodeData（画布节点 data，方案 B 后字段调整）
+// 3. CmpNodeData（画布节点 data 结构）
 // ────────────────────────────────────────────────────────────────
 
 /**
- * 画布节点 data。方案 B 后：
- * - 去掉 container/collapsed/slot 父权语义（不再有物理嵌套）
- * - operator 仍保留（用于区分算子网关与业务卡）
- * - 新增 gatewayKind（WHEN/CATCH/AND/OR/NOT 自建网关时用）
- * - 新增 outlets（网关出口句柄定义，供投影与 SWITCH 增删 case 用）
- * - 新增 isCondition（IF/SWITCH/循环的 condition 组件本身就是网关）
- * - 新增 junctionOf / placeholderOf（关联算子 id，便于级联删除）
+ * 画布节点 data。算子不做物理嵌套容器，结构语义全部拍平到节点字段：
+ * - operator：区分算子网关与业务卡
+ * - gatewayKind：WHEN/CATCH/AND/OR/NOT 自建网关的算子类型
+ * - outlets：网关出口句柄定义，供投影与 SWITCH 增删 case 用
+ * - isCondition：IF/SWITCH/循环的 condition 组件本身充当网关
+ * - junctionOf / placeholderOf：汇合点/空槽占位关联的算子 id，用于级联删除与填槽
  */
 export interface CmpNodeData {
   defType: string;
@@ -109,7 +106,7 @@ export interface CmpNodeData {
 }
 
 // ────────────────────────────────────────────────────────────────
-// 4. 临时投影上下文（projectToGraph 内部用）
+// 4. 投影上下文（单次 projectToGraph 调用内有效）
 // ────────────────────────────────────────────────────────────────
 
 interface ProjectContext {
@@ -146,7 +143,7 @@ function genElNodeId(): string {
  * CmpProperty 树 → ElNode 树。
  * 保留 ElNode.id 给每个节点（叶子与算子都给），用于投影时坐标缓存。
  */
-export function parseCmpProperty(cmp: CmpProperty | null | undefined): ElNode | null {
+function parseCmpProperty(cmp: CmpProperty | null | undefined): ElNode | null {
   if (!cmp) return null;
   return parseNode(cmp, undefined);
 }
@@ -187,7 +184,7 @@ function parseNode(cmp: CmpProperty, parentOperatorId: string | undefined): ElNo
  * ElNode 树 → CmpProperty。不读画布 nodes/edges，直接序列化模型树。
  * virtual 节点（start/end）跳过——它们是 LiteFlow EL 的隐式边界，不写入链路 JSON。
  */
-export function serializeToCmpProperty(root: ElNode | null): CmpProperty | null {
+function serializeToCmpProperty(root: ElNode | null): CmpProperty | null {
   if (!root) return null;
   const result = serializeNode(root);
   return result;
@@ -250,17 +247,17 @@ function serializeNode(node: ElNode): CmpProperty | null {
 // ────────────────────────────────────────────────────────────────
 
 /**
- * ElNode 树 → 平级 nodes + edges（网关范式）。
+ * ElNode 树 → 平级 nodes + edges。
  * 整体重投影：每次调用都全量产出 nodes/edges，坐标从 positionCache 按 id 恢复。
  *
- * 摊平规则（与 client toCells 同构）：
+ * 摊平规则：
  * - 业务叶子：建 1 个业务卡节点
  * - THEN：不建节点，子项首尾串联
  * - IF/SWITCH/循环：condition 充当网关 + 1 个 junction；分支用 sourceHandle 区分
  * - WHEN/CATCH/AND/OR/NOT：自建 gateway + 1 个 junction
  * - CHAIN：渲染为引用节点
  */
-export function projectToGraph(
+function projectToGraph(
   root: ElNode | null,
   positionCache: Map<string, { x: number; y: number }>,
   selectedIds: Set<string> = new Set()
@@ -359,17 +356,38 @@ function projectNode(node: ElNode, ctx: ProjectContext, parentOperatorId: string
 function projectThen(node: ElNode, ctx: ProjectContext): Port {
   const children = node.children ?? [];
   if (children.length === 0) {
-    // 空 THEN：THEN 是隐式算子不建网关，但需要让 start 有连边目标
-    // 产出 placeholder 占位，文案提示用户拖入业务节点
-    const ph = buildPlaceholder(ctx, node.id, '拖入业务节点');
+    // 空 THEN：THEN 是隐式算子不建网关，用 placeholder 给 start 提供连边目标，
+    // 文案提示用户往槽里拖节点。槽位身份 placeholderOf=自身 id + handle='then'：
+    // 只有带着身份，拖到虚框本体时 findPlaceholderAt 才能认出它并由
+    // replacePlaceholder 回填（children 为空，追加即落到 children[0]；
+    // THEN 自身注册为 operator，opNode 即自身）。
+    // 注意：拖到虚框上下两条 seq 边属于「线上插入」，节点进外层链路，虚框保留——
+    // 框归框、边归边，落点所见即所得。
+    const ph = buildPlaceholder(ctx, node.id, '拖入业务节点', node.id, 'then');
     return { startId: ph.id, endId: ph.id };
   }
   let prevEnd: string | undefined;
   let firstStart: string | undefined;
   for (let i = 0; i < children.length; i++) {
     const child = children[i];
-    if (!child) continue; // THEN 顺序链不应有空洞，稀疏数组跳过防崩
-    const cp = projectNode(child, ctx, node.id);
+    let cp: Port;
+    if (child) {
+      cp = projectNode(child, ctx, node.id);
+    } else {
+      // 稀疏空洞 = 串行空槽（空分支「线上插入」后保留的虚框，见 makeThenWithTailSlot）：
+      // 与空 THEN 的虚框同款身份（placeholderOf=THEN id + handle='then'），
+      // 额外带 slotIndex 让 replacePlaceholder 精确回填该洞。
+      // 序列化时空洞被 filter 过滤，不进 EL；撤销快照 JSON 往返会把洞变成 null，!child 同样命中。
+      const ph = buildPlaceholder(
+        ctx,
+        `${node.id}_ph_${i}`,
+        '拖入业务节点',
+        node.id,
+        'then',
+        i
+      );
+      cp = { startId: ph.id, endId: ph.id };
+    }
     if (!firstStart) firstStart = cp.startId;
     if (prevEnd) {
       // seq 边：parentId=THEN id，从 children[i-1] → children[i] 之间插入
@@ -902,13 +920,14 @@ function buildJunctionNode(
   };
 }
 
-/** 空槽占位：虚线框，拖入即替换 */
+/** 空槽占位：虚线框，拖入即填槽 */
 function buildPlaceholder(
   ctx: ProjectContext,
   id: string,
   label: string,
   gatewayId?: string,
-  handle?: string
+  handle?: string,
+  slotIndex?: number
 ): Node<CmpNodeData> {
   const pos = getPosition(ctx, id);
   ctx.produced.add(id);
@@ -925,7 +944,8 @@ function buildPlaceholder(
       color: '#c0c4cc',
       virtual: false,
       placeholderOf: gatewayId,
-      ...(handle ? { [HANDLE_KEY]: handle } : {})
+      ...(handle ? { [HANDLE_KEY]: handle } : {}),
+      ...(slotIndex !== undefined ? { [SLOT_INDEX_KEY]: slotIndex } : {})
     },
     style: { width: `${NODE_W}px`, height: `${NODE_H}px` },
     deletable: false
@@ -935,10 +955,18 @@ function buildPlaceholder(
 }
 
 const HANDLE_KEY = '__placeholderHandle__';
+const SLOT_INDEX_KEY = '__placeholderSlotIndex__';
 
 /** 从 placeholder data 取回 handle（投影器内部约定） */
 export function getPlaceholderHandle(data: CmpNodeData): string | undefined {
   return data[HANDLE_KEY] as string | undefined;
+}
+
+/** 从 placeholder data 取回 THEN 串行空槽的 children 索引（投影器内部约定）。
+ *  空 THEN 的整槽虚框不带索引（回填时追加到首个空洞/末尾）。 */
+export function getPlaceholderSlotIndex(data: CmpNodeData): number | undefined {
+  const v = data[SLOT_INDEX_KEY];
+  return typeof v === 'number' ? v : undefined;
 }
 
 /** 这条边在 ElNode 树里的语义锚点——投影层到语义层的直接映射，
@@ -1054,15 +1082,6 @@ function findParentInSubtree(node: ElNode, id: string): ParentPos | null {
 export function cloneElNode(node: ElNode | null): ElNode | null {
   if (!node) return null;
   return JSON.parse(JSON.stringify(node)) as ElNode;
-}
-
-/** 暴露给控制器的父位置查找结果 */
-export interface NodeParentPos {
-  parent: ElNode;
-  /** 在 parent.children 中的索引（仅 inCondition=false 时有效） */
-  index: number;
-  /** 是否是 parent.condition 节点 */
-  inCondition: boolean;
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -1274,9 +1293,31 @@ export function useElTreeModel() {
     }
     const siblings = pos.parent.children!;
     siblings.splice(pos.index, 1);
-    // 若父是 THEN 且 children 空，递归摘除父
-    if (pos.parent.type === 'THEN' && (!pos.parent.children || pos.parent.children.length === 0)) {
-      removeNode(pos.parent.id);
+    // 父是 THEN 且已无任何真实子节点（稀疏空洞/null 不算）时，向上摘除空 THEN。
+    // 典型路径：空分支线上插入产生的 THEN(节点+尾部空槽)，节点被删光后不应残留空 THEN
+    // （会序列化成无意义的 THEN()）。摘除方式按爷爷类型区分：
+    //  - 爷爷也是 THEN（顺序容器）：splice 收缩，继续链式上溯
+    //  - 爷爷是分支槽位算子（IF/SWITCH/WHEN/CATCH/AND/OR/NOT/循环）：只能置空该槽，
+    //    splice 会让后续分支顶位（IF 的 false 会顶成 true，分支语义错位）
+    let emptyThen: ElNode | null =
+      pos.parent.type === 'THEN' && (!pos.parent.children || pos.parent.children.every((c) => !c))
+        ? pos.parent
+        : null;
+    while (emptyThen && root.value) {
+      if (root.value.id === emptyThen.id) {
+        root.value = null;
+        break;
+      }
+      const gpPos = findParentInSubtree(root.value, emptyThen.id);
+      if (!gpPos || gpPos.inCondition) break;
+      if (gpPos.parent.type === 'THEN') {
+        gpPos.parent.children!.splice(gpPos.index, 1);
+        emptyThen =
+          !gpPos.parent.children || gpPos.parent.children.every((c) => !c) ? gpPos.parent : null;
+      } else {
+        gpPos.parent.children![gpPos.index] = undefined as unknown as ElNode;
+        emptyThen = null;
+      }
     }
     return true;
   }
@@ -1320,19 +1361,28 @@ export function useElTreeModel() {
     return true;
   }
 
-  /** 对外查找节点的父位置（同文件内 findParentInSubtree 的包装） */
-  function findNodeParent(id: string): NodeParentPos | null {
-    if (!root.value) return null;
-    return findParentInSubtree(root.value, id);
-  }
-
-  /** 创建一个空 THEN 节点（供 wrapBranch 等场景使用） */
+  /** 创建一个空 THEN 节点（供分支包装等场景使用） */
   function makeThen(): ElNode {
     return {
       id: genElNodeId(),
       type: 'THEN',
       children: []
     };
+  }
+
+  /**
+   * 创建 THEN(child + 尾部空槽)：空分支「线上插入」专用结构。
+   * 尾部稀疏空洞在投影中是虚框（placeholder 保留，用户可继续填充/插线），
+   * 序列化时被 filter 过滤，EL 输出仍是干净的 THEN(child)。
+   */
+  function makeThenWithTailSlot(child: ElNode): ElNode {
+    const node: ElNode = {
+      id: genElNodeId(),
+      type: 'THEN',
+      children: [child]
+    };
+    node.children[1] = undefined as unknown as ElNode;
+    return node;
   }
 
   /** 获取树根的浅克隆（撤销快照用，避免响应式引用污染） */
@@ -1342,17 +1392,16 @@ export function useElTreeModel() {
 
   return {
     root,
-    positionCache,
     loadFromCmpProperty,
     project,
     toCmpProperty,
     cachePosition,
     replaceTree,
     findNode,
-    findNodeParent,
     makeLeaf,
     makeOperator,
     makeThen,
+    makeThenWithTailSlot,
     appendChildToRoot,
     insertBefore,
     insertAfter,

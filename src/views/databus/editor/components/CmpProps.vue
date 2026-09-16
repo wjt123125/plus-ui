@@ -1,4 +1,4 @@
-<!-- 属性面板（方案 B：直接读写 ElNode 树，不回写画布 data） -->
+<!-- 属性面板：直接读写 ElNode 模型树，不回写画布 data -->
 <template>
   <div class="cmp-props">
     <div v-if="!node" class="cmp-props__empty">
@@ -100,9 +100,8 @@ import { computed, ref, watch } from 'vue';
 import { Delete, Plus } from '@element-plus/icons-vue';
 import type { Node } from '@vue-flow/core';
 import { ElAlert, ElButton, ElEmpty, ElForm, ElFormItem, ElInput, ElTag } from 'element-plus';
-import type { CmpNodeData } from '../cmp-tree';
 import { getDef } from '../cmp-defs';
-import { useElTreeModelInject } from '../composables/useElTreeModel';
+import { useElTreeModelInject, type CmpNodeData } from '../composables/useElTreeModel';
 
 const props = defineProps<{
   node: Node<CmpNodeData> | null;
