@@ -1,0 +1,190 @@
+<template>
+  <div class="flow-canvas" @drop.prevent="onDrop" @dragover.prevent="onDragOver">
+    <VueFlow
+      :nodes="nodes"
+      :edges="edges"
+      :node-types="nodeTypes"
+      :edge-types="edgeTypes"
+      :default-edge-options="defaultEdgeOptions"
+      :connection-line-options="{ type: ConnectionLineType.Bezier, style: {} }"
+      :connection-mode="ConnectionMode.Loose"
+      :nodes-draggable="true"
+      :nodes-connectable="true"
+      :elements-selectable="true"
+      :edges-updatable="true"
+      :connection-radius="24"
+      :edge-updater-radius="14"
+      :node-drag-threshold="6"
+      fit-view-on-init
+      :min-zoom="0.2"
+      :max-zoom="2"
+      :delete-key-code="null"
+    >
+      <Background :gap="20" :size="1.5" color="#cdd0d6" variant="dots" />
+      <FlowViewportControls />
+      <MiniMap pannable zoomable :width="140" :height="90" :node-color="miniMapNodeColor" />
+      <FlowSidePanel />
+      <CmpPickerPopover />
+      <CmpContextMenu />
+    </VueFlow>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { markRaw } from 'vue';
+import {
+  ConnectionLineType,
+  ConnectionMode,
+  MarkerType,
+  VueFlow,
+  useVueFlow,
+  type Connection,
+  type Edge,
+  type Node
+} from '@vue-flow/core';
+import { Background } from '@vue-flow/background';
+import { MiniMap } from '@vue-flow/minimap';
+import '@vue-flow/core/dist/style.css';
+import '@vue-flow/core/dist/theme-default.css';
+import '@vue-flow/minimap/dist/style.css';
+import CmpNode from './CmpNode.vue';
+import CmpBezierEdge from './edges/CmpBezierEdge.vue';
+import FlowViewportControls from './FlowViewportControls.vue';
+import FlowSidePanel from './FlowSidePanel.vue';
+import CmpPickerPopover from './CmpPickerPopover.vue';
+import CmpContextMenu from './CmpContextMenu.vue';
+import GatewayNode from './GatewayNode.vue';
+import JunctionNode from './JunctionNode.vue';
+import PlaceholderNode from './PlaceholderNode.vue';
+import { DND_MIME } from '../cmp-defs';
+import type { CmpNodeData } from '../cmp-tree';
+
+defineOptions({ name: 'FlowCanvas' });
+
+// 初始 nodes/edges 仅作为 VueFlow 首屏渲染的数据源；
+// 运行时状态统一由父级 useVueFlow() 创建的 store 管理，本组件通过注入拿到同一实例
+defineProps<{
+  nodes: Node<CmpNodeData>[];
+  edges: Edge[];
+}>();
+
+const emit = defineEmits<{
+  (e: 'select', id: string | null): void;
+  (e: 'drop-node', payload: { type: string; x: number; y: number }): void;
+}>();
+
+// 节点类型注册：方案 B 新增 gateway/junction/placeholder 三种平级节点
+const nodeTypes = markRaw({
+  cmp: CmpNode,
+  gateway: GatewayNode,
+  junction: JunctionNode,
+  placeholder: PlaceholderNode
+});
+const edgeTypes = markRaw({ cmp: CmpBezierEdge });
+
+const defaultEdgeOptions = {
+  type: 'cmp',
+  markerEnd: MarkerType.ArrowClosed,
+  style: { strokeWidth: 1.5 }
+};
+
+const {
+  screenToFlowCoordinate,
+  findEdge,
+  addEdges,
+  getEdges,
+  getNodes,
+  onNodeClick,
+  onPaneClick,
+  onConnect,
+  onEdgeUpdate,
+  onEdgeUpdateStart,
+  onEdgeUpdateEnd
+} = useVueFlow();
+
+// 重连期间排除旧边自身，避免被线性校验误判为端点占用
+let reconnectingEdgeId: string | null = null;
+onEdgeUpdateStart(({ edge }) => {
+  reconnectingEdgeId = edge.id;
+});
+onEdgeUpdateEnd(() => {
+  reconnectingEdgeId = null;
+});
+
+// 官方模式：action 改内部 state，store 自动同步
+onConnect((connection) => {
+  if (isValidConnection(connection)) {
+    addEdges([{ ...connection, ...defaultEdgeOptions }]);
+  }
+});
+
+// 边端点重连：直接改 GraphEdge 响应式属性（官方 Updating Edge Data 方式）
+onEdgeUpdate(({ edge, connection }) => {
+  const gEdge = findEdge(edge.id);
+  if (!gEdge) {
+    return;
+  }
+  gEdge.source = connection.source;
+  gEdge.target = connection.target;
+  gEdge.sourceHandle = connection.sourceHandle ?? null;
+  gEdge.targetHandle = connection.targetHandle ?? null;
+});
+
+function miniMapNodeColor(node: Node) {
+  return (node.data as CmpNodeData | undefined)?.color ?? '#c0c4cc';
+}
+
+function onDragOver(event: DragEvent) {
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy';
+  }
+}
+
+function onDrop(event: DragEvent) {
+  const type = event.dataTransfer?.getData(DND_MIME);
+  if (!type) {
+    return;
+  }
+  const position = screenToFlowCoordinate({ x: event.clientX, y: event.clientY });
+  emit('drop-node', { type, x: position.x - 75, y: position.y - 28 });
+}
+
+/**
+ * 阶段 1 只允许线性链路：每个节点至多一条入边、一条出边，
+ * 保证拓扑排序必然对应一个 THEN(...)；待引入 WHEN/IF 控制节点后放开。
+ */
+function isValidConnection(conn: Connection): boolean {
+  return !!(
+    conn.source &&
+    conn.target &&
+    conn.source !== conn.target &&
+    !getEdges.value.some(
+      (e) =>
+        e.id !== reconnectingEdgeId &&
+        ((e.source === conn.source && e.sourceHandle === conn.sourceHandle) ||
+          (e.target === conn.target && e.targetHandle === conn.targetHandle))
+    )
+  );
+}
+
+onNodeClick(({ node }) => emit('select', node.id));
+onPaneClick(() => emit('select', null));
+</script>
+
+<style scoped>
+.flow-canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+}
+
+.flow-canvas__hint {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  background-color: var(--el-fill-color-light);
+  border-radius: 4px;
+  pointer-events: none;
+}
+</style>
