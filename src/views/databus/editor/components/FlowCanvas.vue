@@ -193,13 +193,4 @@ onPaneClick(() => emit('select', null));
   height: 100%;
   min-width: 0;
 }
-
-.flow-canvas__hint {
-  padding: 4px 12px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  background-color: var(--el-fill-color-light);
-  border-radius: 4px;
-  pointer-events: none;
-}
 </style>
