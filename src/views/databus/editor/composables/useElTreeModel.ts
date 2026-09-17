@@ -13,7 +13,7 @@
 import { inject, provide, ref, type InjectionKey, type Ref } from 'vue';
 import type { Edge, Node } from '@vue-flow/core';
 import type { CmpProperty } from '@/api/databus/el/types';
-import { getDef, resolveDefByCmpId, defaultCmpId, type CmpDef } from '../cmp-defs';
+import { getDef, type CmpDef } from '../cmp-defs';
 
 // ────────────────────────────────────────────────────────────────
 // 1. ElNode 模型（与 client ELNode 同构，字段命名沿用本项目）
@@ -22,22 +22,26 @@ import { getDef, resolveDefByCmpId, defaultCmpId, type CmpDef } from '../cmp-def
 /**
  * 前端模型树的节点。是画布唯一数据源，所有编辑动作都落到这棵树上。
  * - type 为 EL 关键字时是算子（THEN/IF/SWITCH/...），可能含 condition/children
- * - type 为 'NodeComponent' 时是业务组件叶子，cmpId 必填
+ * - type 为 'NodeComponent'/'NodeBooleanComponent' 时是业务组件叶子：
+ *   componentCode = 组件注册名（序列化 CmpProperty.id / EL nodeId，可重复）；
+ *   cmpId = 数据空间名（序列化为 properties.tag，画布唯一，组件产出挂在 $.cmpId.xxx 下）
  */
 export interface ElNode {
   /** 画布稳定 id（uuid 风格），用于投影时 reconcile 与坐标缓存 */
   id: string;
-  /** THEN/IF/SWITCH/FOR/WHILE/ITERATOR/CATCH/WHEN/AND/OR/NOT/CHAIN/NodeComponent */
+  /** THEN/IF/SWITCH/.../NodeComponent/NodeBooleanComponent（virtual: start/end） */
   type: string;
-  /** 业务组件的 LiteFlow nodeId（叶子必填） */
+  /** 业务组件注册名（叶子必填）：httpRequest/condition/setValue/fieldMap/response */
+  componentCode?: string;
+  /** 数据空间名（叶子必填）= 序列化 properties.tag，画布强制唯一，如 httpRequest1 */
   cmpId?: string;
   /** 算子的条件位节点（IF/SWITCH/循环） */
   condition?: ElNode;
   /** 子分支（THEN/WHEN/IF/SWITCH/CATCH/AND/OR/CHAIN） */
   children?: ElNode[];
-  /** LiteFlow tag 属性 */
+  /** 算子的 LiteFlow tag 属性（叶子已废弃：叶子 tag 即数据空间，统一用 cmpId） */
   tag?: string;
-  /** LiteFlow data 属性 */
+  /** LiteFlow data 属性（叶子为组件配置 JSON 字符串） */
   data?: string;
   /** 该节点在父算子中的分支标签: true/false/caseN/异常 等 */
   branchLabel?: string;
@@ -142,10 +146,13 @@ function genElNodeId(): string {
 /**
  * CmpProperty 树 → ElNode 树。
  * 保留 ElNode.id 给每个节点（叶子与算子都给），用于投影时坐标缓存。
+ * 反序列化后给缺 tag（数据空间名）的叶子按树内同类型序号补默认名。
  */
 function parseCmpProperty(cmp: CmpProperty | null | undefined): ElNode | null {
   if (!cmp) return null;
-  return parseNode(cmp, undefined);
+  const parsed = parseNode(cmp, undefined);
+  fillDefaultDataSpaces(parsed);
+  return parsed;
 }
 
 function parseNode(cmp: CmpProperty, parentOperatorId: string | undefined): ElNode {
@@ -158,9 +165,11 @@ function parseNode(cmp: CmpProperty, parentOperatorId: string | undefined): ElNo
   };
 
   if (!isOperator) {
-    // 业务组件叶子
-    node.cmpId = cmp.id ?? '';
-    if (cmp.properties?.tag) node.tag = cmp.properties.tag;
+    // 业务组件叶子：CmpProperty.id 是注册名，properties.tag 是数据空间名
+    node.type =
+      cmp.type === 'NodeBooleanComponent' ? 'NodeBooleanComponent' : 'NodeComponent';
+    node.componentCode = cmp.id ?? '';
+    node.cmpId = cmp.properties?.tag ?? '';
     if (cmp.properties?.data) node.data = cmp.properties.data;
     return node;
   }
@@ -174,6 +183,54 @@ function parseNode(cmp: CmpProperty, parentOperatorId: string | undefined): ElNo
   }
   if (cmp.properties?.tag) node.tag = cmp.properties.tag;
   return node;
+}
+
+// ────────────────────────────────────────────────────────────────
+// 5.1 数据空间默认名（注册名 + 树内同类型序号：httpRequest1、condition1）
+// ────────────────────────────────────────────────────────────────
+
+/** 收集子树内全部业务叶子（含 condition 位；不含 virtual 与算子） */
+function collectLeaves(node: ElNode | null | undefined, acc: ElNode[] = []): ElNode[] {
+  if (!node) return acc;
+  const def = getDef(node.type);
+  if (!def?.operator && !def?.virtual) acc.push(node);
+  if (node.condition) collectLeaves(node.condition, acc);
+  if (node.children) node.children.forEach((c) => c && collectLeaves(c, acc));
+  return acc;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * 给缺数据空间名（旧数据/外部链路 JSON 无 tag）的叶子补默认名：
+ * 先统计树内每种注册名已占用的最大序号与全部名称，再递增分配，避开自定义重名。
+ */
+function fillDefaultDataSpaces(root: ElNode) {
+  const leaves = collectLeaves(root);
+  const maxSeq = new Map<string, number>();
+  const taken = new Set<string>();
+  for (const leaf of leaves) {
+    if (leaf.cmpId) taken.add(leaf.cmpId);
+    if (leaf.componentCode && leaf.cmpId) {
+      const m = leaf.cmpId.match(new RegExp(`^${escapeRegExp(leaf.componentCode)}(\\d+)$`));
+      if (m) maxSeq.set(leaf.componentCode, Math.max(maxSeq.get(leaf.componentCode) ?? 0, Number(m[1])));
+    }
+  }
+  for (const leaf of leaves) {
+    if (leaf.cmpId || !leaf.componentCode) continue;
+    const code = leaf.componentCode;
+    let seq = (maxSeq.get(code) ?? 0) + 1;
+    let name = `${code}${seq}`;
+    while (taken.has(name)) {
+      seq += 1;
+      name = `${code}${seq}`;
+    }
+    leaf.cmpId = name;
+    taken.add(name);
+    maxSeq.set(code, seq);
+  }
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -209,14 +266,14 @@ function serializeNode(node: ElNode): CmpProperty | null {
   }
 
   if (!isOperator) {
-    // 业务叶子
+    // 业务叶子：id=组件注册名（可重复），properties.tag=数据空间名（画布唯一）
     const leaf: CmpProperty = {
-      id: node.cmpId || undefined,
-      type: 'NodeComponent'
+      id: node.componentCode || undefined,
+      type: node.type === 'NodeBooleanComponent' ? 'NodeBooleanComponent' : 'NodeComponent'
     };
-    if (node.tag || node.data) {
+    if (node.cmpId || node.data) {
       leaf.properties = {
-        ...(node.tag ? { tag: node.tag } : {}),
+        ...(node.cmpId ? { tag: node.cmpId } : {}),
         ...(node.data ? { data: node.data } : {})
       };
     }
@@ -294,16 +351,20 @@ function projectNode(node: ElNode, ctx: ProjectContext, parentOperatorId: string
   const def = getDef(node.type);
   const isOperator = !!def?.operator;
 
-  // ── 业务组件叶子 ──
+  // ── 业务组件叶子（含 virtual start/end） ──
   if (!isOperator) {
-    const cmpDef = resolveDefByCmpId(node.cmpId ?? '') ?? fallbackDef(node.cmpId ?? '');
-    const id = node.id;
-    // def.virtual: start/end 是虚拟节点，不参与 EL 序列化（投影后仍可手动删除，仅作视觉标记）
+    // virtual（start/end）的 type 本身就是 def key；业务叶子用 componentCode 反查物料
     const isVirtual = !!def?.virtual;
+    const cmpDef = isVirtual
+      ? def!
+      : (node.componentCode ? getDef(node.componentCode) : undefined)
+          ?? fallbackDef(node.componentCode ?? node.cmpId ?? '');
+    const id = node.id;
     const data: CmpNodeData = {
       defType: cmpDef.type,
       cmpId: node.cmpId ?? '',
-      tag: node.tag ?? '',
+      // 叶子 tag 即数据空间名（投影字段保留 tag 供旧消费者与网关标签使用）
+      tag: node.cmpId ?? '',
       data: node.data ?? '',
       label: cmpDef.label,
       color: cmpDef.color,
@@ -489,9 +550,11 @@ function projectIf(node: ElNode, ctx: ProjectContext): Port {
   let condDef: CmpDef = ifDef;
   let condTag: string | undefined = node.tag;
   if (node.condition) {
-    const realCondDef = resolveDefByCmpId(node.condition.cmpId ?? '');
+    const realCondDef = node.condition.componentCode
+      ? getDef(node.condition.componentCode)
+      : undefined;
     if (realCondDef) condDef = realCondDef;
-    condTag = node.condition.tag ?? condTag;
+    condTag = node.condition.cmpId ?? condTag;
     condId = node.condition.id;
   } else {
     condId = node.id;
@@ -569,9 +632,11 @@ function projectSwitch(node: ElNode, ctx: ProjectContext): Port {
   let condDef: CmpDef = switchDef;
   let condTag: string | undefined = node.tag;
   if (node.condition) {
-    const realCondDef = resolveDefByCmpId(node.condition.cmpId ?? '');
+    const realCondDef = node.condition.componentCode
+      ? getDef(node.condition.componentCode)
+      : undefined;
     if (realCondDef) condDef = realCondDef;
-    condTag = node.condition.tag ?? condTag;
+    condTag = node.condition.cmpId ?? condTag;
     condId = node.condition.id;
   } else {
     condId = node.id;
@@ -631,9 +696,11 @@ function projectLoop(node: ElNode, ctx: ProjectContext): Port {
   let condDef: CmpDef = loopDef;
   let condTag: string | undefined = node.tag;
   if (node.condition) {
-    const realCondDef = resolveDefByCmpId(node.condition.cmpId ?? '');
+    const realCondDef = node.condition.componentCode
+      ? getDef(node.condition.componentCode)
+      : undefined;
     if (realCondDef) condDef = realCondDef;
-    condTag = node.condition.tag ?? condTag;
+    condTag = node.condition.cmpId ?? condTag;
     condId = node.condition.id;
   } else {
     condId = node.id;
@@ -876,7 +943,7 @@ function buildConditionGatewayNode(
     position: pos,
     data: {
       defType: condDef.type,
-      cmpId: id,
+      cmpId: tag ?? '',
       tag: tag ?? '',
       data: '',
       label: condDef.label,
@@ -1161,16 +1228,48 @@ export function useElTreeModel() {
     return findInSubtree(root.value, id);
   }
 
-  /** 生成新 ElNode 叶子 */
+  /**
+   * 生成新业务叶子的数据空间默认名：扫全树同注册名叶子的序号（httpRequest1/2...）取最大 +1，
+   * 同时避开用户自定义名称占用。
+   */
+  function nextDataSpace(componentCode: string): string {
+    const leaves = collectLeaves(root.value);
+    const seqRe = new RegExp(`^${escapeRegExp(componentCode)}(\\d+)$`);
+    const taken = new Set<string>();
+    let maxSeq = 0;
+    for (const leaf of leaves) {
+      if (leaf.cmpId) taken.add(leaf.cmpId);
+      if (leaf.componentCode === componentCode && leaf.cmpId) {
+        const m = leaf.cmpId.match(seqRe);
+        if (m) maxSeq = Math.max(maxSeq, Number(m[1]));
+      }
+    }
+    let seq = maxSeq + 1;
+    let name = `${componentCode}${seq}`;
+    while (taken.has(name)) {
+      seq += 1;
+      name = `${componentCode}${seq}`;
+    }
+    return name;
+  }
+
+  /** 生成新 ElNode 叶子（业务组件；start/end virtual 也走这里） */
   function makeLeaf(defType: string): ElNode {
     const def = getDef(defType);
     const isOperator = !!def?.operator;
     const isVirtual = !!def?.virtual;
-    // virtual 节点（start/end）保留 type 与固定 cmpId，不走 NodeComponent + 随机 cmpId 的默认路径
+    if (isOperator) {
+      return { id: genElNodeId(), type: defType, parentOperatorId: undefined };
+    }
+    if (isVirtual) {
+      // virtual 节点（start/end）固定 type/cmpId，不参与序列化
+      return { id: genElNodeId(), type: defType, cmpId: defType, parentOperatorId: undefined };
+    }
     return {
       id: genElNodeId(),
-      type: isOperator ? defType : (isVirtual ? defType : 'NodeComponent'),
-      cmpId: isOperator ? undefined : (isVirtual ? defType : defaultCmpId(defType)),
+      type: def?.lfNodeType ?? 'NodeComponent',
+      componentCode: defType,
+      cmpId: nextDataSpace(defType),
       parentOperatorId: undefined
     };
   }
@@ -1248,7 +1347,7 @@ export function useElTreeModel() {
   }
 
   /**
-   * 替换节点：保留 id 与位置，重置 type/cmpId/tag/data/condition/children。
+   * 替换节点：保留 id 与位置，重置 type/componentCode/cmpId/data/condition/children。
    * 用于 replaceNode（保留连线）与 replacePlaceholder（占位变真实叶子）。
    */
   function replaceNode(nodeId: string, defType: string): boolean {
@@ -1256,9 +1355,19 @@ export function useElTreeModel() {
     if (!node) return false;
     const def = getDef(defType);
     const isOperator = !!def?.operator;
+    const isVirtual = !!def?.virtual;
     // 保留 id 与 parentOperatorId，重置其余字段
-    node.type = isOperator ? defType : 'NodeComponent';
-    node.cmpId = isOperator ? undefined : defaultCmpId(defType);
+    node.type = isOperator
+      ? defType
+      : isVirtual
+        ? defType
+        : (def?.lfNodeType ?? 'NodeComponent');
+    node.componentCode = isOperator || isVirtual ? undefined : defType;
+    node.cmpId = isOperator
+      ? undefined
+      : isVirtual
+        ? defType
+        : nextDataSpace(defType);
     node.tag = undefined;
     node.data = undefined;
     if (isOperator) {
@@ -1322,14 +1431,42 @@ export function useElTreeModel() {
     return true;
   }
 
-  /** 更新叶子节点的 cmpId/tag/data（属性面板编辑用） */
-  function updateLeafData(nodeId: string, patch: Partial<Pick<ElNode, 'cmpId' | 'tag' | 'data'>>): boolean {
+  /** 更新叶子节点的 cmpId（数据空间名）/data（属性面板编辑用） */
+  function updateLeafData(nodeId: string, patch: Partial<Pick<ElNode, 'cmpId' | 'data'>>): boolean {
     const node = findNode(nodeId);
     if (!node) return false;
     if (patch.cmpId !== undefined) node.cmpId = patch.cmpId;
-    if (patch.tag !== undefined) node.tag = patch.tag;
     if (patch.data !== undefined) node.data = patch.data;
     return true;
+  }
+
+  /** 数据空间名是否已被其他叶子占用（excludeNodeId 为当前改名的叶子自身） */
+  function isDataSpaceNameTaken(name: string, excludeNodeId?: string): boolean {
+    return collectLeaves(root.value).some((leaf) => leaf.cmpId === name && leaf.id !== excludeNodeId);
+  }
+
+  /**
+   * 修改叶子的数据空间名，并联动替换全树叶子 data 文本中对旧名的路径引用。
+   * 只按 JSONPath 路径段精确匹配：$.oldName 后面不能是字母/数字/下划线，
+   * 因此 httpRequest1 不会误伤 httpRequest10，也不会动到 key 写法。
+   * 返回联动替换的引用处数；新旧名相同或叶子不存在返回 0。
+   */
+  function renameDataSpace(nodeId: string, newName: string): number {
+    const node = findNode(nodeId);
+    if (!node || getDef(node.type)?.virtual) return 0;
+    const oldName = node.cmpId;
+    if (!oldName || oldName === newName) return 0;
+    node.cmpId = newName;
+    const refRe = new RegExp(`\\$\\.${escapeRegExp(oldName)}(?![A-Za-z0-9_])`, 'g');
+    let count = 0;
+    for (const leaf of collectLeaves(root.value)) {
+      if (!leaf.data) continue;
+      leaf.data = leaf.data.replace(refRe, () => {
+        count += 1;
+        return `$.${newName}`;
+      });
+    }
+    return count;
   }
 
   /** 更新算子节点的 tag（属性面板编辑用） */
@@ -1345,7 +1482,7 @@ export function useElTreeModel() {
     const node = findNode(switchId);
     if (!node || node.type !== 'SWITCH') return false;
     if (!node.children) node.children = [];
-    const leaf = makeLeaf('boCreate'); // 占位用任意业务类型，用户可后续替换
+    const leaf = makeLeaf('setValue'); // 占位用普通业务组件，用户可后续替换
     leaf.parentOperatorId = switchId;
     node.children.push(leaf);
     return true;
@@ -1390,6 +1527,29 @@ export function useElTreeModel() {
     return cloneElNode(root.value);
   }
 
+  /**
+   * 校验全部业务叶子（含 condition 布尔件；不含算子/虚拟节点）的数据空间名：
+   * 非空且树内唯一。返回第一个问题的叶子 id/名字/物料标签，供界面选中提示。
+   */
+  function validateDataSpaces():
+    | { ok: true }
+    | { ok: false; reason: 'empty' | 'duplicate'; nodeId: string; name: string; label: string } {
+    const seen = new Map<string, ElNode>();
+    for (const leaf of collectLeaves(root.value)) {
+      if (!leaf.componentCode) continue; // 虚拟 start/end 无注册名，跳过
+      const name = (leaf.cmpId ?? '').trim();
+      const label = getDef(leaf.componentCode)?.label ?? leaf.componentCode;
+      if (!name) {
+        return { ok: false, reason: 'empty', nodeId: leaf.id, name, label };
+      }
+      if (seen.has(name)) {
+        return { ok: false, reason: 'duplicate', nodeId: leaf.id, name, label };
+      }
+      seen.set(name, leaf);
+    }
+    return { ok: true };
+  }
+
   return {
     root,
     loadFromCmpProperty,
@@ -1408,10 +1568,13 @@ export function useElTreeModel() {
     replaceNode,
     removeNode,
     updateLeafData,
+    isDataSpaceNameTaken,
+    renameDataSpace,
     updateOperatorTag,
     addCase,
     removeCase,
-    snapshot
+    snapshot,
+    validateDataSpaces
   };
 }
 

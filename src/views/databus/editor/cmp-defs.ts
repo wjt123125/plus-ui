@@ -21,6 +21,8 @@ export type ConditionKind = 'if' | 'switch' | 'for' | 'while' | 'iterator' | 'bo
  *   算子在画布上渲染为 gateway/junction/placeholder 等平级结构节点（不做物理嵌套容器），
  *   由 useElTreeModel 投影器从模型树摊平
  * - conditionKind: 算子需要的条件组件类型
+ * - lfNodeType: 业务组件在 LiteFlow 中的节点类型（缺省 NodeComponent；
+ *   布尔条件组件为 NodeBooleanComponent，只能放在 IF/WHILE 等条件槽）
  * - group: 物料面板分组
  */
 export interface CmpDef {
@@ -36,6 +38,7 @@ export interface CmpDef {
   singleton?: boolean;
   operator?: boolean;
   conditionKind?: ConditionKind;
+  lfNodeType?: 'NodeComponent' | 'NodeBooleanComponent';
   group?: 'flow' | 'sequence' | 'branch' | 'loop' | 'other' | 'subflow' | 'business';
 }
 
@@ -204,29 +207,46 @@ export const CMP_DEFS: CmpDef[] = [
     group: 'subflow'
   },
 
-  // ── 业务组件（桩） ──
+  // ── 业务组件（均有后端真实现，注册名与后端 @LiteflowComponent 一致） ──
   {
     type: 'httpRequest',
     label: 'Http 请求',
-    desc: '桩组件：发起 HTTP 调用',
+    desc: '发起 HTTP 调用（GET/POST），响应存入 $.数据空间.response',
     color: '#409eff',
     icon: 'ph:globe',
     group: 'business'
   },
   {
-    type: 'formula',
-    label: '公式',
-    desc: '桩组件：公式引擎计算',
+    type: 'condition',
+    label: '条件判断',
+    desc: '布尔条件：按 JSONPath 与比较符求值，供 IF/WHILE 条件槽使用',
     color: '#e6a23c',
-    icon: 'ph:function',
+    icon: 'ph:equals',
+    lfNodeType: 'NodeBooleanComponent',
     group: 'business'
   },
   {
-    type: 'boCreate',
-    label: 'BO 创建',
-    desc: '桩组件：创建业务对象',
+    type: 'setValue',
+    label: '赋值',
+    desc: '把值（常量或路径取值）写入上下文 $.数据空间.path',
+    color: '#67c23a',
+    icon: 'ph:pencil-simple',
+    group: 'business'
+  },
+  {
+    type: 'fieldMap',
+    label: '字段映射',
+    desc: '按 mappings 把来源路径逐条搬运到目标路径',
+    color: '#9c27b0',
+    icon: 'ph:arrows-left-right',
+    group: 'business'
+  },
+  {
+    type: 'response',
+    label: '流程响应',
+    desc: '设置链路返回结果，固定写入 $.response.result/msg/data',
     color: '#f56c6c',
-    icon: 'ph:package',
+    icon: 'ph:flag-checkered',
     group: 'business'
   }
 ];
@@ -249,18 +269,19 @@ export function getDef(type: string): CmpDef | undefined {
 }
 
 /**
- * 依据组件 ID 反查定义（httpRequest_xxx → httpRequest）。
- * 反序列化 EL 时组件可能已不在面板中，找不到返回 undefined。
+ * 是否为布尔条件组件（lfNodeType=NodeBooleanComponent）。
+ * 布尔组件只能放入 IF/WHILE/AND/OR/NOT 等条件槽，不能作为普通顺序叶子。
  */
-export function resolveDefByCmpId(cmpId: string): CmpDef | undefined {
-  if (DEF_MAP.has(cmpId)) {
-    return DEF_MAP.get(cmpId);
-  }
-  return CMP_DEFS.find((d) => !d.virtual && !d.operator && cmpId.startsWith(`${d.type}_`));
+export function isBooleanDef(def: CmpDef | undefined | null): boolean {
+  return def?.lfNodeType === 'NodeBooleanComponent';
 }
 
-/** 生成默认组件 ID：httpRequest_a1b2c3（算子节点不用 cmpId，走 type 本身） */
-export function defaultCmpId(type: string): string {
-  const rand = Math.random().toString(36).slice(2, 8);
-  return `${type}_${rand}`;
-}
+/**
+ * 标识规则（2026-09-16 修订）：
+ * - 组件注册名（CmpProperty.id / EL nodeId）= def.type，如同类组件可重复：httpRequest1/condition1
+ *   的区分不放在 nodeId，而放在 tag。
+ * - tag = 数据空间名（ElNode.cmpId 字段承载），画布强制唯一；默认名 = 注册名 + 同类型序号
+ *   （httpRequest1、condition1），由 useElTreeModel 扫树计数生成。
+ * - EL 形态：THEN(httpRequest.tag("httpRequest1").data("..."))
+ * - 组件产出统一写在 $.数据空间名.xxx 下（response 组件例外，固定写 $.response.*）。
+ */

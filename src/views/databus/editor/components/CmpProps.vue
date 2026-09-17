@@ -9,7 +9,7 @@
       <div class="cmp-props__header">
         <span class="cmp-props__title">
           <span class="cmp-props__dot" :style="{ backgroundColor: node.data.color }" />
-          {{ node.data.label }}
+          {{ headerLabel }}
         </span>
         <el-tag v-if="node.data.virtual" size="small" type="info">虚拟节点</el-tag>
         <el-tag v-else-if="isJunction" size="small" type="info">汇合点</el-tag>
@@ -31,22 +31,43 @@
         <span v-else>拖入业务组件可替换此空槽。</span>
       </div>
 
-      <!-- 算子属性（gateway 节点） -->
-      <el-form v-else-if="node.data.operator" label-position="top" size="small" class="cmp-props__form">
-        <!-- IF/SWITCH/循环的 condition 网关：编辑 condition 的 cmpId -->
-        <el-form-item v-if="node.data.isCondition" label="条件组件 ID">
-          <el-input
-            v-model="cmpId"
-            placeholder="如 ifNode_xxx"
-            clearable
-            @change="onLeafChange"
-          />
+      <!-- IF/WHILE 条件菱形：未挂条件件时选择条件组件，已挂则编辑条件件本身 -->
+      <el-form
+        v-else-if="node.data.isCondition && supportedCondOp && !hasCondition"
+        label-position="top"
+        size="small"
+        class="cmp-props__form"
+      >
+        <el-form-item :label="`${opNode?.type} 条件组件`">
+          <el-select
+            :model-value="''"
+            placeholder="选择条件组件"
+            style="width: 100%"
+            @change="onPickCondition"
+          >
+            <el-option
+              v-for="d in booleanDefs"
+              :key="d.type"
+              :label="d.label"
+              :value="d.type"
+            >
+              <span>{{ d.label }}</span>
+              <span class="cmp-props__opt-desc">{{ d.desc }}</span>
+            </el-option>
+          </el-select>
           <div class="cmp-props__hint">
-            填入判断用的组件 ID，生成 EL 时作为 {{ node.data.defType }} 的条件位
+            条件组件为布尔组件，运行时返回真/假决定{{ opNode?.type === 'WHILE' ? '是否继续循环' : '走哪个分支' }}
           </div>
         </el-form-item>
+      </el-form>
 
-        <!-- SWITCH cases 管理（通过 operator 节点本身，而非 condition） -->
+      <!-- SWITCH/FOR/ITERATOR 条件菱形：本档暂不支持配置条件件 -->
+      <el-form
+        v-else-if="node.data.isCondition && !supportedCondOp"
+        label-position="top"
+        size="small"
+        class="cmp-props__form"
+      >
         <template v-if="needsCasesEdit">
           <el-form-item label="分支 (case)">
             <div class="cmp-props__cases">
@@ -58,7 +79,31 @@
             </div>
           </el-form-item>
         </template>
+        <el-alert
+          title="该算子的条件组件本档暂不支持配置，试运行不会执行此结构"
+          type="warning"
+          :closable="false"
+          show-icon
+        />
+      </el-form>
 
+      <!-- 普通算子网关（WHEN/CATCH/AND/OR/NOT/CHAIN）：只编辑 tag -->
+      <el-form
+        v-else-if="node.data.operator"
+        label-position="top"
+        size="small"
+        class="cmp-props__form"
+      >
+        <!-- SWITCH cases 管理（condition 网关由 condition 叶子充当的情形） -->
+        <el-form-item v-if="needsCasesEdit" label="分支 (case)">
+          <div class="cmp-props__cases">
+            <div v-for="(_, i) in caseCount" :key="i" class="cmp-props__case-row">
+              <span class="cmp-props__case-label">case{{ i + 1 }}</span>
+              <el-button :icon="Delete" size="small" text :disabled="caseCount <= 1" @click="removeCase(i)" />
+            </div>
+            <el-button size="small" :icon="Plus" @click="addCase">添加分支</el-button>
+          </div>
+        </el-form-item>
         <el-form-item label="标签 tag">
           <el-input
             v-model="tag"
@@ -69,21 +114,30 @@
         </el-form-item>
       </el-form>
 
-      <!-- 业务组件属性 -->
+      <!-- 业务组件 / 已挂载的条件件：数据空间 + 配置 JSON -->
       <el-form v-else label-position="top" size="small" class="cmp-props__form">
-        <el-form-item label="组件 ID（LiteFlow nodeId）" required :error="duplicate ? '组件 ID 不能重复' : ''">
-          <el-input v-model="cmpId" placeholder="如 httpRequest_a1b2c3" clearable @change="onLeafChange" />
+        <el-form-item v-if="isConditionLeaf" :label="`${opNode?.type ?? ''} 条件组件`.trim()">
+          <el-tag size="small" type="warning">{{ leafDef?.label ?? elNode?.componentCode }}</el-tag>
+          <el-button size="small" text type="primary" @click="openReplaceCondition">更换条件组件</el-button>
         </el-form-item>
-        <el-form-item label="标签 tag">
-          <el-input v-model="tag" placeholder="可选，对应 EL 的 .tag(&quot;x&quot;)" clearable @change="onLeafChange" />
+        <el-form-item label="数据空间" required :error="spaceError || undefined">
+          <el-input
+            v-model="dataSpace"
+            placeholder="如 httpRequest1（字母开头，字母数字下划线）"
+            clearable
+            @change="onDataSpaceChange"
+          />
+          <div class="cmp-props__hint">
+            组件产出挂在 $.{{ dataSpace || '数据空间名' }} 下；画布内唯一，改名会联动更新引用
+          </div>
         </el-form-item>
-        <el-form-item label="参数数据 data">
+        <el-form-item label="组件配置 data（JSON）">
           <el-input
             v-model="dataStr"
             type="textarea"
-            :rows="6"
-            placeholder="可选，对应 EL 的 .data(&quot;...&quot;)；桩组件阶段先以文本承载"
-            @change="onLeafChange"
+            :rows="8"
+            :placeholder="dataHint"
+            @change="onDataChange"
           />
         </el-form-item>
       </el-form>
@@ -92,6 +146,30 @@
         <el-button size="small" type="danger" plain @click="emit('delete', node.id)">删除节点</el-button>
       </div>
     </template>
+
+    <!-- 更换条件组件弹层（当前只有「条件判断」一个布尔物料） -->
+    <el-dialog
+      v-model="replaceDialogVisible"
+      title="更换条件组件"
+      width="360px"
+      append-to-body
+    >
+      <el-radio-group v-model="pendingConditionType" class="cmp-props__radio-col">
+        <el-radio
+          v-for="d in booleanDefs"
+          :key="d.type"
+          :value="d.type"
+          style="display: flex; margin: 6px 0"
+        >
+          <span>{{ d.label }}</span>
+          <span class="cmp-props__opt-desc">{{ d.desc }}</span>
+        </el-radio>
+      </el-radio-group>
+      <template #footer>
+        <el-button @click="replaceDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmReplaceCondition">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -99,13 +177,31 @@
 import { computed, ref, watch } from 'vue';
 import { Delete, Plus } from '@element-plus/icons-vue';
 import type { Node } from '@vue-flow/core';
-import { ElAlert, ElButton, ElEmpty, ElForm, ElFormItem, ElInput, ElTag } from 'element-plus';
-import { getDef } from '../cmp-defs';
-import { useElTreeModelInject, type CmpNodeData } from '../composables/useElTreeModel';
+import {
+  ElAlert,
+  ElButton,
+  ElDialog,
+  ElEmpty,
+  ElForm,
+  ElFormItem,
+  ElInput,
+  ElMessage,
+  ElOption,
+  ElRadio,
+  ElRadioGroup,
+  ElSelect,
+  ElTag
+} from 'element-plus';
+import { CMP_DEFS, getDef, isBooleanDef } from '../cmp-defs';
+import {
+  useElTreeModelInject,
+  type CmpNodeData,
+  type ElNode
+} from '../composables/useElTreeModel';
+import { useCanvasController } from '../composables/useCanvasController';
 
 const props = defineProps<{
   node: Node<CmpNodeData> | null;
-  duplicate?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -114,6 +210,21 @@ const emit = defineEmits<{
 }>();
 
 const treeModel = useElTreeModelInject();
+const ctrl = useCanvasController();
+
+/** 可选布尔条件物料（当前仅「条件判断」） */
+const booleanDefs = CMP_DEFS.filter((d) => isBooleanDef(d));
+
+/** 各物料配置 JSON 的示例占位文案 */
+const DATA_HINTS: Record<string, string> = {
+  httpRequest: '{"method":"GET","url":"http://localhost:8080/auth/code"}',
+  condition: '{"path":"$.httpRequest1.response.code","op":"eq","value":200}',
+  setValue: '{"path":"$.setValue1.demo","value":"常量 或 $.入参路径"}',
+  fieldMap: '{"mappings":[{"from":"$.httpRequest1.response.msg","to":"$.fieldMap1.msg"}]}',
+  response: '{"result":true,"msg":"成功","dataPath":"$.fieldMap1"}'
+};
+
+const SPACE_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
 
 const isJunction = computed(() => !!props.node?.data.junctionOf);
 const isPlaceholder = computed(() => !!props.node?.data.placeholderOf);
@@ -124,78 +235,170 @@ const virtualHint = computed(() =>
     : '开始是链路起点的视觉标记，不参与 EL 表达式生成；如需隐藏可直接删除。'
 );
 
-/** SWITCH 的 case 管理在 operator 节点（非 condition 网关）上编辑 */
-const needsCasesEdit = computed(() => {
-  const d = props.node?.data;
-  if (!d) return false;
-  // SWITCH 的 condition 是网关（isCondition=true），case 管理在 condition 节点上
-  return d.isCondition && d.defType === 'SWITCH';
+/** 当前画布节点对应的树节点（可能是业务叶子、condition 叶子或算子自身） */
+const elNode = computed<ElNode | null>(() =>
+  props.node ? treeModel.findNode(props.node.id) : null
+);
+
+/** 业务叶子的物料定义 */
+const leafDef = computed(() =>
+  elNode.value?.componentCode ? getDef(elNode.value.componentCode) : undefined
+);
+
+/** 当前选中的是已挂载条件件（condition 叶子充当网关） */
+const isConditionLeaf = computed(
+  () => !!props.node?.data.isCondition && !!elNode.value && !getDef(elNode.value.type)?.operator
+);
+
+/** 条件网关所属算子节点（condition 叶子的 parent，或算子自身） */
+const opNode = computed<ElNode | null>(() => {
+  const n = elNode.value;
+  if (!n) return null;
+  if (getDef(n.type)?.operator) return n;
+  return n.parentOperatorId ? treeModel.findNode(n.parentOperatorId) : null;
 });
 
-/** SWITCH 的 case 数量（从 ElNode children 读） */
+/** 条件菱形是否还没挂条件件（网关仍由算子自身充当） */
+const hasCondition = computed(() => isConditionLeaf.value);
+
+/** 本档支持配置布尔条件件的算子 */
+const supportedCondOp = computed(() =>
+  ['IF', 'WHILE'].includes(opNode.value?.type ?? '')
+);
+
+const headerLabel = computed(() => {
+  if (isConditionLeaf.value) {
+    return leafDef.value?.label ?? elNode.value?.componentCode ?? props.node?.data.label ?? '';
+  }
+  return props.node?.data.label ?? '';
+});
+
+const dataHint = computed(() => {
+  const code = elNode.value?.componentCode ?? '';
+  return DATA_HINTS[code] ?? '组件配置 JSON';
+});
+
+/** SWITCH 的 case 管理在 SWITCH 算子/其 condition 网关上编辑 */
+const needsCasesEdit = computed(() => {
+  const d = props.node?.data;
+  return !!d?.isCondition && (opNode.value?.type === 'SWITCH' || d.defType === 'SWITCH');
+});
+
 const caseCount = computed(() => {
-  if (!needsCasesEdit.value || !props.node) return 0;
-  const elNode = treeModel.findNode(props.node.id);
-  return elNode?.children?.length ?? 0;
+  if (!needsCasesEdit.value) return 0;
+  const switchId =
+    opNode.value?.type === 'SWITCH' ? opNode.value.id : elNode.value?.parentOperatorId;
+  return switchId ? (treeModel.findNode(switchId)?.children?.length ?? 0) : 0;
 });
 
 // 本地输入框状态：node 切换时从 ElNode 树同步
-const cmpId = ref('');
+const dataSpace = ref('');
 const tag = ref('');
 const dataStr = ref('');
+const spaceError = ref('');
 
 watch(
   () => props.node?.id,
-  (id) => {
-    if (!id) {
-      cmpId.value = '';
-      tag.value = '';
-      dataStr.value = '';
-      return;
-    }
-    const elNode = treeModel.findNode(id);
-    cmpId.value = elNode?.cmpId ?? '';
-    tag.value = elNode?.tag ?? '';
-    dataStr.value = elNode?.data ?? '';
+  () => {
+    const n = elNode.value;
+    dataSpace.value = n?.cmpId ?? '';
+    tag.value = n?.tag ?? '';
+    dataStr.value = n?.data ?? '';
+    spaceError.value = '';
   },
   { immediate: true }
 );
 
-function onLeafChange() {
-  if (!props.node) return;
-  treeModel.updateLeafData(props.node.id, {
-    cmpId: cmpId.value,
-    tag: tag.value,
-    data: dataStr.value
-  });
+/** 数据空间改名：校验 → renameDataSpace 联动替换全树路径引用 → 重投影 */
+function onDataSpaceChange() {
+  if (!props.node || !elNode.value) return;
+  const newName = dataSpace.value.trim();
+  const oldName = elNode.value.cmpId ?? '';
+  if (newName === oldName) {
+    spaceError.value = '';
+    dataSpace.value = oldName;
+    return;
+  }
+  if (!SPACE_NAME_RE.test(newName)) {
+    spaceError.value = '字母开头，只能含字母、数字、下划线';
+    ElMessage.error('数据空间名不合法：字母开头，只能含字母、数字、下划线');
+    dataSpace.value = oldName;
+    return;
+  }
+  if (treeModel.isDataSpaceNameTaken(newName, elNode.value.id)) {
+    spaceError.value = '数据空间名已被其他组件占用';
+    ElMessage.error(`数据空间名「${newName}」已被占用，画布内必须唯一`);
+    dataSpace.value = oldName;
+    return;
+  }
+  const updated = treeModel.renameDataSpace(elNode.value.id, newName);
+  spaceError.value = '';
+  dataSpace.value = newName;
+  if (updated > 0) {
+    ElMessage.success(`数据空间已改名，联动更新了 ${updated} 处路径引用`);
+  }
+  // 改名可能改动了其他叶子的 data，统一走 commit 重投影 + 刷新 EL 预览
+  emit('data-change');
+}
+
+/** 编辑组件配置 JSON */
+function onDataChange() {
+  if (!props.node || !elNode.value) return;
+  treeModel.updateLeafData(elNode.value.id, { data: dataStr.value });
   emit('data-change');
 }
 
 function onOperatorTagChange() {
   if (!props.node) return;
-  // 算子的 tag 存在 operator 节点上（非 condition 网关）
-  // condition 网关的 tag 也是其自身 ElNode 的 tag
   treeModel.updateOperatorTag(props.node.id, tag.value);
   emit('data-change');
 }
 
+/** 条件菱形上首次选择条件组件：挂到算子 condition 位 */
+function onPickCondition(defType: string) {
+  const id = opNode.value?.id;
+  if (!id) return;
+  const condId = ctrl.attachCondition(id, defType);
+  if (condId) {
+    ctrl.select(condId);
+    emit('data-change');
+  }
+}
+
+// ── 更换已挂载的条件组件 ──
+const replaceDialogVisible = ref(false);
+const pendingConditionType = ref('');
+
+function openReplaceCondition() {
+  pendingConditionType.value = elNode.value?.componentCode ?? booleanDefs[0]?.type ?? '';
+  replaceDialogVisible.value = true;
+}
+
+function confirmReplaceCondition() {
+  const id = opNode.value?.id;
+  if (!id || !pendingConditionType.value) {
+    replaceDialogVisible.value = false;
+    return;
+  }
+  const condId = ctrl.attachCondition(id, pendingConditionType.value);
+  replaceDialogVisible.value = false;
+  if (condId) {
+    ctrl.select(condId);
+    emit('data-change');
+  }
+}
+
 function addCase() {
-  if (!props.node) return;
-  // SWITCH 的 case 管理在 condition 节点上（condition 的 parent 是 SWITCH）
-  // condition.id = canvas node id；需找到其 parent SWITCH
-  // 实际上 addCase 接收 switchId，但当前选中的是 condition 节点
-  // condition 的 parentOperatorId 指向 SWITCH
-  const condNode = treeModel.findNode(props.node.id);
-  const switchId = condNode?.parentOperatorId;
+  const switchId =
+    opNode.value?.type === 'SWITCH' ? opNode.value.id : elNode.value?.parentOperatorId;
   if (switchId && treeModel.addCase(switchId)) {
     emit('data-change');
   }
 }
 
 function removeCase(index: number) {
-  if (!props.node) return;
-  const condNode = treeModel.findNode(props.node.id);
-  const switchId = condNode?.parentOperatorId;
+  const switchId =
+    opNode.value?.type === 'SWITCH' ? opNode.value.id : elNode.value?.parentOperatorId;
   if (switchId && treeModel.removeCase(switchId, index)) {
     emit('data-change');
   }
@@ -227,6 +430,7 @@ function removeCase(index: number) {
 
 .cmp-props__title {
   display: flex;
+  gap: 6px;
   align-items: center;
   font-size: 14px;
   font-weight: 600;
@@ -234,10 +438,9 @@ function removeCase(index: number) {
 }
 
 .cmp-props__dot {
-  display: inline-block;
+  flex-shrink: 0;
   width: 10px;
   height: 10px;
-  margin-right: 6px;
   border-radius: 50%;
 }
 
@@ -276,6 +479,18 @@ function removeCase(index: number) {
   flex: 1;
   font-size: 12px;
   color: var(--el-text-color-primary);
+}
+
+.cmp-props__opt-desc {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+}
+
+.cmp-props__radio-col {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }
 
 .cmp-props__footer {

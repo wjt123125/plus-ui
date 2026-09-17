@@ -1,10 +1,11 @@
 # 当前工作状态
 
-- 阶段：databus 编辑器｜议题二交叉修复完成（补丁档，已验证），议题一删边重连规格定稿待启动
+- 阶段：databus 编辑器｜1C「试运行真执行」discuss 定稿待开工（知识文档已同步）；议题一删边重连规格定稿排队待启动
 - 状态：进行中
 - 最后更新：2026-09-16
 
 ## 当前 Todo
+- [ ] 1C 试运行真执行（**定稿待开工，代码未动**；清单见 `.trae/handoff/preview-run-loop.md` v2）：前端范围 = useElTreeModel 叶子 id 改注册名/tag=数据空间/序号默认名/renameDataSpace 联动；CmpProps「数据空间」字段；cmp-defs 撤 formula/boCreate、加 condition/setValue/fieldMap/response；mock-presets 换血（主示例本地 GET /auth/code、纯本地 flag 示例，导入即配齐 data）；previewRun API + 试运行/结果弹窗 + 按钮启用。等用户说「动手」，开工先后端
 - [ ] 议题一①：移除右键删边菜单项（CmpContextMenu.vue onDeleteEdge 一并清理），Delete 维持节点专用
 - [ ] 议题一②：选中边才显示 updater 的消歧 CSS（点线段→线头出现→拖拽）
 - [ ] 议题一③：控制器 reconnect 状态机（seq 重排 + 空槽移动 + pending 两拖交换 swap）
@@ -28,4 +29,4 @@
 - 本次收档按用户要求未跑 oxlint / vue-tsc
 
 ## 下次第一步
-- 暂无，等待确定下一阶段（议题一四件套规格现成，启动时从 ① 开始）
+- 等用户说「动手」启动 1C（顺序见 handoff v2 §4，先后端五件再前端）；议题一四件套规格现成，随时可插队，启动时从 ① 开始

@@ -4,10 +4,13 @@
  * 每个示例返回 CmpProperty 树，由 useElTreeModel.loadFromCmpProperty 解析为
  * ElNode 模型树，再投影为画布平级节点图；坐标交给 dagre 自动排列。
  *
- * 命名约定：key 用「算子-特征」小写中划线；name 用短语；desc 写清测试点。
+ * 标识规则（2026-09-16 修订）：
+ * - leaf.id 是组件注册名（httpRequest/condition/setValue/fieldMap/response，可重复）
+ * - leaf.properties.tag 是数据空间名（httpRequest1、condition1，画布唯一）
+ * - 布尔条件件 type 为 NodeBooleanComponent，其余业务件为 NodeComponent
  *
- * ⚠️ 所有 leaf 的 id 必须以已注册的业务组件 type 开头（httpRequest_ / formula_ / boCreate_），
- * 否则 resolveDefByCmpId 无法解析，会 fallback 成灰色 #909399。
+ * 可试运行性：desc 注明建议入参；标注「结构展示」的示例含本档不可执行的算子
+ * （SWITCH/FOR/ITERATOR/AND/OR/NOT/CHAIN），仅用于验证画布投影。
  */
 import type { CmpProperty } from '@/api/databus/el/types';
 
@@ -18,32 +21,111 @@ export interface MockPreset {
   build: () => CmpProperty;
 }
 
-/** 构造业务叶子节点（cmpId 即 LiteFlow nodeId，type 统一 NodeComponent）
- *  prefix 必须是已注册的 CmpDef.type（httpRequest / formula / boCreate），
- *  否则 resolveDefByCmpId 会 fallback 成灰色无样式。 */
-function leaf(prefix: string, name: string): CmpProperty {
-  return { id: `${prefix}_${name}`, type: 'NodeComponent' };
+/**
+ * 构造业务叶子。
+ * @param code      组件注册名（CmpProperty.id）
+ * @param dataSpace 数据空间名（properties.tag），如 httpRequest1
+ * @param cfg       组件配置（对象自动 JSON.stringify；字符串原样放入 data）
+ * @param asBoolean 是否为布尔条件件（NodeBooleanComponent）
+ */
+function leaf(code: string, dataSpace: string, cfg?: unknown, asBoolean = false): CmpProperty {
+  const node: CmpProperty = {
+    id: code,
+    type: asBoolean ? 'NodeBooleanComponent' : 'NodeComponent',
+    properties: { tag: dataSpace }
+  };
+  if (cfg !== undefined) {
+    node.properties!.data = typeof cfg === 'string' ? cfg : JSON.stringify(cfg);
+  }
+  return node;
+}
+
+/** IF 双分支包一层：真分支多节点时用 THEN 包裹 */
+function thenWrap(...children: CmpProperty[]): CmpProperty {
+  return { type: 'THEN', children };
 }
 
 export const MOCK_PRESETS: MockPreset[] = [
+  // ── 1C 试运行主示例 ──
+  {
+    key: 'preview-http-if',
+    name: '本地服务探测（试运行主示例）',
+    desc: '调本机 /auth/code，code=200 则映射验证码开关并返回成功，否则返回未就绪；入参留空 {} 即可',
+    build: () => ({
+      type: 'THEN',
+      children: [
+        leaf('httpRequest', 'httpRequest1', { method: 'GET', url: 'http://localhost:8080/auth/code' }),
+        {
+          type: 'IF',
+          condition: leaf(
+            'condition',
+            'condition1',
+            { path: '$.httpRequest1.response.code', op: 'eq', value: 200 },
+            true
+          ),
+          children: [
+            thenWrap(
+              leaf('fieldMap', 'fieldMap1', {
+                mappings: [
+                  {
+                    from: '$.httpRequest1.response.data.captchaEnabled',
+                    to: '$.fieldMap1.captchaEnabled'
+                  }
+                ]
+              }),
+              leaf('response', 'response1', {
+                result: true,
+                msg: '$.httpRequest1.response.msg',
+                dataPath: '$.fieldMap1'
+              })
+            ),
+            leaf('response', 'response2', { result: false, msg: '服务未就绪' })
+          ]
+        }
+      ]
+    })
+  },
+  {
+    key: 'local-flag',
+    name: '入参开关（纯本地，无外部依赖）',
+    desc: '按入参 flag 真假写不同赋值，建议入参 {"flag":true}',
+    build: () => ({
+      type: 'IF',
+      condition: leaf('condition', 'condition1', { path: '$.flag', op: 'isTrue' }, true),
+      children: [
+        leaf('setValue', 'setValue1', { path: '$.setValue1.out', value: 'flag 为真' }),
+        leaf('setValue', 'setValue2', { path: '$.setValue2.out', value: 'flag 为假' })
+      ]
+    })
+  },
+
   // ── 串行 ──
   {
     key: 'serial-all',
     name: '串行 THEN',
-    desc: 'Http→公式→BO，验证顺序边首尾串联',
+    desc: '请求→赋值→映射→响应四类真组件串联，建议入参 {}',
     build: () => ({
       type: 'THEN',
       children: [
-        leaf('httpRequest', 'demo'),
-        leaf('formula', 'demo'),
-        leaf('boCreate', 'demo')
+        leaf('httpRequest', 'httpRequest1', { method: 'GET', url: 'http://localhost:8080/auth/code' }),
+        leaf('setValue', 'setValue1', { path: '$.setValue1.note', value: '串行演示' }),
+        leaf('fieldMap', 'fieldMap1', {
+          mappings: [
+            { from: '$.httpRequest1.response.code', to: '$.fieldMap1.code' }
+          ]
+        }),
+        leaf('response', 'response1', {
+          result: true,
+          msg: '$.httpRequest1.response.msg',
+          dataPath: '$.fieldMap1'
+        })
       ]
     })
   },
   {
     key: 'then-empty',
     name: '空 THEN 占位',
-    desc: 'THEN 无 children，验证 placeholder 占位 + start 连边',
+    desc: 'THEN 无 children，验证 placeholder 占位 + start 连边（结构展示）',
     build: () => ({ type: 'THEN', children: [] })
   },
 
@@ -51,13 +133,13 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'when-parallel',
     name: '并行 WHEN',
-    desc: '三路扇出扇入，验证圆形网关 + junction 多入边',
+    desc: '三路赋值并行扇出扇入，建议入参 {}，验证圆形网关 + junction 多入边',
     build: () => ({
       type: 'WHEN',
       children: [
-        leaf('httpRequest', 'parallelA'),
-        leaf('formula', 'parallelB'),
-        leaf('boCreate', 'parallelC')
+        leaf('setValue', 'setValue1', { path: '$.setValue1.out', value: '并行 A' }),
+        leaf('setValue', 'setValue2', { path: '$.setValue2.out', value: '并行 B' }),
+        leaf('setValue', 'setValue3', { path: '$.setValue3.out', value: '并行 C' })
       ]
     })
   },
@@ -66,36 +148,46 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'if-branch',
     name: '条件 IF 双分支',
-    desc: 'IF(cond) 真分支公式 / 假分支 BO，验证菱形网关 + 两 outlet handle',
+    desc: '按入参 code 是否等于 200 走不同赋值，建议入参 {"code":200}',
     build: () => ({
       type: 'IF',
-      condition: leaf('formula', 'ifCond'),
-      children: [leaf('formula', 'ifTrue'), leaf('boCreate', 'ifFalse')]
+      condition: leaf(
+        'condition',
+        'condition1',
+        { path: '$.code', op: 'eq', value: 200 },
+        true
+      ),
+      children: [
+        leaf('setValue', 'setValue1', { path: '$.setValue1.result', value: 'code 命中' }),
+        leaf('setValue', 'setValue2', { path: '$.setValue2.result', value: 'code 未命中' })
+      ]
     })
   },
   {
     key: 'if-empty-false',
     name: 'IF 空假分支',
-    desc: '只有真分支，假分支用 placeholder 占位，验证空槽渲染',
+    desc: '只有真分支，假分支用 placeholder 占位；建议入参 {"flag":true}',
     build: () => ({
       type: 'IF',
-      condition: leaf('formula', 'ifCond'),
-      children: [leaf('formula', 'ifTrue')]
+      condition: leaf('condition', 'condition1', { path: '$.flag', op: 'isTrue' }, true),
+      children: [
+        leaf('setValue', 'setValue1', { path: '$.setValue1.out', value: '真分支执行' })
+      ]
     })
   },
 
-  // ── 选择 ──
+  // ── 选择（本档不可试运行，结构展示） ──
   {
     key: 'switch-multi',
     name: '选择 SWITCH 三 case',
-    desc: 'SWITCH(cond) 三个 case 扇出，验证多 outlet handle + 多入 junction',
+    desc: 'SWITCH 条件件本档暂不支持，仅验证多 outlet 菱形 + junction（结构展示）',
     build: () => ({
       type: 'SWITCH',
-      condition: leaf('formula', 'switchCond'),
+      condition: leaf('setValue', 'setValue0', { path: '$.setValue0.switchOn', value: '占位' }),
       children: [
-        leaf('httpRequest', 'case1'),
-        leaf('formula', 'case2'),
-        leaf('boCreate', 'case3')
+        leaf('setValue', 'setValue1', { path: '$.setValue1.out', value: 'case1' }),
+        leaf('setValue', 'setValue2', { path: '$.setValue2.out', value: 'case2' }),
+        leaf('setValue', 'setValue3', { path: '$.setValue3.out', value: 'case3' })
       ]
     })
   },
@@ -104,80 +196,102 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'for-loop',
     name: 'FOR 循环',
-    desc: 'FOR(cond) 循环体，验证循环网关 + DO 出口（不画回边）',
+    desc: 'FOR 条件件本档暂不支持，仅验证循环网关 + DO 出口（结构展示）',
     build: () => ({
       type: 'FOR',
-      condition: leaf('formula', 'forCond'),
-      children: [leaf('boCreate', 'forBody')]
+      condition: leaf('setValue', 'setValue0', { path: '$.setValue0.for', value: '占位' }),
+      children: [
+        leaf('setValue', 'setValue1', { path: '$.setValue1.out', value: '循环体' })
+      ]
     })
   },
   {
     key: 'while-loop',
-    name: 'WHILE 循环',
-    desc: 'WHILE(cond) 条件循环，验证循环网关',
+    name: 'WHILE 循环（零次执行安全示例）',
+    desc: '条件为假时循环体一次不执行，建议入参 {"flag":false}；flag=true 会死循环请勿试运行',
     build: () => ({
       type: 'WHILE',
-      condition: leaf('formula', 'whileCond'),
-      children: [leaf('boCreate', 'whileBody')]
+      condition: leaf('condition', 'condition1', { path: '$.flag', op: 'isTrue' }, true),
+      children: [
+        leaf('setValue', 'setValue1', { path: '$.setValue1.out', value: '循环体执行' })
+      ]
     })
   },
   {
     key: 'iterator-loop',
     name: 'ITERATOR 迭代',
-    desc: 'ITERATOR(cond) 迭代循环，验证迭代网关',
+    desc: 'ITERATOR 条件件本档暂不支持，仅验证迭代网关（结构展示）',
     build: () => ({
       type: 'ITERATOR',
-      condition: leaf('formula', 'iterCond'),
-      children: [leaf('boCreate', 'iterBody')]
+      condition: leaf('setValue', 'setValue0', { path: '$.setValue0.iter', value: '占位' }),
+      children: [
+        leaf('setValue', 'setValue1', { path: '$.setValue1.out', value: '迭代体' })
+      ]
     })
   },
 
   // ── 异常 ──
   {
     key: 'catch-flow',
-    name: 'CATCH 异常捕获',
-    desc: 'CATCH 主体 + 异常处理两路，验证异常网关 + 两 outlet',
+    name: 'CATCH 异常捕获（真触发异常分支）',
+    desc: '请求一个不存在的本地端口触发连接异常，由响应组件兜底，建议入参 {}',
     build: () => ({
       type: 'CATCH',
-      children: [leaf('httpRequest', 'tryBody'), leaf('boCreate', 'catchBody')]
+      children: [
+        leaf('httpRequest', 'httpRequest1', {
+          method: 'GET',
+          url: 'http://127.0.0.1:9999/no-such-service'
+        }),
+        leaf('response', 'response1', { result: false, msg: '下游不可用，已兜底' })
+      ]
     })
   },
   {
     key: 'catch-empty',
     name: 'CATCH 空异常槽',
-    desc: '只有主体，异常槽 placeholder 占位',
+    desc: '只有主体（正常赋值，不抛异常），异常槽 placeholder 占位；建议入参 {}',
     build: () => ({
       type: 'CATCH',
-      children: [leaf('httpRequest', 'tryBody')]
+      children: [
+        leaf('setValue', 'setValue1', { path: '$.setValue1.out', value: '正常执行' })
+      ]
     })
   },
 
-  // ── 逻辑 ──
+  // ── 逻辑（布尔编排需配合 IF 使用，本档仅结构展示） ──
   {
     key: 'and-logic',
     name: 'AND 与逻辑',
-    desc: 'AND 两路 + 符号，验证圆形网关 + 标签',
+    desc: 'AND 两个布尔条件件，建议入参 {"a":true,"b":true}；通常嵌在 IF 条件位使用（结构展示）',
     build: () => ({
       type: 'AND',
-      children: [leaf('formula', 'andLeft'), leaf('formula', 'andRight')]
+      children: [
+        leaf('condition', 'condition1', { path: '$.a', op: 'isTrue' }, true),
+        leaf('condition', 'condition2', { path: '$.b', op: 'isTrue' }, true)
+      ]
     })
   },
   {
     key: 'or-logic',
     name: 'OR 或逻辑',
-    desc: 'OR 两路 × 符号，验证圆形网关',
+    desc: 'OR 两个布尔条件件，建议入参 {"a":false,"b":true}（结构展示）',
     build: () => ({
       type: 'OR',
-      children: [leaf('formula', 'orLeft'), leaf('formula', 'orRight')]
+      children: [
+        leaf('condition', 'condition1', { path: '$.a', op: 'isTrue' }, true),
+        leaf('condition', 'condition2', { path: '$.b', op: 'isTrue' }, true)
+      ]
     })
   },
   {
     key: 'not-logic',
     name: 'NOT 非逻辑',
-    desc: 'NOT 单路 ¬ 符号，验证单 outlet 网关',
+    desc: 'NOT 对布尔条件件取反，建议入参 {"flag":false}（结构展示）',
     build: () => ({
       type: 'NOT',
-      children: [leaf('formula', 'notCond')]
+      children: [
+        leaf('condition', 'condition1', { path: '$.flag', op: 'isTrue' }, true)
+      ]
     })
   },
 
@@ -185,11 +299,11 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'chain-ref',
     name: 'CHAIN 子流程引用',
-    desc: 'THEN 内嵌子链引用 subChain_demo，验证 NodeComponent 作为子项被 LiteFlow 自动解析为 chain',
+    desc: '引用子链 subChain_demo（子链需在 chainMap 中存在），本档不可试运行（结构展示）',
     build: () => ({
       type: 'THEN',
       children: [
-        { id: 'boCreate_subChain_demo', type: 'NodeComponent', properties: { tag: 'subChain_demo' } }
+        { id: 'subChain_demo', type: 'NodeComponent', properties: { tag: 'subChain_demo' } }
       ]
     })
   },
@@ -198,36 +312,45 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'nested-complex',
     name: '嵌套综合',
-    desc: 'THEN(Http, IF(cond, [真分支, 假分支]), WHEN(并行两路))，验证多层嵌套投影',
+    desc: 'THEN(赋值, IF(flag 双分支), WHEN(并行两路))，建议入参 {"flag":true}',
     build: () => ({
       type: 'THEN',
       children: [
-        leaf('httpRequest', 'main'),
+        leaf('setValue', 'setValue0', { path: '$.setValue0.out', value: '串行头' }),
         {
           type: 'IF',
-          condition: leaf('formula', 'ifCond'),
-          children: [leaf('formula', 'ifTrue'), leaf('boCreate', 'ifFalse')]
+          condition: leaf('condition', 'condition1', { path: '$.flag', op: 'isTrue' }, true),
+          children: [
+            leaf('setValue', 'setValue1', { path: '$.setValue1.out', value: 'IF 真' }),
+            leaf('setValue', 'setValue2', { path: '$.setValue2.out', value: 'IF 假' })
+          ]
         },
         {
           type: 'WHEN',
-          children: [leaf('httpRequest', 'parallelA'), leaf('formula', 'parallelB')]
+          children: [
+            leaf('setValue', 'setValue3', { path: '$.setValue3.out', value: '并行 A' }),
+            leaf('setValue', 'setValue4', { path: '$.setValue4.out', value: '并行 B' })
+          ]
         }
       ]
     })
   },
   {
     key: 'nested-catch-in-then',
-    name: 'THEN 内嵌 CATCH',
-    desc: 'THEN(Http, CATCH(try, catch), BO)，验证异常网关在串行链中的连接',
+    name: 'THEN 内嵌 CATCH（正常路径）',
+    desc: 'THEN(赋值, CATCH(正常赋值, 兜底响应), 响应)，异常槽不触发，建议入参 {}',
     build: () => ({
       type: 'THEN',
       children: [
-        leaf('httpRequest', 'main'),
+        leaf('setValue', 'setValue1', { path: '$.setValue1.out', value: '串行头' }),
         {
           type: 'CATCH',
-          children: [leaf('httpRequest', 'tryBody'), leaf('boCreate', 'catchBody')]
+          children: [
+            leaf('setValue', 'setValue2', { path: '$.setValue2.out', value: 'try 主体' }),
+            leaf('response', 'response1', { result: false, msg: '进入异常处理' })
+          ]
         },
-        leaf('boCreate', 'tail')
+        leaf('response', 'response2', { result: true, msg: '主流程完成' })
       ]
     })
   }

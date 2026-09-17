@@ -24,7 +24,7 @@ import { computed } from 'vue';
 import { useVueFlow } from '@vue-flow/core';
 import { useElTreeModelInject, type ElNode } from '../composables/useElTreeModel';
 import { useCanvasController } from '../composables/useCanvasController';
-import { getDef, resolveDefByCmpId } from '../cmp-defs';
+import { getDef } from '../cmp-defs';
 
 defineOptions({ name: 'FlowOutline' });
 
@@ -64,11 +64,12 @@ function traverse(node: ElNode, depth: number, items: OutlineItem[]) {
       node.children.forEach((c) => c && traverse(c, depth + 1, items));
     }
   } else {
-    // 业务叶子
-    const leafDef = resolveDefByCmpId(node.cmpId ?? '');
+    // 业务叶子：componentCode 是注册名（查物料），cmpId 是数据空间名（右侧副标）；
+    // virtual（start/end）没有 componentCode，用 type 自身查
+    const leafDef = getDef(node.componentCode ?? node.type);
     items.push({
       id: node.id,
-      label: leafDef?.label ?? node.cmpId ?? node.type,
+      label: leafDef?.label ?? node.componentCode ?? node.type,
       sub: node.cmpId ?? '',
       color: leafDef?.color ?? '#909399',
       depth

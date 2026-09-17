@@ -41,13 +41,9 @@
         <el-button size="small" @click="resetCanvas">
           <el-icon class="el-icon--left"><Delete /></el-icon>清空
         </el-button>
-        <el-tooltip content="执行引擎骨架完成后开放" placement="bottom">
-          <span>
-            <el-button size="small" disabled>
-              <el-icon class="el-icon--left"><VideoPlay /></el-icon>试运行
-            </el-button>
-          </span>
-        </el-tooltip>
+        <el-button size="small" type="success" @click="openPreview">
+          <el-icon class="el-icon--left"><VideoPlay /></el-icon>试运行
+        </el-button>
         <el-button size="small" type="primary" :loading="saving" @click="saveAsEl">
           <el-icon class="el-icon--left"><Check /></el-icon>保存生成 EL
         </el-button>
@@ -100,7 +96,6 @@
           <el-tab-pane label="属性" name="props">
             <CmpProps
               :node="selectedNode"
-              :duplicate="selectedDuplicate"
               @delete="ctrl.requestDeleteNode($event)"
               @data-change="onPropsChange"
             />
@@ -124,8 +119,109 @@
         </el-descriptions-item>
       </el-descriptions>
       <template #footer>
-        <span class="databus-editor__dialog-hint">阶段 1 仅做 JSON→EL 转换；落库与试运行将在执行引擎骨架完成后接入。</span>
+        <span class="databus-editor__dialog-hint">当前仅生成 EL 表达式，链路尚未落库；可点「试运行」按 EL 真跑一次。</span>
         <el-button type="primary" @click="resultVisible = false">知道了</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 试运行：入参 JSON -->
+    <el-dialog v-model="previewVisible" title="试运行" width="620px" append-to-body>
+      <el-alert
+        title="按当前画布生成 EL 并直接真执行（不落库）。下方 JSON 即链路入参，作为上下文文档根。"
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 10px"
+      />
+      <el-input
+        v-model="previewRequest"
+        type="textarea"
+        :rows="10"
+        placeholder='链路入参 JSON，如 {"flag":true}'
+        class="databus-editor__preview-input"
+      />
+      <template #footer>
+        <el-button @click="previewVisible = false">取消</el-button>
+        <el-button type="success" :loading="previewRunning" @click="runPreview">执行</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 试运行：执行结果 -->
+    <el-dialog v-model="previewResultVisible" title="试运行结果" width="860px" append-to-body>
+      <template v-if="previewResult">
+        <el-alert
+          :title="resultBanner"
+          :type="previewResult.executed ? (previewResult.success ? 'success' : 'error') : 'warning'"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 10px"
+        />
+        <el-alert
+          v-if="previewResult.errorMessage"
+          :title="previewResult.errorMessage"
+          type="error"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 10px"
+        />
+        <el-alert
+          v-if="previewResult.valid === false && previewResult.message"
+          :title="previewResult.message"
+          type="warning"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 10px"
+        />
+
+        <el-descriptions :column="1" border size="small" style="margin-bottom: 10px">
+          <el-descriptions-item label="EL 表达式">
+            <el-input :model-value="previewResult.elStr" type="textarea" :rows="3" readonly />
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <template v-if="previewResult.executed">
+          <!-- response 组件产出 $.response 置顶高亮 -->
+          <template v-if="responsePart !== null">
+            <div class="databus-editor__response-title">$.response（流程响应）</div>
+            <el-input
+              :model-value="JSON.stringify(responsePart, null, 2)"
+              type="textarea"
+              :rows="4"
+              readonly
+              class="databus-editor__response-box"
+            />
+          </template>
+
+          <div class="databus-editor__section-title">
+            执行步骤（{{ previewResult.steps?.length ?? 0 }}）
+          </div>
+          <el-table :data="previewResult.steps ?? []" size="small" border style="margin-bottom: 10px">
+            <el-table-column type="index" label="#" width="42" />
+            <el-table-column label="数据空间" prop="tag" min-width="120" show-overflow-tooltip />
+            <el-table-column label="组件" prop="nodeId" min-width="100" show-overflow-tooltip />
+            <el-table-column label="结果" width="70">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.success ? 'success' : 'danger'">
+                  {{ row.success ? '成功' : '失败' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="耗时(ms)" prop="timeSpent" width="84" />
+            <el-table-column label="错误信息" prop="errorMessage" min-width="160" show-overflow-tooltip />
+          </el-table>
+
+          <div class="databus-editor__section-title">执行后上下文（JSON 快照）</div>
+          <el-input
+            :model-value="prettyContext"
+            type="textarea"
+            :rows="10"
+            readonly
+          />
+        </template>
+      </template>
+      <template #footer>
+        <el-button @click="previewResultVisible = false">关闭</el-button>
+        <el-button type="success" @click="reopenPreview">再跑一次</el-button>
       </template>
     </el-dialog>
   </div>
@@ -136,7 +232,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useVueFlow, type Node } from '@vue-flow/core';
 import { ArrowDown, Check, Delete, Expand, Files, Fold, RefreshLeft, RefreshRight, VideoPlay } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { generateEl } from '@/api/databus/el';
+import { generateEl, previewRun } from '@/api/databus/el';
+import type { PreviewRunVo } from '@/api/databus/el/types';
 import CmpPalette from './components/CmpPalette.vue';
 import FlowCanvas from './components/FlowCanvas.vue';
 import CmpProps from './components/CmpProps.vue';
@@ -250,16 +347,6 @@ watch(
   { immediate: true }
 );
 
-const selectedDuplicate = computed(() => {
-  const current = selectedNode.value;
-  if (!current || current.data.virtual) {
-    return false;
-  }
-  return getNodes.value.some(
-    (n) => n.id !== current.id && !n.data.virtual && (n.data as CmpNodeData).cmpId === current.data.cmpId
-  );
-});
-
 /** CmpProps 改参：重投影 + 入栈 + EL 预览刷新 */
 function onPropsChange() {
   ctrl.commit();
@@ -312,32 +399,34 @@ async function loadMock(key: string) {
   });
 }
 
-async function saveAsEl() {
+/** 画布上至少有一个真实（非虚拟）节点 */
+function ensureCanvasHasNodes(): boolean {
   const realNodes = getNodes.value.filter((n) => !(n.data as CmpNodeData).virtual);
   if (realNodes.length === 0) {
-    ElMessage.warning('画布上还没有真实组件，先从左侧拖入桩组件');
-    return;
+    ElMessage.warning('画布上还没有真实组件，先从左侧拖入或「载入示例」');
+    return false;
   }
-  const missingId = realNodes.find((n) => !(n.data as CmpNodeData).cmpId.trim());
-  if (missingId) {
-    ctrl.select(missingId.id);
-    ElMessage.error(`「${missingId.data.label}」的组件 ID 不能为空`);
-    return;
-  }
-  const idCount = new Map<string, number>();
-  realNodes.forEach((n) =>
-    idCount.set((n.data as CmpNodeData).cmpId, (idCount.get((n.data as CmpNodeData).cmpId) ?? 0) + 1)
-  );
-  let duplicatedId: string | null = null;
-  idCount.forEach((count, id) => {
-    if (duplicatedId === null && count > 1) {
-      duplicatedId = id;
+  return true;
+}
+
+/** 业务叶子数据空间名非空且唯一；有问题则选中并提示 */
+function ensureDataSpacesValid(): boolean {
+  const result = treeModel.validateDataSpaces();
+  if (result.ok === false) {
+    ctrl.select(result.nodeId);
+    if (result.reason === 'empty') {
+      ElMessage.error(`「${result.label}」的数据空间名不能为空`);
+    } else {
+      ElMessage.error(`数据空间名「${result.name}」重复，画布内必须唯一`);
     }
-  });
-  if (duplicatedId) {
-    ElMessage.error(`组件 ID「${duplicatedId}」重复，节点 ID 在同一链路中必须唯一`);
-    return;
+    return false;
   }
+  return true;
+}
+
+async function saveAsEl() {
+  if (!ensureCanvasHasNodes()) return;
+  if (!ensureDataSpacesValid()) return;
 
   // 直接从模型树序列化，不读画布 nodes/edges
   const cmpProperty = treeModel.toCmpProperty();
@@ -355,6 +444,91 @@ async function saveAsEl() {
     saving.value = false;
   }
 }
+
+// ── 试运行（1C：生成 EL → 校验 → 真执行，不落库） ──
+
+const previewVisible = ref(false);
+const previewRunning = ref(false);
+const previewRequest = ref('{}');
+const previewResultVisible = ref(false);
+const previewResult = ref<PreviewRunVo | null>(null);
+
+/** 打开试运行入参弹窗：画布非空且数据空间名合法 */
+function openPreview() {
+  if (!ensureCanvasHasNodes()) return;
+  if (!ensureDataSpacesValid()) return;
+  previewResult.value = null;
+  previewVisible.value = true;
+}
+
+async function runPreview() {
+  // 入参必须是合法 JSON（空文本按 {} 处理），顺手格式化回写
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(previewRequest.value.trim() || '{}');
+  } catch {
+    ElMessage.error('入参不是合法 JSON，请检查后再执行');
+    return;
+  }
+  previewRequest.value = JSON.stringify(parsed, null, 2);
+
+  if (!ensureDataSpacesValid()) {
+    previewVisible.value = false;
+    return;
+  }
+  const cmpProperty = treeModel.toCmpProperty();
+  if (!cmpProperty) {
+    ElMessage.warning('画布上还没有真实组件');
+    return;
+  }
+  previewRunning.value = true;
+  try {
+    const { data } = await previewRun({ jsonEl: cmpProperty, requestJson: previewRequest.value });
+    previewResult.value = data;
+    previewVisible.value = false;
+    previewResultVisible.value = true;
+  } finally {
+    previewRunning.value = false;
+  }
+}
+
+function reopenPreview() {
+  previewResultVisible.value = false;
+  previewVisible.value = true;
+}
+
+const resultBanner = computed(() => {
+  const r = previewResult.value;
+  if (!r) return '';
+  if (r.executed) return r.success ? '执行成功' : '执行失败（见步骤表与错误信息）';
+  return r.valid === false ? 'EL 校验未通过，未执行' : '未执行';
+});
+
+/** 上下文快照解析为对象（后端给的是 JSON 字符串） */
+const contextObj = computed<unknown>(() => {
+  const raw = previewResult.value?.contextJson;
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+});
+
+/** $.response 片段（response 组件固定写这里），置顶单独展示 */
+const responsePart = computed<unknown>(() => {
+  const obj = contextObj.value;
+  if (obj && typeof obj === 'object' && 'response' in obj) {
+    return (obj as Record<string, unknown>).response;
+  }
+  return null;
+});
+
+const prettyContext = computed(() => {
+  const obj = contextObj.value;
+  if (obj === null) return previewResult.value?.contextJson ?? '';
+  return JSON.stringify(obj, null, 2);
+});
 
 // 键盘快捷键组
 function isEditableTarget(el: EventTarget | null): boolean {
@@ -669,6 +843,35 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown));
 .databus-editor__mock-desc {
   font-size: 11px;
   color: var(--el-text-color-secondary);
+}
+
+.databus-editor__preview-input :deep(textarea) {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
+.databus-editor__section-title {
+  margin: 4px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.databus-editor__response-title {
+  margin: 4px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-color-success);
+}
+
+.databus-editor__response-box {
+  margin-bottom: 10px;
+}
+
+.databus-editor__response-box :deep(textarea) {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+  background-color: var(--el-color-success-light-9);
 }
 </style>
 

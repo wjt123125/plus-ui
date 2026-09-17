@@ -8,8 +8,8 @@
 import { inject, provide, reactive, ref, type InjectionKey, type Ref } from 'vue';
 import { useVueFlow, type Node, type Rect } from '@vue-flow/core';
 import { ElMessage } from 'element-plus';
-import { getDef } from '../cmp-defs';
-import { getPlaceholderHandle, getPlaceholderSlotIndex, GATEWAY_H, JUNCTION_H, NODE_GAP_Y, NODE_H, NODE_W, type CmpNodeData, type ElTreeModel, type EdgeTreeAnchor } from './useElTreeModel';
+import { getDef, isBooleanDef } from '../cmp-defs';
+import { getPlaceholderHandle, getPlaceholderSlotIndex, GATEWAY_H, GATEWAY_W, JUNCTION_H, NODE_GAP_Y, NODE_H, NODE_W, type CmpNodeData, type ElTreeModel, type EdgeTreeAnchor } from './useElTreeModel';
 
 /** 组件选择弹层的使用场景 */
 export type PickerMode = 'prepend' | 'append' | 'replace' | 'insertEdge';
@@ -55,7 +55,6 @@ interface CreateControllerOptions {
 /** 剪贴板条目：业务叶子的轻量快照（不含画布坐标，paste 时追加到树末尾） */
 interface ClipboardItem {
   defType: string;
-  tag: string;
   data: string;
 }
 
@@ -80,6 +79,8 @@ export interface CanvasController {
   closePicker: () => void;
   /** 弹层中选定某类组件后，按 mode 执行图修改 */
   pickDef: (defType: string) => void;
+  /** 属性面板给 IF/WHILE 挂载/替换布尔条件件，返回条件件画布 id */
+  attachCondition: (opId: string, defType: string) => string | null;
   openMenu: (payload: {
     x: number;
     y: number;
@@ -171,7 +172,45 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
 
   // ── 拖拽落画布 ──
   /**
+   * 指针中心是否落在 IF/SWITCH/循环的条件菱形网关上。
+   * 网关可能是算子自身（还没挂条件件）或独立的 condition 叶子（已挂），
+   * 返回画布节点；调用方再经树模型定位所属算子。
+   */
+  function findConditionGatewayAt(x: number, y: number): Node<CmpNodeData> | null {
+    const cx = x + NODE_W / 2;
+    const cy = y + NODE_H / 2;
+    for (const n of getNodes.value) {
+      if (n.type !== 'gateway') continue;
+      const d = n.data as CmpNodeData;
+      if (!d.isCondition) continue;
+      const w = n.dimensions?.width ?? GATEWAY_W;
+      const h = n.dimensions?.height ?? GATEWAY_H;
+      const p = n.computedPosition;
+      if (cx >= p.x && cx <= p.x + w && cy >= p.y && cy <= p.y + h) return n;
+    }
+    return null;
+  }
+
+  /** 把布尔条件物料挂到算子的 condition 位（已挂则替换组件类型，保留画布 id 与分支连线），返回条件件 id */
+  function attachCondition(opId: string, defType: string): string | null {
+    const opNode = treeModel.findNode(opId);
+    if (!opNode) return null;
+    if (!opNode.condition) {
+      const leaf = treeModel.makeLeaf(defType);
+      leaf.parentOperatorId = opNode.id;
+      opNode.condition = leaf;
+    } else {
+      treeModel.replaceNode(opNode.condition.id, defType);
+    }
+    return opNode.condition?.id ?? null;
+  }
+
+  /** 本档支持试运行的条件算子（条件件为 NodeBooleanComponent） */
+  const BOOLEAN_CONDITION_OPS = new Set(['IF', 'WHILE']);
+
+  /**
    * 拖业务/算子到画布，落点所见即所得（resolveDropTarget 统一裁决，与 dragover 高亮同源）：
+   * - 落在 IF/WHILE 条件菱形：挂/替换布尔条件件（条件槽护栏，只收 boolean 物料）
    * - 指针中心落在占位符虚框本体（含 4px 抗抖动）：填充该槽
    * - 落在边上（即使边连着空槽）：一律按边自身语义在线上插入（insertOnEdge）——
    *   不做「端点是占位符就改成填槽」的隐性重定向。空 THEN 邻接的 seq 边插入后
@@ -185,6 +224,39 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     if (!def) return;
     if (def.singleton && getNodes.value.some((n) => (n.data as CmpNodeData).defType === def.type)) {
       ElMessage.warning(`「${def.label}」在画布上只能存在一个`);
+      return;
+    }
+
+    // 条件槽护栏：布尔条件件只能进 IF/WHILE 的条件菱形；普通业务件不能进条件菱形
+    const condGateway = findConditionGatewayAt(x, y);
+    if (condGateway) {
+      const gwElNode = treeModel.findNode(condGateway.id);
+      const opNode =
+        gwElNode && getDef(gwElNode.type)?.operator
+          ? gwElNode
+          : gwElNode?.parentOperatorId
+            ? treeModel.findNode(gwElNode.parentOperatorId)
+            : null;
+      const opType = opNode?.type ?? '';
+      if (BOOLEAN_CONDITION_OPS.has(opType)) {
+        if (!isBooleanDef(def)) {
+          ElMessage.warning(`「${opType}」的条件槽只能放入「条件判断」组件`);
+          return;
+        }
+        const condId = attachCondition(opNode!.id, type);
+        if (condId) {
+          commit();
+          select(condId);
+          runAutoLayout({ fitView: false });
+        }
+        return;
+      }
+      // SWITCH/FOR/ITERATOR 条件件不是布尔组件，本档不支持配置
+      ElMessage.warning(`「${getDef(opType)?.label ?? opType}」的条件组件本档暂不支持配置`);
+      return;
+    }
+    if (isBooleanDef(def)) {
+      ElMessage.warning('「条件判断」是布尔组件，请拖到 IF/WHILE 的条件菱形槽位上');
       return;
     }
 
@@ -741,7 +813,8 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     if (selected.length === 0) return;
     clipboard.value = selected.map((n) => {
       const d = n.data as CmpNodeData;
-      return { defType: d.defType, tag: d.tag, data: d.data };
+      // 只复制物料类型与配置：粘贴时 makeLeaf 重新分配唯一数据空间名，避免重名
+      return { defType: d.defType, data: d.data };
     });
     canPaste.value = true;
   }
@@ -752,7 +825,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     const newIds: string[] = [];
     for (const item of items) {
       const leaf = treeModel.makeLeaf(item.defType);
-      treeModel.updateLeafData(leaf.id, { tag: item.tag, data: item.data });
+      treeModel.updateLeafData(leaf.id, { data: item.data });
       treeModel.appendChildToRoot(leaf);
       newIds.push(leaf.id);
     }
@@ -781,6 +854,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     openPicker,
     closePicker,
     pickDef,
+    attachCondition,
     openMenu,
     closeMenu,
     requestDeleteNode,
