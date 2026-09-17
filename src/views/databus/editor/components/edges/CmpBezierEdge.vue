@@ -20,8 +20,25 @@
       stroke-width="20"
       @mouseenter="onHoverEnter"
       @mouseleave="onHoverLeave"
+      @dblclick="onDblClick"
     />
     <EdgeLabelRenderer>
+      <span
+        v-if="label && !editing"
+        class="cmp-edge-label"
+        :style="{ transform: `translate(-50%, -50%) translate(${edgePath[1]}px, ${edgePath[2] - 16}px)` }"
+      >{{ label }}</span>
+      <input
+        v-if="editing"
+        ref="inputRef"
+        v-model="inputValue"
+        class="cmp-edge-input"
+        :style="{ transform: `translate(-50%, -50%) translate(${edgePath[1]}px, ${edgePath[2] - 16}px)` }"
+        type="text"
+        @keydown.enter="confirmEdit"
+        @keydown.esc.prevent="cancelEdit"
+        @blur="confirmEdit"
+      >
       <button
         type="button"
         class="cmp-edge-add"
@@ -43,7 +60,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@vue-flow/core';
 import { Plus } from '@element-plus/icons-vue';
 import { useCanvasController } from '../../composables/useCanvasController';
@@ -54,6 +71,11 @@ const props = defineProps<EdgeProps>();
 
 const ctrl = useCanvasController();
 const hover = ref(false);
+// 双击 inline 编辑 label：进入编辑态时 label span 切换为 input，
+// 回车/失焦确认（空字符串 = 恢复默认 label），ESC 取消
+const editing = ref(false);
+const inputValue = ref('');
+const inputRef = ref<HTMLInputElement | null>(null);
 // 拖业务节点经过本边时，由 useCanvasController.dragOverEdgeId 驱动显示 + 圆圈
 const dragOverMe = computed(() => ctrl.dragOverEdgeId.value === props.id);
 // 本边的「线上插入」物料面板打开期间圆圈保持常亮：面板遮罩会盖住画布、立刻打断 hover，
@@ -94,9 +116,67 @@ const edgePath = computed(() =>
 function onAdd(event: MouseEvent) {
   ctrl.openPicker({ x: event.clientX, y: event.clientY, mode: 'insertEdge', edgeId: props.id });
 }
+
+// 只有带 branchIndex 的边（branch/jump/merge）才能改 label；
+// seq 边（THEN 串行）没有 outlet 概念，双击静默忽略
+const isEditableEdge = computed(() => {
+  const data = props.data as { treeAnchor?: { branchIndex?: number } } | undefined;
+  return data?.treeAnchor?.branchIndex !== undefined;
+});
+
+function onDblClick() {
+  if (!isEditableEdge.value) return;
+  inputValue.value = (props.label as string | undefined) ?? '';
+  editing.value = true;
+  nextTick(() => {
+    inputRef.value?.focus();
+    inputRef.value?.select();
+  });
+}
+
+function confirmEdit() {
+  if (!editing.value) return;
+  editing.value = false;
+  ctrl.updateEdgeLabel(props.id as string, inputValue.value);
+}
+
+function cancelEdit() {
+  editing.value = false;
+}
 </script>
 
 <style scoped>
+.cmp-edge-label {
+  position: absolute;
+  z-index: 4;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--el-text-color-regular);
+  white-space: nowrap;
+  pointer-events: none;
+  background-color: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+/* 双击 inline 编辑 label 时的输入框：主色描边 + 轻光晕，z-index 高于 label 和 + 按钮 */
+.cmp-edge-input {
+  position: absolute;
+  z-index: 6;
+  width: 120px;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--el-text-color-regular);
+  background-color: var(--el-bg-color);
+  border: 1px solid var(--el-color-primary);
+  border-radius: 3px;
+  box-shadow: 0 0 0 3px rgb(64 158 255 / 18%);
+  outline: none;
+}
+
 .cmp-edge-add {
   position: absolute;
   z-index: 5; /* 在 edges 容器内提到最高，减少被其他 edge 元素遮挡 */

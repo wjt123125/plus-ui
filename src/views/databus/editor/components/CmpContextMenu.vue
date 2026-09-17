@@ -30,10 +30,6 @@
         <li class="cmp-ctx-menu__item" @click="openPickerAt('insertEdge')">
           <el-icon><Plus /></el-icon><span>插入节点</span>
         </li>
-        <li class="cmp-ctx-menu__divider" />
-        <li class="cmp-ctx-menu__item is-danger" @click="onDeleteEdge">
-          <el-icon><Delete /></el-icon><span>删除连线</span>
-        </li>
       </template>
 
       <template v-else>
@@ -115,12 +111,6 @@ function onDeleteNode() {
   const nodeId = ctrl.menu.nodeId ?? undefined;
   ctrl.closeMenu();
   void ctrl.requestDeleteNode(nodeId);
-}
-
-function onDeleteEdge() {
-  const edgeId = ctrl.menu.edgeId ?? undefined;
-  ctrl.closeMenu();
-  ctrl.requestDeleteEdge(edgeId);
 }
 
 function onSelectAll() {

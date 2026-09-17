@@ -11,9 +11,7 @@
       :nodes-draggable="true"
       :nodes-connectable="true"
       :elements-selectable="true"
-      :edges-updatable="true"
       :connection-radius="24"
-      :edge-updater-radius="14"
       :node-drag-threshold="6"
       fit-view-on-init
       :min-zoom="0.2"
@@ -38,7 +36,6 @@ import {
   MarkerType,
   VueFlow,
   useVueFlow,
-  type Connection,
   type Edge,
   type Node
 } from '@vue-flow/core';
@@ -91,46 +88,19 @@ const defaultEdgeOptions = {
 
 const {
   screenToFlowCoordinate,
-  findEdge,
   addEdges,
-  getEdges,
   onNodeClick,
+  onEdgeClick,
   onPaneClick,
-  onConnect,
-  onEdgeUpdate,
-  onEdgeUpdateStart,
-  onEdgeUpdateEnd
+  onConnect
 } = useVueFlow();
 
 // 拖拽过程中的落点高亮（边 + 圆圈 / 占位符槽位高亮），与 insertNodeAt 共用 resolveDropTarget
 const ctrl = useCanvasController();
 
-// 重连期间排除旧边自身，避免被线性校验误判为端点占用
-let reconnectingEdgeId: string | null = null;
-onEdgeUpdateStart(({ edge }) => {
-  reconnectingEdgeId = edge.id;
-});
-onEdgeUpdateEnd(() => {
-  reconnectingEdgeId = null;
-});
-
-// 官方模式：action 改内部 state，store 自动同步
+// onConnect 直接添加，去重交给 VueFlow 默认 connectionExists（同 source+sourceHandle+target+targetHandle 才拒）
 onConnect((connection) => {
-  if (isValidConnection(connection)) {
-    addEdges([{ ...connection, ...defaultEdgeOptions }]);
-  }
-});
-
-// 边端点重连：直接改 GraphEdge 响应式属性（官方 Updating Edge Data 方式）
-onEdgeUpdate(({ edge, connection }) => {
-  const gEdge = findEdge(edge.id);
-  if (!gEdge) {
-    return;
-  }
-  gEdge.source = connection.source;
-  gEdge.target = connection.target;
-  gEdge.sourceHandle = connection.sourceHandle ?? null;
-  gEdge.targetHandle = connection.targetHandle ?? null;
+  addEdges([{ ...connection, ...defaultEdgeOptions }]);
 });
 
 function miniMapNodeColor(node: Node) {
@@ -162,28 +132,8 @@ function onDrop(event: DragEvent) {
   emit('drop-node', { type, x: position.x - NODE_W / 2, y: position.y - NODE_H / 2 });
 }
 
-/**
- * 手连线合法性：
- * - 不允许自连；
- * - 每个出口（source + sourceHandle）至多一条出边、每个入口至多一条入边——
- *   网关节点的每个分支 handle 各占一个槽位，因此分支扇出不受限，只禁止同一槽位重复接线；
- * - 重连过程中排除旧边自身，否则旧边会把新位置误判成槽位已占用。
- */
-function isValidConnection(conn: Connection): boolean {
-  return !!(
-    conn.source &&
-    conn.target &&
-    conn.source !== conn.target &&
-    !getEdges.value.some(
-      (e) =>
-        e.id !== reconnectingEdgeId &&
-        ((e.source === conn.source && e.sourceHandle === conn.sourceHandle) ||
-          (e.target === conn.target && e.targetHandle === conn.targetHandle))
-    )
-  );
-}
-
 onNodeClick(({ node }) => emit('select', node.id));
+onEdgeClick(({ edge }) => emit('select', edge.id));
 onPaneClick(() => emit('select', null));
 </script>
 
@@ -193,5 +143,12 @@ onPaneClick(() => emit('select', null));
   width: 100%;
   height: 100%;
   min-width: 0;
+}
+
+/* 选中消歧：未选中边的重连圆点不可点击（避免多线共端点时抓错线）；
+   选中边圆点可抓，视觉用 VueFlow 默认（透明不可见，hover 边端点附近能抓） */
+.flow-canvas :deep(.vue-flow__edge:not(.selected) .vue-flow__edgeupdater) {
+  opacity: 0;
+  pointer-events: none;
 }
 </style>

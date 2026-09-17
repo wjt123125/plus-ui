@@ -9,7 +9,7 @@ import { inject, provide, reactive, ref, type InjectionKey, type Ref } from 'vue
 import { useVueFlow, type Node, type Rect } from '@vue-flow/core';
 import { ElMessage } from 'element-plus';
 import { getDef, isBooleanDef } from '../cmp-defs';
-import { getPlaceholderHandle, getPlaceholderSlotIndex, GATEWAY_H, GATEWAY_W, JUNCTION_H, NODE_GAP_Y, NODE_H, NODE_W, type CmpNodeData, type ElTreeModel, type EdgeTreeAnchor } from './useElTreeModel';
+import { getPlaceholderHandle, getPlaceholderSlotIndex, GATEWAY_H, GATEWAY_W, JUNCTION_H, JUNCTION_W, NODE_GAP_Y, NODE_H, NODE_W, type CmpNodeData, type ElNode, type ElTreeModel, type EdgeTreeAnchor } from './useElTreeModel';
 
 /** 组件选择弹层的使用场景 */
 export type PickerMode = 'prepend' | 'append' | 'replace' | 'insertEdge';
@@ -90,13 +90,14 @@ export interface CanvasController {
   }) => void;
   closeMenu: () => void;
   requestDeleteNode: (id?: string) => Promise<void>;
-  requestDeleteEdge: (id?: string) => void;
   copy: (nodeId?: string) => void;
   paste: () => void;
   selectAll: () => void;
   deselect: () => void;
   /** 属性面板编辑后调：重投影 + 入栈 + EL 预览刷新 */
   commit: () => void;
+  /** 双击边/属性面板编辑边 label：通过 edge.data.treeAnchor 定位父算子 → 改 outletLabels[branchIndex] → 重投影 */
+  updateEdgeLabel: (edgeId: string, newLabel: string) => void;
   /** 一键 dagre 排列全图，坐标同步写回树缓存（跨重投影保留） */
   autoLayout: () => void;
   /** 拖拽过程中当前命中的 edge id（CmpBezierEdge 显示 + 圆圈）；与占位符命中互斥 */
@@ -114,7 +115,7 @@ export const CANVAS_CTRL_KEY = Symbol('canvas-controller') as InjectionKey<Canva
 
 export function createCanvasController(options: CreateControllerOptions): CanvasController {
   const { treeModel, pushHistory, autoLayout: runAutoLayout } = options;
-  const { getNodes, getEdges, findNode, findEdge, removeEdges, setNodes, setEdges, addSelectedNodes, getIntersectingNodes } =
+  const { getNodes, getEdges, findNode, findEdge, setNodes, setEdges, addSelectedNodes, getIntersectingNodes } =
     useVueFlow();
 
   const selectedId = ref<string | null>(null);
@@ -163,6 +164,18 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     reproject();
     pushHistory();
     options.onCommit?.();
+  }
+
+  /** 双击边/属性面板编辑边 label：
+   *  treeAnchor.branchIndex 定位 outlet → 改 outletLabels[branchIndex] → commit 重投影。
+   *  seq 边（无 branchIndex）不响应——它不是分支边，没有可编辑的 outlet label。 */
+  function updateEdgeLabel(edgeId: string, newLabel: string) {
+    const edge = findEdge(edgeId);
+    if (!edge) return;
+    const anchor = (edge.data as { treeAnchor?: EdgeTreeAnchor } | undefined)?.treeAnchor;
+    if (!anchor || anchor.branchIndex === undefined) return;
+    treeModel.updateOutletLabel(anchor.parentId, anchor.branchIndex, newLabel);
+    commit();
   }
 
   /** 一键 dagre 排列全图（含 fitView + 写回坐标缓存） */
@@ -367,8 +380,14 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
   /**
    * 落点命中检测：返回与新节点矩形最近距离 <10px 的 edge id（无则 null）。
    * 命中体用新节点矩形 9 点采样（4 角 + 4 边中点 + 中心）——视觉语义即"拖拽中的节点本体靠近边"，
-   * 而非鼠标点靠近，体感更直观。VueFlow 无"点是否在 edge 上"的官方 API，需自写点到线段距离。
-   * 边端点节点（source/target）中心用 computedPosition + dimensions 计算（已应用 extent 钳制等派生计算）。
+   * 而非鼠标点靠近，体感更直观。VueFlow 无"点是否在 edge 上"的官方 API，需自写距离检测。
+   *
+   * 距离必须量到「屏幕上真正画出来的贝塞尔曲线」（edgeRenderedPolyline 按 handle 物理位置
+   * 复算端点、三次贝塞尔分段采样），不能量节点中心连直线：网关扇出边起点是菱形底边按
+   * outlet 分布的 handle（最大偏移半宽 28px），终点是分支节点顶边中点，中心连线相对实际
+   * 曲线在整条扇出边上系统错位 14~40px——旧直线算法对扇出边几乎永远进不了 10px 阈值，
+   * 表现为拖到扇出线上松手却追加到主链末尾、或错命中相邻的汇合边（节点跑到分支下面那条线）。
+   * 端点节点用 computedPosition + dimensions（已应用 extent 钳制等派生计算）。
    */
   function findEdgeAt(x: number, y: number): string | null {
     const samples: ReadonlyArray<readonly [number, number]> = [
@@ -383,21 +402,14 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
       [x + NODE_W / 2, y + NODE_H / 2]
     ];
     let bestId: string | null = null;
-    let bestDist = 10; // 阈值 10px：采样点已覆盖整个节点矩形，阈值大就过度敏感
+    let bestDist = EDGE_HIT_PAD;
     for (const edge of getEdges.value) {
       const s = getNodes.value.find((n) => n.id === edge.source);
       const t = getNodes.value.find((n) => n.id === edge.target);
       if (!s || !t) continue;
-      const w1 = s.dimensions?.width ?? NODE_W;
-      const h1 = s.dimensions?.height ?? NODE_H;
-      const w2 = t.dimensions?.width ?? NODE_W;
-      const h2 = t.dimensions?.height ?? NODE_H;
-      const p1x = s.computedPosition.x + w1 / 2;
-      const p1y = s.computedPosition.y + h1 / 2;
-      const p2x = t.computedPosition.x + w2 / 2;
-      const p2y = t.computedPosition.y + h2 / 2;
+      const polyline = edgeRenderedPolyline(edge, s, t);
       for (const [px, py] of samples) {
-        const d = pointToSegmentDistance(px, py, p1x, p1y, p2x, p2y);
+        const d = pointToPolylineDistance(px, py, polyline);
         if (d < bestDist) {
           bestDist = d;
           bestId = edge.id;
@@ -405,6 +417,98 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
       }
     }
     return bestId;
+  }
+
+  /** 边命中阈值（px）：9 个采样点已覆盖整个拖拽矩形，阈值大就过度敏感 */
+  const EDGE_HIT_PAD = 10;
+  /** 贝塞尔命中检测分段数：24 段在最大扇出跨度上折线误差远小于 1px */
+  const BEZIER_HIT_STEPS = 24;
+
+  /** findEdgeAt 需要的节点结构（结构化类型，getNodes 的 GraphNode 天然满足） */
+  interface EdgeHitNode {
+    type?: string;
+    computedPosition: { x: number; y: number };
+    dimensions?: { width?: number; height?: number };
+    data?: unknown;
+  }
+
+  /** 尺寸兜底（dimensions 未测出时），与 useAutoLayout 的 SIZE_MAP 同源 */
+  function fallbackNodeSize(nodeType?: string): { w: number; h: number } {
+    if (nodeType === 'gateway') return { w: GATEWAY_W, h: GATEWAY_H };
+    if (nodeType === 'junction') return { w: JUNCTION_W, h: JUNCTION_H };
+    return { w: NODE_W, h: NODE_H };
+  }
+
+  /**
+   * 复算一条边实际渲染的贝塞尔端点（flow 坐标），与 CmpBezierEdge → getBezierPath 同源：
+   * - target：四类节点（cmp/gateway/junction/placeholder）的 target handle 全是
+   *   Position.Top 居中 → 顶边中点
+   * - source：gateway 底边 outlet handle 按 left%=i/(n-1)*100 物理分布
+   *   （GatewayNode.handleStyle 钉死），按 edge.sourceHandle 取对应 outlet；
+   *   其余节点都是 Position.Bottom 居中 → 底边中点
+   */
+  function edgeRenderedEndpoints(
+    edge: { sourceHandle?: string | null },
+    s: EdgeHitNode,
+    t: EdgeHitNode
+  ): { sx: number; sy: number; tx: number; ty: number } {
+    const sf = fallbackNodeSize(s.type);
+    const sw = s.dimensions?.width ?? sf.w;
+    const sh = s.dimensions?.height ?? sf.h;
+    const tf = fallbackNodeSize(t.type);
+    const tw = t.dimensions?.width ?? tf.w;
+
+    let sx = s.computedPosition.x + sw / 2;
+    const sy = s.computedPosition.y + sh;
+    if (s.type === 'gateway' && edge.sourceHandle) {
+      const outlets = (s.data as CmpNodeData | undefined)?.outlets ?? [];
+      const idx = outlets.findIndex((o) => o.handle === edge.sourceHandle);
+      if (idx >= 0) {
+        const n = outlets.length;
+        const leftPct = n <= 1 ? 0.5 : idx / (n - 1);
+        sx = s.computedPosition.x + sw * leftPct;
+      }
+    }
+    return { sx, sy, tx: t.computedPosition.x + tw / 2, ty: t.computedPosition.y };
+  }
+
+  /**
+   * 把边实际绘制的三次贝塞尔拍扁成折线采样点。控制点与 @vue-flow/core 的
+   * getBezierPath（Bottom→Top、距离正向）一致：calculateControlOffset 返回
+   * 0.5*distance，故 cp1=(sx, 中)、cp2=(tx, 中)。TB 布局下边始终向下，无反向分支。
+   */
+  function edgeRenderedPolyline(
+    edge: { sourceHandle?: string | null },
+    s: EdgeHitNode,
+    t: EdgeHitNode
+  ): Array<[number, number]> {
+    const { sx, sy, tx, ty } = edgeRenderedEndpoints(edge, s, t);
+    const midY = (sy + ty) / 2;
+    const pts: Array<[number, number]> = [];
+    for (let i = 0; i <= BEZIER_HIT_STEPS; i++) {
+      const u = i / BEZIER_HIT_STEPS;
+      const inv = 1 - u;
+      const px =
+        inv ** 3 * sx + 3 * inv * inv * u * sx + 3 * inv * u * u * tx + u ** 3 * tx;
+      const py =
+        inv ** 3 * sy + 3 * inv * inv * u * midY + 3 * inv * u * u * midY + u ** 3 * ty;
+      pts.push([px, py]);
+    }
+    return pts;
+  }
+
+  /** 点到折线（贝塞尔采样点串）的最短距离 */
+  function pointToPolylineDistance(
+    px: number,
+    py: number,
+    pts: ReadonlyArray<readonly [number, number]>
+  ): number {
+    let min = Infinity;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const d = pointToSegmentDistance(px, py, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
+      if (d < min) min = d;
+    }
+    return min;
   }
 
   function pointToSegmentDistance(
@@ -581,8 +685,9 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
    * 四种边 kind 各有处理：
    *   seq   → THEN 串行边（含空 THEN 虚框邻接的两条）：splice 到 parent.children[seqToIndex]，
    *            新节点进外层链路，空槽虚框原样保留（点/拖的是边，就只做线上插入，不替用户填槽）
-   *   branch → gateway→child（分支非空）：把 children[branchIndex] 包装成 THEN(old, new)
-   *   merge  → child→junction：非空分支同 branch；空分支（虚框→junction）走 jump 同款保槽包装
+   *   branch → gateway→child（分支非空）：扇出边上的点在分支首节点之前，包装成 THEN(new, old)
+   *   merge  → child→junction：汇合边上的点在分支末节点之后，包装成 THEN(old, new)；
+   *            空分支（虚框→junction）走 jump 同款保槽包装
    *   jump   → gateway→虚框（空分支）：包装成 THEN(newNode + 尾部空槽)，
    *            新节点在线上、虚框下移保留——不替用户把空槽填掉
    */
@@ -631,14 +736,20 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
       // 不直接填槽（那会吃掉虚框）：包装成 THEN(newNode + 尾部空槽)，
       // 新节点落在分支线上、虚框下移保留（用户可继续往框里填或在后续 seq 边上插）。
       wrapEmptyBranch(parentNode, anchor.branchIndex ?? 0, newNode, anchor.parentId);
-    } else {
-      // ── branch / merge：分支边 ──
+    } else if (kind === 'branch' || kind === 'merge') {
+      // ── 分支边：把分支内容包装成 THEN，新节点的先后由边的方向决定 ──
       const idx = anchor.branchIndex ?? 0;
       const oldChild = parentNode.children[idx];
       if (oldChild) {
-        // 非空分支：包装成 THEN(old, new)
+        // 非空分支：branch 是网关→首节点的扇出边，新节点必须在老内容之前 THEN(new, old)；
+        // merge 是末节点→junction 的汇合边，新节点在老内容之后 THEN(old, new)。
+        // 两种边都 push(old, new) 会导致扇出线上插入的节点落到分支节点下面的汇合线。
         const wrapThen = treeModel.makeThen();
-        wrapThen.children!.push(oldChild, newNode);
+        if (kind === 'branch') {
+          wrapThen.children!.push(newNode, oldChild);
+        } else {
+          wrapThen.children!.push(oldChild, newNode);
+        }
         wrapThen.parentOperatorId = anchor.parentId;
         oldChild.parentOperatorId = wrapThen.id;
         newNode.parentOperatorId = wrapThen.id;
@@ -790,16 +901,6 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     }
   }
 
-  /**
-   * 删除连线：边是模型树的投影产物，不对应树里的可删数据，
-   * 因此这里只从当前视图移除，下次重投影会按树结构重新生成。
-   */
-  function requestDeleteEdge(id?: string) {
-    const edgeId = id ?? menu.edgeId;
-    if (!edgeId) return;
-    removeEdges([edgeId]);
-  }
-
   // ── 剪贴板（仅业务叶子，paste 时追加到树末尾） ──
 
   function copy(nodeId?: string) {
@@ -858,12 +959,12 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     openMenu,
     closeMenu,
     requestDeleteNode,
-    requestDeleteEdge,
     copy,
     paste,
     selectAll,
     deselect,
     commit,
+    updateEdgeLabel,
     autoLayout,
     dragOverEdgeId,
     dragOverPlaceholderId,

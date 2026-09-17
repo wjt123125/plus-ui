@@ -16,6 +16,9 @@ export interface CmpProperties {
   id?: string;
   tag?: string;
   data?: string;
+  /** 算子出口 label 自定义（按 branchIndex 存）；前端编辑态字段，
+   *  序列化时写入算子 properties.outletLabels，后端往返需保留未知字段 */
+  outletLabels?: string[];
 }
 
 /**

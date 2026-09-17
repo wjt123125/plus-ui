@@ -9,7 +9,8 @@
  * - leaf.properties.tag 是数据空间名（httpRequest1、condition1，画布唯一）
  * - 布尔条件件 type 为 NodeBooleanComponent，其余业务件为 NodeComponent
  *
- * 可试运行性：desc 注明建议入参；标注「结构展示」的示例含本档不可执行的算子
+ * 可试运行性：有入参依赖的示例在 inputJson 提供入参 JSON，打开试运行弹窗时自动预填，
+ * 无需手敲；标注「结构展示」的示例含本档不可执行的算子
  * （SWITCH/FOR/ITERATOR/AND/OR/NOT/CHAIN），仅用于验证画布投影。
  */
 import type { CmpProperty } from '@/api/databus/el/types';
@@ -18,6 +19,8 @@ export interface MockPreset {
   key: string;
   name: string;
   desc: string;
+  /** 示例入参 JSON 字符串，试运行弹窗打开时预填 requestJson；无入参依赖的示例不填 */
+  inputJson?: string;
   build: () => CmpProperty;
 }
 
@@ -50,7 +53,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'preview-http-if',
     name: '本地服务探测（试运行主示例）',
-    desc: '调本机 /auth/code，code=200 则映射验证码开关并返回成功，否则返回未就绪；入参留空 {} 即可',
+    desc: '调本机 /auth/code，code=200 则映射验证码开关并返回成功，否则返回未就绪',
     build: () => ({
       type: 'THEN',
       children: [
@@ -85,10 +88,54 @@ export const MOCK_PRESETS: MockPreset[] = [
       ]
     })
   },
+
+  // ── BPM 业务主线（需 BPM 环境可试运行） ──
+  {
+    key: 'bpm-flow',
+    name: 'BPM 全链路（需 BPM 环境）',
+    desc: '调 BPM 端总线 app 四件套（需先执行 bpm-default 种子 SQL、BPM 容器可达且总线 app 已部署，bindId/processDefId 按真实环境改）',
+    inputJson: '{"request":{"password":"1","code":"D001","users":[{"NAME":"张三"}]}}',
+    build: () => ({
+      type: 'THEN',
+      children: [
+        leaf('sessionCreate', 'sessionCreate1', {
+          connectionId: 'bpm-default',
+          userName: 'admin',
+          password: '$.request.password'
+        }),
+        leaf('boCreate', 'boCreate1', {
+          connectionId: 'bpm-default',
+          method: 'create',
+          bindId: 'bo-001',
+          uid: 'admin',
+          boList: [
+            {
+              boName: 'UserBO',
+              sourcePath: '$.request.users',
+              rewrite: { strategy: 'all', path: '$.response.users' }
+            }
+          ]
+        }),
+        leaf('processStart', 'processStart1', {
+          connectionId: 'bpm-default',
+          processDefId: 'proc-001',
+          uid: 'admin',
+          title: '申请-${$.request.code}'
+        }),
+        leaf('taskComplete', 'taskComplete1', {
+          connectionId: 'bpm-default',
+          processInstanceId: '$.processStart1.processInstanceId',
+          uid: 'admin',
+          failOnError: false
+        })
+      ]
+    })
+  },
   {
     key: 'local-flag',
     name: '入参开关（纯本地，无外部依赖）',
-    desc: '按入参 flag 真假写不同赋值，建议入参 {"flag":true}',
+    desc: '按入参 flag 真假写不同赋值',
+    inputJson: '{"flag":true}',
     build: () => ({
       type: 'IF',
       condition: leaf('condition', 'condition1', { path: '$.flag', op: 'isTrue' }, true),
@@ -103,7 +150,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'serial-all',
     name: '串行 THEN',
-    desc: '请求→赋值→映射→响应四类真组件串联，建议入参 {}',
+    desc: '请求→赋值→映射→响应四类真组件串联',
     build: () => ({
       type: 'THEN',
       children: [
@@ -133,7 +180,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'when-parallel',
     name: '并行 WHEN',
-    desc: '三路赋值并行扇出扇入，建议入参 {}，验证圆形网关 + junction 多入边',
+    desc: '三路赋值并行扇出扇入，验证圆形网关 + junction 多入边',
     build: () => ({
       type: 'WHEN',
       children: [
@@ -148,7 +195,8 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'if-branch',
     name: '条件 IF 双分支',
-    desc: '按入参 code 是否等于 200 走不同赋值，建议入参 {"code":200}',
+    desc: '按入参 code 是否等于 200 走不同赋值',
+    inputJson: '{"code":200}',
     build: () => ({
       type: 'IF',
       condition: leaf(
@@ -166,7 +214,8 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'if-empty-false',
     name: 'IF 空假分支',
-    desc: '只有真分支，假分支用 placeholder 占位；建议入参 {"flag":true}',
+    desc: '只有真分支，假分支用 placeholder 占位',
+    inputJson: '{"flag":true}',
     build: () => ({
       type: 'IF',
       condition: leaf('condition', 'condition1', { path: '$.flag', op: 'isTrue' }, true),
@@ -208,7 +257,8 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'while-loop',
     name: 'WHILE 循环（零次执行安全示例）',
-    desc: '条件为假时循环体一次不执行，建议入参 {"flag":false}；flag=true 会死循环请勿试运行',
+    desc: '条件为假时循环体一次不执行；flag=true 会死循环请勿试运行',
+    inputJson: '{"flag":false}',
     build: () => ({
       type: 'WHILE',
       condition: leaf('condition', 'condition1', { path: '$.flag', op: 'isTrue' }, true),
@@ -234,7 +284,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'catch-flow',
     name: 'CATCH 异常捕获（真触发异常分支）',
-    desc: '请求一个不存在的本地端口触发连接异常，由响应组件兜底，建议入参 {}',
+    desc: '请求一个不存在的本地端口触发连接异常，由响应组件兜底',
     build: () => ({
       type: 'CATCH',
       children: [
@@ -249,7 +299,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'catch-empty',
     name: 'CATCH 空异常槽',
-    desc: '只有主体（正常赋值，不抛异常），异常槽 placeholder 占位；建议入参 {}',
+    desc: '只有主体（正常赋值，不抛异常），异常槽 placeholder 占位',
     build: () => ({
       type: 'CATCH',
       children: [
@@ -312,7 +362,8 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'nested-complex',
     name: '嵌套综合',
-    desc: 'THEN(赋值, IF(flag 双分支), WHEN(并行两路))，建议入参 {"flag":true}',
+    desc: 'THEN(赋值, IF(flag 双分支), WHEN(并行两路))',
+    inputJson: '{"flag":true}',
     build: () => ({
       type: 'THEN',
       children: [
@@ -338,7 +389,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'nested-catch-in-then',
     name: 'THEN 内嵌 CATCH（正常路径）',
-    desc: 'THEN(赋值, CATCH(正常赋值, 兜底响应), 响应)，异常槽不触发，建议入参 {}',
+    desc: 'THEN(赋值, CATCH(正常赋值, 兜底响应), 响应)，异常槽不触发',
     build: () => ({
       type: 'THEN',
       children: [

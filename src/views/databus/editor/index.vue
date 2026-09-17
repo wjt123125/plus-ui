@@ -95,10 +95,12 @@
         <el-tabs v-model="activeTab" class="databus-editor__tabs">
           <el-tab-pane label="属性" name="props">
             <CmpProps
+              v-if="selectedNode"
               :node="selectedNode"
               @delete="ctrl.requestDeleteNode($event)"
               @data-change="onPropsChange"
             />
+            <EdgeProps v-else :edge="selectedEdge" />
           </el-tab-pane>
           <el-tab-pane label="EL 预览" name="el">
             <FlowElPreview />
@@ -229,7 +231,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useVueFlow, type Node } from '@vue-flow/core';
+import { useVueFlow, type Node, type Edge } from '@vue-flow/core';
 import { ArrowDown, Check, Delete, Expand, Files, Fold, RefreshLeft, RefreshRight, VideoPlay } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { generateEl, previewRun } from '@/api/databus/el';
@@ -237,6 +239,7 @@ import type { PreviewRunVo } from '@/api/databus/el/types';
 import CmpPalette from './components/CmpPalette.vue';
 import FlowCanvas from './components/FlowCanvas.vue';
 import CmpProps from './components/CmpProps.vue';
+import EdgeProps from './components/EdgeProps.vue';
 import FlowElPreview from './components/FlowElPreview.vue';
 import FlowOutline from './components/FlowOutline.vue';
 import { type CmpNodeData } from './composables/useElTreeModel';
@@ -287,17 +290,14 @@ const {
   onNodeDragStop
 } = useVueFlow();
 
-// dagre 自动排列：提升到顶层，供 history（undo/redo）和 canvasController（结构变更后）共用
+// dagre 自动排列：提升到顶层，供 canvasController（结构变更后）调用
 const { autoLayout: runAutoLayout } = useAutoLayout(treeModel);
 
 // 撤销/重做历史栈：数据源切换到 ElNode 树快照
-const { undo, redo, canUndo, canRedo, push, reset, isDirty } = useFlowHistory({
-  treeModel,
-  getNodes,
-  setNodes,
-  setEdges,
-  autoLayout: () => runAutoLayout({ fitView: false })
-});
+const { undo, redo, canUndo, canRedo, push, reset, isDirty } = useFlowHistory(
+  { treeModel, getNodes, setNodes, setEdges },
+  { onRestored: () => runAutoLayout({ fitView: false }) }
+);
 
 // 实时 EL 预览：直接从模型树序列化 CmpProperty，结构变更由控制器 commit 回调触发
 const elPreview = provideElPreview(treeModel);
@@ -327,11 +327,17 @@ const selectedNode = computed<Node<CmpNodeData> | null>(() => {
   );
 });
 
+// selectedId 可能是 node id 或 edge id：node 找不到时再试 edges
+const selectedEdge = computed<Edge | null>(() => {
+  if (!ctrl.selectedId.value || selectedNode.value) return null;
+  return (getEdges.value.find((e) => e.id === ctrl.selectedId.value) as Edge | undefined) ?? null;
+});
+
 // 右侧栏三 Tab：属性 / EL 预览 / 大纲。选中/取消选中自动切换仅在 props↔el 之间，
 // 大纲 Tab 手动切，不被覆盖。EL 预览刷新仅在 el Tab 可见时触发省请求。
 const activeTab = ref<'props' | 'el' | 'outline'>('el');
 watch(
-  () => !!selectedNode.value,
+  () => !!ctrl.selectedId.value,
   (hasSel) => {
     if (hasSel && activeTab.value === 'el') activeTab.value = 'props';
     else if (!hasSel && activeTab.value === 'props') activeTab.value = 'el';
@@ -365,6 +371,7 @@ async function resetCanvas() {
     return;
   }
   treeModel.loadFromCmpProperty(null);
+  currentMockKey = null;
   const { nodes, edges } = treeModel.project();
   setNodes(nodes);
   setEdges(edges);
@@ -387,6 +394,7 @@ async function loadMock(key: string) {
     }
   }
   treeModel.loadFromCmpProperty(preset.build());
+  currentMockKey = key;
   const { nodes, edges } = treeModel.project();
   setNodes(nodes);
   setEdges(edges);
@@ -450,6 +458,8 @@ async function saveAsEl() {
 const previewVisible = ref(false);
 const previewRunning = ref(false);
 const previewRequest = ref('{}');
+/** 当前画布来源示例 key（载入示例时记录，清空画布时清除），用于试运行弹窗预填示例入参 */
+let currentMockKey: string | null = null;
 const previewResultVisible = ref(false);
 const previewResult = ref<PreviewRunVo | null>(null);
 
@@ -458,6 +468,17 @@ function openPreview() {
   if (!ensureCanvasHasNodes()) return;
   if (!ensureDataSpacesValid()) return;
   previewResult.value = null;
+  // 画布来自示例时预填该示例的入参 JSON（格式化为 2 空格缩进，与执行时回写格式一致）
+  const mockInput = currentMockKey ? getMockPreset(currentMockKey)?.inputJson : undefined;
+  if (mockInput) {
+    try {
+      previewRequest.value = JSON.stringify(JSON.parse(mockInput), null, 2);
+    } catch {
+      previewRequest.value = mockInput;
+    }
+  } else {
+    previewRequest.value = '{}';
+  }
   previewVisible.value = true;
 }
 

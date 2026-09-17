@@ -236,7 +236,7 @@ export const CMP_DEFS: CmpDef[] = [
   {
     type: 'fieldMap',
     label: '字段映射',
-    desc: '按 mappings 把来源路径逐条搬运到目标路径',
+    desc: '按 mappings 把来源路径逐条搬运到目标路径；from/to 同时含 [*] 触发数组批量搬运，可选 type 字段做类型转换（int/string/boolean/double）',
     color: '#9c27b0',
     icon: 'ph:arrows-left-right',
     group: 'business'
@@ -247,6 +247,45 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '设置链路返回结果，固定写入 $.response.result/msg/data',
     color: '#f56c6c',
     icon: 'ph:flag-checkered',
+    group: 'business'
+  },
+
+  // ── BPM 业务组件（均有后端真实现，注册名与后端 @LiteflowComponent 一致；
+  //    顺序按 BPM 主线编排自然递进：会话 → 建 BO → 启流程 → 完任务） ──
+  {
+    type: 'sessionCreate',
+    label: 'BPM 会话',
+    short: '会话',
+    desc: '创建 BPM 会话（登录获取 sid），响应平铺到 $.数据空间',
+    color: '#409eff',
+    icon: 'ph:sign-in',
+    group: 'business'
+  },
+  {
+    type: 'boCreate',
+    label: 'BPM 建 BO',
+    short: '建 BO',
+    desc: '创建 BPM 业务对象（BO），支持 6 种回写策略（no/all/boId/add/exclude/include），结果存 $.数据空间.boResults',
+    color: '#9c27b0',
+    icon: 'ph:database',
+    group: 'business'
+  },
+  {
+    type: 'processStart',
+    label: 'BPM 启流程',
+    short: '启流程',
+    desc: '启动 BPM 流程实例，title 支持 ${$.xxx} 模板替换，响应平铺到 $.数据空间',
+    color: '#e6a23c',
+    icon: 'ph:rocket',
+    group: 'business'
+  },
+  {
+    type: 'taskComplete',
+    label: 'BPM 完任务',
+    short: '完任务',
+    desc: '按 processInstanceId 提交 BPM 任务（全部尝试），部分失败按 failOnError 决定是否中断',
+    color: '#67c23a',
+    icon: 'ph:seal-check',
     group: 'business'
   }
 ];

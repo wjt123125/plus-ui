@@ -43,8 +43,9 @@ export interface ElNode {
   tag?: string;
   /** LiteFlow data 属性（叶子为组件配置 JSON 字符串） */
   data?: string;
-  /** 该节点在父算子中的分支标签: true/false/caseN/异常 等 */
-  branchLabel?: string;
+  /** 算子各自定义的出口 label（按 branchIndex 存），用户双击/属性面板改的 label 持久化到这里；
+   *  projectXxx 构造 outlets 时优先用 outletLabels[i]，未定义则用默认 label（真/假/case1 等） */
+  outletLabels?: string[];
   /** 所属父算子的 id（便于反向查找） */
   parentOperatorId?: string;
   /** 拖拽位置缓存（不参与 EL 序列化，仅投影恢复坐标用） */
@@ -182,6 +183,7 @@ function parseNode(cmp: CmpProperty, parentOperatorId: string | undefined): ElNo
     node.children = cmp.children.map((c) => parseNode(c, node.id));
   }
   if (cmp.properties?.tag) node.tag = cmp.properties.tag;
+  if (cmp.properties?.outletLabels) node.outletLabels = cmp.properties.outletLabels;
   return node;
 }
 
@@ -293,8 +295,11 @@ function serializeNode(node: ElNode): CmpProperty | null {
       .filter((c): c is CmpProperty => c !== null);
     if (mapped.length > 0) prop.children = mapped;
   }
-  if (node.tag) {
-    prop.properties = { tag: node.tag };
+  if (node.tag || node.outletLabels) {
+    prop.properties = {
+      ...(node.tag ? { tag: node.tag } : {}),
+      ...(node.outletLabels ? { outletLabels: node.outletLabels } : {})
+    };
   }
   return prop;
 }
@@ -479,7 +484,7 @@ function projectWhen(node: ElNode, ctx: ProjectContext): Port {
   const branchCount = Math.max(children.length, 2);
   const outlets = Array.from({ length: branchCount }, (_, i) => ({
     handle: `branch_${i}`,
-    label: `并行${i + 1}`
+    label: node.outletLabels?.[i] ?? `并行${i + 1}`
   }));
   const gatewayNode = buildGatewayNode(ctx, gatewayId, def, 'WHEN', outlets, node.tag);
   ctx.nodes.push(gatewayNode);
@@ -542,8 +547,8 @@ function projectIf(node: ElNode, ctx: ProjectContext): Port {
   // （而不是走 fallback leaf 把 IF 当业务卡渲染——这就是用户报「IF 灰色长方形」的根因）
   const ifDef = getDef('IF')!;
   const outlets = [
-    { handle: 'true', label: '真' },
-    { handle: 'false', label: '假' }
+    { handle: 'true', label: node.outletLabels?.[0] ?? '真' },
+    { handle: 'false', label: node.outletLabels?.[1] ?? '假' }
   ];
   // condition 存在则用 condition 的 id + def；否则用 IF 节点自己的 id + IF def
   let condId: string;
@@ -565,8 +570,8 @@ function projectIf(node: ElNode, ctx: ProjectContext): Port {
 
   const junctionId = `${condId}_end`;
   const junctionInlets = [
-    { handle: 'true', label: '真' },
-    { handle: 'false', label: '假' }
+    { handle: 'true', label: outlets[0].label },
+    { handle: 'false', label: outlets[1].label }
   ];
   const junctionNode = buildJunctionNode(ctx, junctionId, condId, junctionInlets);
   ctx.nodes.push(junctionNode);
@@ -581,7 +586,7 @@ function projectIf(node: ElNode, ctx: ProjectContext): Port {
       if (cp.startId) {
         ctx.edges.push(
           buildEdge(
-            `e_${condId}_${labels[i]}`, condId, cp.startId, 'branch', labels[i], labels[i] === 'true' ? '真' : '假',
+            `e_${condId}_${labels[i]}`, condId, cp.startId, 'branch', labels[i], outlets[i].label,
             undefined,
             { parentId: node.id, branchIndex: i }
           )
@@ -598,10 +603,10 @@ function projectIf(node: ElNode, ctx: ProjectContext): Port {
     } else {
       // 空分支槽（稀疏数组空洞/未初始化）：补 placeholder
       const phId = `${condId}_ph_${labels[i]}`;
-      buildPlaceholder(ctx, phId, i === 0 ? '空真分支' : '空假分支', condId, labels[i]);
+      buildPlaceholder(ctx, phId, i === 0 ? `空${outlets[0].label}` : `空${outlets[1].label}`, condId, labels[i]);
       ctx.edges.push(
         buildEdge(
-          `e_${condId}_${labels[i]}_ph`, condId, phId, 'jump', labels[i], labels[i] === 'true' ? '真' : '假',
+          `e_${condId}_${labels[i]}_ph`, condId, phId, 'jump', labels[i], outlets[i].label,
           undefined,
           { parentId: node.id, branchIndex: i }
         )
@@ -626,7 +631,7 @@ function projectSwitch(node: ElNode, ctx: ProjectContext): Port {
   const caseCount = Math.max(children.length, 1);
   const outlets = Array.from({ length: caseCount }, (_, i) => ({
     handle: `case_${i + 1}`,
-    label: `case${i + 1}`
+    label: node.outletLabels?.[i] ?? `case${i + 1}`
   }));
   let condId: string;
   let condDef: CmpDef = switchDef;
@@ -691,7 +696,7 @@ function projectSwitch(node: ElNode, ctx: ProjectContext): Port {
 function projectLoop(node: ElNode, ctx: ProjectContext): Port {
   // 无 condition：用循环算子自己的 def 产出菱形网关 + DO 占位
   const loopDef = getDef(node.type)!;
-  const outlets = [{ handle: 'do', label: '循环体' }];
+  const outlets = [{ handle: 'do', label: node.outletLabels?.[0] ?? '循环体' }];
   let condId: string;
   let condDef: CmpDef = loopDef;
   let condTag: string | undefined = node.tag;
@@ -719,7 +724,7 @@ function projectLoop(node: ElNode, ctx: ProjectContext): Port {
   if (child0) {
     const cp = projectNode(child0, ctx, node.id);
     if (cp.startId) {
-      ctx.edges.push(buildEdge(`e_${condId}_do`, condId, cp.startId, 'branch', 'do', '循环体', undefined,
+      ctx.edges.push(buildEdge(`e_${condId}_do`, condId, cp.startId, 'branch', 'do', outlets[0].label, undefined,
         { parentId: node.id, branchIndex: 0 }));
     }
     if (cp.endId) {
@@ -732,7 +737,7 @@ function projectLoop(node: ElNode, ctx: ProjectContext): Port {
     // 空 DO 槽占位（children[0] 为 undefined/null 或 children 为空）
     const phId = `${condId}_ph_do`;
     buildPlaceholder(ctx, phId, '空循环体', condId, 'do');
-    ctx.edges.push(buildEdge(`e_${condId}_do_ph`, condId, phId, 'jump', 'do', '循环体', undefined,
+    ctx.edges.push(buildEdge(`e_${condId}_do_ph`, condId, phId, 'jump', 'do', outlets[0].label, undefined,
       { parentId: node.id, branchIndex: 0 }));
     ctx.edges.push(buildEdge(`e_ph_do_${junctionId}`, phId, junctionId, 'merge', undefined, undefined, 'do',
       { parentId: node.id, branchIndex: 0 }));
@@ -745,8 +750,8 @@ function projectCatch(node: ElNode, ctx: ProjectContext): Port {
   const gatewayId = node.id;
   const def = getDef('CATCH')!;
   const outlets = [
-    { handle: 'try', label: '主体' },
-    { handle: 'catch', label: '异常处理' }
+    { handle: 'try', label: node.outletLabels?.[0] ?? '主体' },
+    { handle: 'catch', label: node.outletLabels?.[1] ?? '异常' }
   ];
   const gatewayNode = buildGatewayNode(ctx, gatewayId, def, 'CATCH', outlets, node.tag);
   ctx.nodes.push(gatewayNode);
@@ -759,14 +764,13 @@ function projectCatch(node: ElNode, ctx: ProjectContext): Port {
 
   const children = node.children ?? [];
   const handles = ['try', 'catch'];
-  const labels = ['主体', '异常'];
   for (let i = 0; i < 2; i++) {
     const child = children[i];
     if (child) {
       const cp = projectNode(child, ctx, node.id);
       if (cp.startId) {
         ctx.edges.push(
-          buildEdge(`e_${gatewayId}_${handles[i]}`, gatewayId, cp.startId, 'branch', handles[i], labels[i], undefined,
+          buildEdge(`e_${gatewayId}_${handles[i]}`, gatewayId, cp.startId, 'branch', handles[i], outlets[i].label, undefined,
             { parentId: node.id, branchIndex: i })
         );
       }
@@ -779,8 +783,8 @@ function projectCatch(node: ElNode, ctx: ProjectContext): Port {
     } else {
       // 空分支槽：补 placeholder
       const phId = `${gatewayId}_ph_${handles[i]}`;
-      buildPlaceholder(ctx, phId, `空${labels[i]}`, gatewayId, handles[i]);
-      ctx.edges.push(buildEdge(`e_${gatewayId}_${handles[i]}_ph`, gatewayId, phId, 'jump', handles[i], labels[i], undefined,
+      buildPlaceholder(ctx, phId, `空${outlets[i].label}`, gatewayId, handles[i]);
+      ctx.edges.push(buildEdge(`e_${gatewayId}_${handles[i]}_ph`, gatewayId, phId, 'jump', handles[i], outlets[i].label, undefined,
         { parentId: node.id, branchIndex: i }));
       ctx.edges.push(buildEdge(`e_ph_${handles[i]}_${junctionId}`, phId, junctionId, 'merge', undefined, undefined, handles[i],
         { parentId: node.id, branchIndex: i }));
@@ -800,7 +804,7 @@ function projectBoolean(node: ElNode, ctx: ProjectContext): Port {
   const edgeLabels = node.type === 'AND' ? '+' : node.type === 'OR' ? '*' : '-';
   const outlets = Array.from({ length: childCount }, (_, i) => ({
     handle: `b${i + 1}`,
-    label: labels[i]
+    label: node.outletLabels?.[i] ?? labels[i]
   }));
   const gatewayNode = buildGatewayNode(ctx, gatewayId, def, node.type, outlets, node.tag);
   ctx.nodes.push(gatewayNode);
@@ -830,7 +834,7 @@ function projectBoolean(node: ElNode, ctx: ProjectContext): Port {
     } else {
       // 空分支槽：补 placeholder
       const phId = `${gatewayId}_ph_b${i + 1}`;
-      buildPlaceholder(ctx, phId, `空${labels[i]}`, gatewayId, `b${i + 1}`);
+      buildPlaceholder(ctx, phId, `空${outlets[i].label}`, gatewayId, `b${i + 1}`);
       ctx.edges.push(buildEdge(`e_${gatewayId}_b${i + 1}_ph`, gatewayId, phId, 'jump', `b${i + 1}`, edgeLabels, undefined,
         { parentId: node.id, branchIndex: i }));
       ctx.edges.push(buildEdge(`e_ph_b${i + 1}_${junctionId}`, phId, junctionId, 'merge', undefined, undefined, `b${i + 1}`,
@@ -1228,6 +1232,14 @@ export function useElTreeModel() {
     return findInSubtree(root.value, id);
   }
 
+  /** 查找节点的父节点和槽位索引（供 reconnect 等操作定位树位置） */
+  function findNodeParent(nodeId: string): { parent: ElNode; index: number } | null {
+    if (!root.value) return null;
+    const pos = findParentInSubtree(root.value, nodeId);
+    if (!pos || pos.inCondition) return null;
+    return { parent: pos.parent, index: pos.index };
+  }
+
   /**
    * 生成新业务叶子的数据空间默认名：扫全树同注册名叶子的序号（httpRequest1/2...）取最大 +1，
    * 同时避开用户自定义名称占用。
@@ -1477,6 +1489,30 @@ export function useElTreeModel() {
     return true;
   }
 
+  /**
+   * 更新算子出口的自定义 label（双击边/属性面板编辑用）。
+   * - label 非空：设到 outletLabels[branchIndex]，projectXxx 时优先用
+   * - label 为空/null：删 outletLabels[branchIndex]（恢复默认 label）
+   * - 全部清空时删 outletLabels 字段，序列化时不写入
+   */
+  function updateOutletLabel(nodeId: string, branchIndex: number, label: string | null): boolean {
+    const node = findNode(nodeId);
+    if (!node) return false;
+    if (label === null || label === '') {
+      if (node.outletLabels) {
+        // 稀疏数组：置 undefined，projectXxx 会回退到默认 label
+        node.outletLabels[branchIndex] = undefined;
+        if (node.outletLabels.every((v) => v === undefined)) {
+          delete node.outletLabels;
+        }
+      }
+      return true;
+    }
+    if (!node.outletLabels) node.outletLabels = [];
+    node.outletLabels[branchIndex] = label;
+    return true;
+  }
+
   /** SWITCH 增 case：在 children 末尾追加一个空叶子（占位） */
   function addCase(switchId: string): boolean {
     const node = findNode(switchId);
@@ -1558,6 +1594,7 @@ export function useElTreeModel() {
     cachePosition,
     replaceTree,
     findNode,
+    findNodeParent,
     makeLeaf,
     makeOperator,
     makeThen,
@@ -1571,6 +1608,7 @@ export function useElTreeModel() {
     isDataSpaceNameTaken,
     renameDataSpace,
     updateOperatorTag,
+    updateOutletLabel,
     addCase,
     removeCase,
     snapshot,

@@ -16,6 +16,8 @@ export interface UseFlowHistoryOptions {
   max?: number;
   /** 连续变更合并窗口（ms），默认 200 */
   debounce?: number;
+  /** undo/redo 应用快照后的回调（如重新自动布局，避免画布错乱） */
+  onRestored?: () => void;
 }
 
 /**
@@ -29,13 +31,12 @@ export interface FlowHistoryStore {
   getNodes: ComputedRef<Node<CmpNodeData>[]>;
   setNodes: (nodes: Node<CmpNodeData>[]) => void;
   setEdges: (edges: Edge[]) => void;
-  /** 可选：undo/redo 后自动触发 dagre 重排（结构变更会改变拓扑，坐标缓存可能过时） */
-  autoLayout?: () => void;
 }
 
 export function useFlowHistory(store: FlowHistoryStore, options: UseFlowHistoryOptions = {}) {
   const max = options.max ?? 50;
   const debounceMs = options.debounce ?? 200;
+  const onRestored = options.onRestored;
 
   // ref([]) 不带泛型绕开 TS2589
   const past = ref([]) as Ref<(ElNode | null)[]>;
@@ -63,9 +64,9 @@ export function useFlowHistory(store: FlowHistoryStore, options: UseFlowHistoryO
     store.setNodes(nodes);
     store.setEdges(edges);
     lastSnapshot = cloneElNode(cloned);
-    // 结构变更的 undo/redo 会改变拓扑，dagre 重排把坐标缓存对齐新结构
-    store.autoLayout?.();
+    // 等 VueFlow store 吸收 setNodes 后再 autoLayout，避免读到旧 nodes 导致排列不生效
     nextTick(() => {
+      if (onRestored) onRestored();
       isRestoring = false;
     });
   }

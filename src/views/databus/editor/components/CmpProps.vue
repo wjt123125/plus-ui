@@ -220,8 +220,12 @@ const DATA_HINTS: Record<string, string> = {
   httpRequest: '{"method":"GET","url":"http://localhost:8080/auth/code"}',
   condition: '{"path":"$.httpRequest1.response.code","op":"eq","value":200}',
   setValue: '{"path":"$.setValue1.demo","value":"常量 或 $.入参路径"}',
-  fieldMap: '{"mappings":[{"from":"$.httpRequest1.response.msg","to":"$.fieldMap1.msg"}]}',
-  response: '{"result":true,"msg":"成功","dataPath":"$.fieldMap1"}'
+  fieldMap: '{"mappings":[{"from":"$.httpRequest1.response.code","to":"$.fieldMap1.code","type":"int"},{"from":"$.httpRequest1.response.data[*].NAME","to":"$.fieldMap1.items[*].name","type":"string"}]}',
+  response: '{"result":true,"msg":"成功","dataPath":"$.fieldMap1"}',
+  sessionCreate: '{"connectionId":"bpm-default","userName":"admin","password":"$.request.password"}',
+  boCreate: '{"connectionId":"bpm-default","method":"create","bindId":"bo-001","uid":"admin","boList":[{"boName":"UserBO","sourcePath":"$.request.users","rewrite":{"strategy":"all","path":"$.response.users"}}]}',
+  processStart: '{"connectionId":"bpm-default","processDefId":"proc-001","uid":"admin","title":"申请-${$.request.code}"}',
+  taskComplete: '{"connectionId":"bpm-default","processInstanceId":"$.processStart1.processInstanceId","uid":"admin","failOnError":false}'
 };
 
 const SPACE_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
