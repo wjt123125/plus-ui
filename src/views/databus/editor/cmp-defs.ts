@@ -333,6 +333,24 @@ export const CMP_DEFS: CmpDef[] = [
     color: '#67c23a',
     icon: 'ph:seal-check',
     group: 'business'
+  },
+  {
+    type: 'rdsExecute',
+    label: 'BPM SQL 执行',
+    short: 'SQL 执行',
+    desc: '在 BPM 后台注册的 RDS 数据源上执行 SQL：标量/单行/多行查询、更新与批量（8 种方法），结果存 $.数据空间.data',
+    color: '#16a34a',
+    icon: 'ph:table',
+    group: 'business'
+  },
+  {
+    type: 'idCardToUserId',
+    label: '身份证换用户',
+    short: '证换用户',
+    desc: '按 path 读取逗号分隔的身份证号，查 BPM 用户表换成 userId 原地写回；全部未命中报错，部分未命中告警',
+    color: '#0891b2',
+    icon: 'ph:identification-card',
+    group: 'business'
   }
 ];
 

@@ -230,7 +230,9 @@ const DATA_HINTS: Record<string, string> = {
   boDelete: '{"connectionId":"bpm-default","method":"remove","boList":[{"boName":"BO_EU_API_TEST_MAIN","sourcePath":"$.boQuery1.records"}]}',
   processStart: '{"connectionId":"bpm-default","processDefId":"proc-001","uid":"admin","title":"申请-${$.request.code}"}',
   processTerminate: '{"connectionId":"bpm-default","instanceId":"$.processStart1.processInstanceId","userId":"admin"}',
-  taskComplete: '{"connectionId":"bpm-default","processInstanceId":"$.processStart1.processInstanceId","uid":"admin","failOnError":false}'
+  taskComplete: '{"connectionId":"bpm-default","processInstanceId":"$.processStart1.processInstanceId","uid":"admin","failOnError":false}',
+  rdsExecute: '{"connectionId":"bpm-default","rdsId":"default","method":"getMaps","sql":"select userid,ext1 as idCard from orguser where ext1=?","args":["$.request.idCard"],"maxRows":100}',
+  idCardToUserId: '{"connectionId":"bpm-default","fields":[{"path":"$.request.idCards","separator":","}]}'
 };
 
 const SPACE_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
