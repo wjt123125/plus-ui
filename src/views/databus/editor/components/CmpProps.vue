@@ -221,10 +221,15 @@ const DATA_HINTS: Record<string, string> = {
   condition: '{"path":"$.httpRequest1.response.code","op":"eq","value":200}',
   setValue: '{"path":"$.setValue1.demo","value":"常量 或 $.入参路径"}',
   fieldMap: '{"mappings":[{"from":"$.httpRequest1.response.code","to":"$.fieldMap1.code","type":"int"},{"from":"$.httpRequest1.response.data[*].NAME","to":"$.fieldMap1.items[*].name","type":"string"}]}',
+  dataPatch: '{"target":"$.boQuery1.records[*]","patch":{"BO_FIELD_USER":"$.request.newUser","BO_FIELD_NUM":99}}',
   response: '{"result":true,"msg":"成功","dataPath":"$.fieldMap1"}',
   sessionCreate: '{"connectionId":"bpm-default","userName":"admin","password":"$.request.password"}',
   boCreate: '{"connectionId":"bpm-default","method":"create","bindId":"$.processStart1.processInstanceId","uid":"admin","boList":[{"boName":"UserBO","sourcePath":"$.request.users","rewrite":{"strategy":"all","path":"$.response.users"}}]}',
+  boQuery: '{"connectionId":"bpm-default","main":{"boName":"BO_EU_API_TEST_MAIN","method":"list","maxRecord":50,"conditionSourcePath":"$.request.conditions"},"sub":["BO_EU_API_TEST_SUB"]}',
+  boUpdate: '{"connectionId":"bpm-default","boList":[{"boName":"BO_EU_API_TEST_MAIN","sourcePath":"$.boQuery1.records"}]}',
+  boDelete: '{"connectionId":"bpm-default","method":"remove","boList":[{"boName":"BO_EU_API_TEST_MAIN","sourcePath":"$.boQuery1.records"}]}',
   processStart: '{"connectionId":"bpm-default","processDefId":"proc-001","uid":"admin","title":"申请-${$.request.code}"}',
+  processTerminate: '{"connectionId":"bpm-default","instanceId":"$.processStart1.processInstanceId","userId":"admin"}',
   taskComplete: '{"connectionId":"bpm-default","processInstanceId":"$.processStart1.processInstanceId","uid":"admin","failOnError":false}'
 };
 

@@ -12,6 +12,11 @@
  * 可试运行性：有入参依赖的示例在 inputJson 提供入参 JSON，打开试运行弹窗时自动预填，
  * 无需手敲；标注「结构展示」的示例含本档不可执行的算子
  * （SWITCH/FOR/ITERATOR/AND/OR/NOT/CHAIN），仅用于验证画布投影。
+ *
+ * desc 硬约束（新增示例同样遵守）：
+ * - 一句话只说「演示什么」，中文不超过 25 字左右，示例列表里一眼可读；
+ * - 不写操作步骤、入参解释、配套示例用法、危险警告——这些放 build 内注释或 inputJson；
+ * - 结构类示例统一以「（结构展示）」结尾；可试运行的不标。
  */
 import type { CmpProperty } from '@/api/databus/el/types';
 
@@ -53,7 +58,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'preview-http-if',
     name: '本地服务探测（试运行主示例）',
-    desc: '调本机 /auth/code，code=200 则映射验证码开关并返回成功，否则返回未就绪',
+    desc: 'code=200 映射验证码开关并成功返回，否则未就绪',
     build: () => ({
       type: 'THEN',
       children: [
@@ -97,7 +102,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'bpm-flow',
     name: 'BPM 全链路（需 BPM 环境）',
-    desc: '调 BPM 端总线 app 四件套：会话→启流程→建BO(绑定流程实例)→完任务',
+    desc: '会话→启流程→建 BO（绑定流程实例）→完任务',
     inputJson: '{"request":{"password":"mlhg2004.3401","code":"D001","boList":[{"BO_FIELD_TEXT":"测试","BO_FIELD_USER":"张三","BO_FIELD_NUM":123456}]}}',
     build: () => ({
       type: 'THEN',
@@ -133,6 +138,86 @@ export const MOCK_PRESETS: MockPreset[] = [
           processInstanceId: '$.processStart1.processInstanceId',
           uid: 'admin',
           failOnError: false
+        })
+      ]
+    })
+  },
+  {
+    key: 'bpm-bo-update',
+    name: 'BPM BO 查改验证（需 BPM 环境）',
+    desc: '查 → 改 USER → 写回 → 二次查询验证（数据保留）',
+    inputJson: '{"request":{"password":"mlhg2004.3401","newUser":"张三-已更新","conditions":[{"fieldName":"BO_FIELD_TEXT","operator":"=","paramValue":"测试"}]}}',
+    build: () => ({
+      type: 'THEN',
+      // 数据保留不删；清理测试数据请加载「BPM BO 条件清理」示例
+      children: [
+        leaf('sessionCreate', 'sessionCreate1', {
+          connectionId: 'bpm-default',
+          userName: 'admin',
+          password: '$.request.password'
+        }),
+        leaf('boQuery', 'boQuery1', {
+          connectionId: 'bpm-default',
+          main: {
+            boName: 'BO_EU_API_TEST_MAIN',
+            method: 'list',
+            maxRecord: 10,
+            // 条件列表从入参动态读取（fieldName/operator/paramValue/valid）
+            conditionSourcePath: '$.request.conditions'
+          }
+        }),
+        leaf('dataPatch', 'dataPatch1', {
+          // 原地给查出的每条记录打补丁：只改 USER 字段，ID/TEXT 等其余字段原样保留
+          // 改 USER 不改查询条件里的 TEXT，保证二次同条件查询仍能命中
+          target: '$.boQuery1.records[*]',
+          patch: { BO_FIELD_USER: '$.request.newUser' }
+        }),
+        leaf('boUpdate', 'boUpdate1', {
+          connectionId: 'bpm-default',
+          // records 已被 dataPatch 原地打补丁，每条仍含 ID，整体回写
+          boList: [{ boName: 'BO_EU_API_TEST_MAIN', sourcePath: '$.boQuery1.records' }]
+        }),
+        leaf('boQuery', 'boQuery2', {
+          connectionId: 'bpm-default',
+          // 二次查询验证：返回记录的 BO_FIELD_USER 应为入参 newUser；数据保留不删
+          main: {
+            boName: 'BO_EU_API_TEST_MAIN',
+            method: 'list',
+            maxRecord: 10,
+            conditionSourcePath: '$.request.conditions'
+          }
+        })
+      ]
+    })
+  },
+  {
+    key: 'bpm-bo-delete',
+    name: 'BPM BO 条件清理（需 BPM 环境）',
+    desc: '按条件查出记录并按 ID 批量删除',
+    inputJson: '{"request":{"password":"mlhg2004.3401","conditions":[{"fieldName":"BO_FIELD_TEXT","operator":"=","paramValue":"测试"}]}}',
+    build: () => ({
+      type: 'THEN',
+      children: [
+        leaf('sessionCreate', 'sessionCreate1', {
+          connectionId: 'bpm-default',
+          userName: 'admin',
+          password: '$.request.password'
+        }),
+        leaf('boQuery', 'boQuery1', {
+          connectionId: 'bpm-default',
+          main: {
+            boName: 'BO_EU_API_TEST_MAIN',
+            method: 'list',
+            maxRecord: 50,
+            // 条件范围决定删除范围，试运行前可先只保留查询节点确认 records
+            conditionSourcePath: '$.request.conditions'
+          }
+        }),
+        leaf('boDelete', 'boDelete1', {
+          connectionId: 'bpm-default',
+          method: 'remove',
+          // 按查出记录的 ID 删除
+          boList: [{ boName: 'BO_EU_API_TEST_MAIN', sourcePath: '$.boQuery1.records' }]
         })
       ]
     })
@@ -178,7 +263,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'then-empty',
     name: '空 THEN 占位',
-    desc: 'THEN 无 children，验证 placeholder 占位 + start 连边（结构展示）',
+    desc: '空 children 验证占位节点与 start 连边（结构展示）',
     build: () => ({ type: 'THEN', children: [] })
   },
 
@@ -186,7 +271,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'when-parallel',
     name: '并行 WHEN',
-    desc: '三路赋值并行扇出扇入，验证圆形网关 + junction 多入边',
+    desc: '三路赋值并行，验证扇出扇入与 junction 多入边',
     build: () => ({
       type: 'WHEN',
       children: [
@@ -220,7 +305,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'if-empty-false',
     name: 'IF 空假分支',
-    desc: '只有真分支，假分支用 placeholder 占位',
+    desc: '只有真分支，假分支为占位节点',
     inputJson: '{"flag":true}',
     build: () => ({
       type: 'IF',
@@ -235,7 +320,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'switch-multi',
     name: '选择 SWITCH 三 case',
-    desc: 'SWITCH 条件件本档暂不支持，仅验证多 outlet 菱形 + junction（结构展示）',
+    desc: '三 case 分支，验证多 outlet 菱形与 junction（结构展示）',
     build: () => ({
       type: 'SWITCH',
       condition: leaf('setValue', 'setValue0', { path: '$.setValue0.switchOn', value: '占位' }),
@@ -251,7 +336,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'for-loop',
     name: 'FOR 循环',
-    desc: 'FOR 条件件本档暂不支持，仅验证循环网关 + DO 出口（结构展示）',
+    desc: '验证循环网关与 DO 出口（结构展示）',
     build: () => ({
       type: 'FOR',
       condition: leaf('setValue', 'setValue0', { path: '$.setValue0.for', value: '占位' }),
@@ -263,10 +348,11 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'while-loop',
     name: 'WHILE 循环（零次执行安全示例）',
-    desc: '条件为假时循环体一次不执行；flag=true 会死循环请勿试运行',
+    desc: '条件为假时循环体零次执行',
     inputJson: '{"flag":false}',
     build: () => ({
       type: 'WHILE',
+      // 警告：flag=true 会死循环，禁止试运行
       condition: leaf('condition', 'condition1', { path: '$.flag', op: 'isTrue' }, true),
       children: [
         leaf('setValue', 'setValue1', { path: '$.setValue1.out', value: '循环体执行' })
@@ -276,7 +362,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'iterator-loop',
     name: 'ITERATOR 迭代',
-    desc: 'ITERATOR 条件件本档暂不支持，仅验证迭代网关（结构展示）',
+    desc: '验证迭代器网关（结构展示）',
     build: () => ({
       type: 'ITERATOR',
       condition: leaf('setValue', 'setValue0', { path: '$.setValue0.iter', value: '占位' }),
@@ -290,7 +376,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'catch-flow',
     name: 'CATCH 异常捕获（真触发异常分支）',
-    desc: '请求一个不存在的本地端口触发连接异常，由响应组件兜底',
+    desc: '请求不存在端口触发异常，响应组件兜底',
     build: () => ({
       type: 'CATCH',
       children: [
@@ -305,7 +391,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'catch-empty',
     name: 'CATCH 空异常槽',
-    desc: '只有主体（正常赋值，不抛异常），异常槽 placeholder 占位',
+    desc: '仅正常主体，异常槽为占位节点',
     build: () => ({
       type: 'CATCH',
       children: [
@@ -318,9 +404,10 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'and-logic',
     name: 'AND 与逻辑',
-    desc: 'AND 两个布尔条件件，建议入参 {"a":true,"b":true}；通常嵌在 IF 条件位使用（结构展示）',
+    desc: '两个布尔条件取与（结构展示）',
     build: () => ({
       type: 'AND',
+      // 建议入参 {"a":true,"b":true}；通常嵌在 IF 条件位使用
       children: [
         leaf('condition', 'condition1', { path: '$.a', op: 'isTrue' }, true),
         leaf('condition', 'condition2', { path: '$.b', op: 'isTrue' }, true)
@@ -330,9 +417,10 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'or-logic',
     name: 'OR 或逻辑',
-    desc: 'OR 两个布尔条件件，建议入参 {"a":false,"b":true}（结构展示）',
+    desc: '两个布尔条件取或（结构展示）',
     build: () => ({
       type: 'OR',
+      // 建议入参 {"a":false,"b":true}
       children: [
         leaf('condition', 'condition1', { path: '$.a', op: 'isTrue' }, true),
         leaf('condition', 'condition2', { path: '$.b', op: 'isTrue' }, true)
@@ -342,9 +430,10 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'not-logic',
     name: 'NOT 非逻辑',
-    desc: 'NOT 对布尔条件件取反，建议入参 {"flag":false}（结构展示）',
+    desc: '对布尔条件取反（结构展示）',
     build: () => ({
       type: 'NOT',
+      // 建议入参 {"flag":false}
       children: [
         leaf('condition', 'condition1', { path: '$.flag', op: 'isTrue' }, true)
       ]
@@ -355,9 +444,10 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'chain-ref',
     name: 'CHAIN 子流程引用',
-    desc: '引用子链 subChain_demo（子链需在 chainMap 中存在），本档不可试运行（结构展示）',
+    desc: '引用子链 subChain_demo（结构展示）',
     build: () => ({
       type: 'THEN',
+      // 前提：subChain_demo 已在 chainMap 中存在
       children: [
         { id: 'subChain_demo', type: 'NodeComponent', properties: { tag: 'subChain_demo' } }
       ]
@@ -395,7 +485,7 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'nested-catch-in-then',
     name: 'THEN 内嵌 CATCH（正常路径）',
-    desc: 'THEN(赋值, CATCH(正常赋值, 兜底响应), 响应)，异常槽不触发',
+    desc: 'THEN 内嵌 CATCH，异常槽不触发',
     build: () => ({
       type: 'THEN',
       children: [

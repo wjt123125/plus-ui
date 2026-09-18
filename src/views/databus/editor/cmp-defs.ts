@@ -242,6 +242,14 @@ export const CMP_DEFS: CmpDef[] = [
     group: 'business'
   },
   {
+    type: 'dataPatch',
+    label: '数据补丁',
+    desc: '按 merge 语义把 patch 字段覆盖到 target 命中的每个对象：[*] 全量/[i] 索引/[?(...)] 过滤均可，未声明字段（含 ID）保留、缺失字段新增；典型用于 boQuery 后改字段再交 boUpdate 回写，命中对象数写入 $.数据空间.patchedCount',
+    color: '#009688',
+    icon: 'ph:git-diff',
+    group: 'business'
+  },
+  {
     type: 'response',
     label: '流程响应',
     desc: '设置链路返回结果，固定写入 $.response.result/msg/data',
@@ -251,7 +259,7 @@ export const CMP_DEFS: CmpDef[] = [
   },
 
   // ── BPM 业务组件（均有后端真实现，注册名与后端 @LiteflowComponent 一致；
-  //    顺序按 BPM 主线编排自然递进：会话 → 启流程 → 建 BO → 完任务
+  //    顺序按 BPM 主线编排自然递进：会话 → 建/查/改/删 BO → 启流程 → 终止流程 → 完任务
   //    依据：旧系统 ProcessCreate 先产出 processInstanceId，
   //          BoCreate 的 method=create 必须 bindId 指向已存在的流程实例 ID） ──
   {
@@ -279,6 +287,42 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '创建 BPM 业务对象（BO），method=create 时 bindId 必填且引用上一步 processStart.processInstanceId，支持 6 种回写策略',
     color: '#9c27b0',
     icon: 'ph:database',
+    group: 'business'
+  },
+  {
+    type: 'boQuery',
+    label: 'BPM 查 BO',
+    short: '查 BO',
+    desc: '查询 BPM 业务对象（BO）数据，支持 list/listPage/count 三种方法、maxRecord 影响量校验、动态条件与关联表/子表挂载',
+    color: '#409eff',
+    icon: 'ph:magnifying-glass',
+    group: 'business'
+  },
+  {
+    type: 'boUpdate',
+    label: 'BPM 改 BO',
+    short: '改 BO',
+    desc: '按记录 ID 更新 BPM 业务对象（BO）数据，records 必须含 ID 字段（可先 boQuery 查出再整体回写），BPM 端整体事务 all-or-nothing',
+    color: '#e6a23c',
+    icon: 'ph:pencil-line',
+    group: 'business'
+  },
+  {
+    type: 'boDelete',
+    label: 'BPM 删 BO',
+    short: '删 BO',
+    desc: '删除 BPM 业务对象（BO）数据，method=remove 按记录 ID 逐条删 / removeByBindId 按流程实例批量删，BPM 端整体事务 all-or-nothing',
+    color: '#f56c6c',
+    icon: 'ph:trash',
+    group: 'business'
+  },
+  {
+    type: 'processTerminate',
+    label: 'BPM 终止流程',
+    short: '终止流程',
+    desc: '终止 BPM 流程实例（userId 为终止操作人），流程已结束时幂等返回 terminated=false 不报错',
+    color: '#909399',
+    icon: 'ph:prohibit',
     group: 'business'
   },
   {
