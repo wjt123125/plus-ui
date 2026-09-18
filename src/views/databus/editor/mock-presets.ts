@@ -90,11 +90,15 @@ export const MOCK_PRESETS: MockPreset[] = [
   },
 
   // ── BPM 业务主线（需 BPM 环境可试运行） ──
+  // 顺序锁定：会话 → 启流程 → 建 BO → 完任务
+  // 依据旧系统 ProcessCreateProcessor.save("result.processInstanceId") 在前、
+  //       BoCreateProcessor 的 method=create 必须 bindId 指向流程实例 ID 在后
+  // （BO 需绑定到已存在的流程实例，bindId 必须是 $.processStart1.processInstanceId 动态引用）
   {
     key: 'bpm-flow',
     name: 'BPM 全链路（需 BPM 环境）',
-    desc: '调 BPM 端总线 app 四件套',
-    inputJson: '{"request":{"password":"mlhg2004.3401","code":"D001","users":[{"NAME":"张三"}]}}',
+    desc: '调 BPM 端总线 app 四件套：会话→启流程→建BO(绑定流程实例)→完任务',
+    inputJson: '{"request":{"password":"mlhg2004.3401","code":"D001","boList":[{"BO_FIELD_TEXT":"测试","BO_FIELD_USER":"张三","BO_FIELD_NUM":123456}]}}',
     build: () => ({
       type: 'THEN',
       children: [
@@ -103,24 +107,26 @@ export const MOCK_PRESETS: MockPreset[] = [
           userName: 'admin',
           password: '$.request.password'
         }),
+        leaf('processStart', 'processStart1', {
+          connectionId: 'bpm-default',
+          processDefId: 'obj_61a4e68a43e043fa87f89530a503f9ae',
+          uid: 'admin',
+          title: '申请-${$.request.code}'
+        }),
         leaf('boCreate', 'boCreate1', {
           connectionId: 'bpm-default',
           method: 'create',
-          bindId: 'bo-001',
+          // bindId 引用上一步 processStart 产出的流程实例 ID
+          // （旧系统 BoCreateProcessor method=create 时 bindId 必填，指向流程实例 ID）
+          bindId: '$.processStart1.processInstanceId',
           uid: 'admin',
           boList: [
             {
-              boName: 'UserBO',
-              sourcePath: '$.request.users',
-              rewrite: { strategy: 'all', path: '$.response.users' }
+              boName: 'BO_EU_API_TEST_MAIN',
+              sourcePath: '$.request.boList',
+              rewrite: { strategy: 'all', path: '$.response.boList' }
             }
           ]
-        }),
-        leaf('processStart', 'processStart1', {
-          connectionId: 'bpm-default',
-          processDefId: 'proc-001',
-          uid: 'admin',
-          title: '申请-${$.request.code}'
         }),
         leaf('taskComplete', 'taskComplete1', {
           connectionId: 'bpm-default',

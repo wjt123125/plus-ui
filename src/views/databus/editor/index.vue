@@ -147,7 +147,7 @@
     </el-dialog>
 
     <!-- 试运行：执行结果 -->
-    <el-dialog v-model="previewResultVisible" title="试运行结果" width="860px" append-to-body>
+    <el-dialog v-model="previewResultVisible" title="试运行结果" width="860px" append-to-body :close-on-click-modal="false">
       <template v-if="previewResult">
         <el-alert
           :title="resultBanner"

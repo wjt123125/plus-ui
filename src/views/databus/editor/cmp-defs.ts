@@ -251,7 +251,9 @@ export const CMP_DEFS: CmpDef[] = [
   },
 
   // ── BPM 业务组件（均有后端真实现，注册名与后端 @LiteflowComponent 一致；
-  //    顺序按 BPM 主线编排自然递进：会话 → 建 BO → 启流程 → 完任务） ──
+  //    顺序按 BPM 主线编排自然递进：会话 → 启流程 → 建 BO → 完任务
+  //    依据：旧系统 ProcessCreate 先产出 processInstanceId，
+  //          BoCreate 的 method=create 必须 bindId 指向已存在的流程实例 ID） ──
   {
     type: 'sessionCreate',
     label: 'BPM 会话',
@@ -262,21 +264,21 @@ export const CMP_DEFS: CmpDef[] = [
     group: 'business'
   },
   {
-    type: 'boCreate',
-    label: 'BPM 建 BO',
-    short: '建 BO',
-    desc: '创建 BPM 业务对象（BO），支持 6 种回写策略（no/all/boId/add/exclude/include），结果存 $.数据空间.boResults',
-    color: '#9c27b0',
-    icon: 'ph:database',
-    group: 'business'
-  },
-  {
     type: 'processStart',
     label: 'BPM 启流程',
     short: '启流程',
-    desc: '启动 BPM 流程实例，title 支持 ${$.xxx} 模板替换，响应平铺到 $.数据空间',
+    desc: '启动 BPM 流程实例，title 支持 ${$.xxx} 模板替换，响应平铺到 $.数据空间（含 processInstanceId 供下游 boCreate.bindId 引用）',
     color: '#e6a23c',
     icon: 'ph:rocket',
+    group: 'business'
+  },
+  {
+    type: 'boCreate',
+    label: 'BPM 建 BO',
+    short: '建 BO',
+    desc: '创建 BPM 业务对象（BO），method=create 时 bindId 必填且引用上一步 processStart.processInstanceId，支持 6 种回写策略',
+    color: '#9c27b0',
+    icon: 'ph:database',
     group: 'business'
   },
   {

@@ -39,7 +39,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { Codemirror } from 'vue-codemirror';
 import { basicSetup } from 'codemirror';
 import { EditorView } from '@codemirror/view';
@@ -136,6 +136,14 @@ const statusText = computed(() => {
 /** EditorView 实例（用于格式化/压缩时替换文档） */
 const viewRef = shallowRef<EditorView | null>(null);
 
+/**
+ * 上一次通过 emit('update:modelValue') 向外抛出的值。
+ * 用于区分 props.modelValue 变更来源：
+ *   - 新值 === lastEmittedValue：本组件 emit 后父组件原样回灌（用户输入或格式化后回写），不触发自动格式化；
+ *   - 新值 !== lastEmittedValue：父组件外部改变（如切换节点），触发自动格式化。
+ */
+let lastEmittedValue = props.modelValue;
+
 /** 根元素引用：用于 IntersectionObserver 监听可见性 */
 const rootRef = ref<HTMLElement | null>(null);
 let visibilityObserver: IntersectionObserver | null = null;
@@ -182,6 +190,21 @@ onBeforeUnmount(() => {
   wasVisible = false;
 });
 
+/**
+ * 监听外部 props.modelValue 变化（如点击切换节点）：
+ * 仅当非本组件 emit 回灌时触发自动格式化。
+ * flush: 'post' 确保在 vue-codemirror 内部同步文档之后再格式化，避免文档被覆盖。
+ */
+watch(
+  () => props.modelValue,
+  (newVal) => {
+    if (newVal === lastEmittedValue) return;
+    lastEmittedValue = newVal;
+    autoFormatIfCompressed();
+  },
+  { flush: 'post' }
+);
+
 /** 自动格式化：仅当文本是合法 JSON 且当前为压缩/单行形态时触发；不触发 @blur，避免 commit */
 function autoFormatIfCompressed() {
   const text = props.modelValue;
@@ -196,10 +219,12 @@ function autoFormatIfCompressed() {
   const formatted = JSON.stringify(obj, null, 2);
   if (formatted === text) {
     status.value = 'ok';
+    lastEmittedValue = text;
     return;
   }
   replaceDoc(formatted);
   emit('update:modelValue', formatted);
+  lastEmittedValue = formatted;
   status.value = 'ok';
 }
 
@@ -217,6 +242,7 @@ function revalidate(text: string) {
 }
 
 function onUpdate(value: string) {
+  lastEmittedValue = value;
   emit('update:modelValue', value);
   revalidate(value);
 }
@@ -244,6 +270,7 @@ function formatJson() {
     const formatted = JSON.stringify(obj, null, 2);
     replaceDoc(formatted);
     emit('update:modelValue', formatted);
+    lastEmittedValue = formatted;
     status.value = 'ok';
     emit('blur');
   } catch {
@@ -260,6 +287,7 @@ function compressJson() {
     const compressed = JSON.stringify(obj);
     replaceDoc(compressed);
     emit('update:modelValue', compressed);
+    lastEmittedValue = compressed;
     status.value = 'ok';
     emit('blur');
   } catch {
