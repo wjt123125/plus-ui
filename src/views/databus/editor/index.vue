@@ -135,12 +135,10 @@
         show-icon
         style="margin-bottom: 10px"
       />
-      <el-input
+      <JsonCodeEditor
         v-model="previewRequest"
-        type="textarea"
-        :rows="10"
         placeholder='链路入参 JSON，如 {"flag":true}'
-        class="databus-editor__preview-input"
+        height="280px"
       />
       <template #footer>
         <el-button @click="previewVisible = false">取消</el-button>
@@ -213,11 +211,10 @@
           </el-table>
 
           <div class="databus-editor__section-title">执行后上下文（JSON 快照）</div>
-          <el-input
+          <JsonCodeEditor
             :model-value="prettyContext"
-            type="textarea"
-            :rows="10"
             readonly
+            height="280px"
           />
         </template>
       </template>
@@ -242,6 +239,7 @@ import CmpProps from './components/CmpProps.vue';
 import EdgeProps from './components/EdgeProps.vue';
 import FlowElPreview from './components/FlowElPreview.vue';
 import FlowOutline from './components/FlowOutline.vue';
+import JsonCodeEditor from './components/JsonCodeEditor.vue';
 import { type CmpNodeData } from './composables/useElTreeModel';
 import { getMockPreset, MOCK_PRESETS } from './mock-presets';
 import { useFlowHistory } from './composables/useFlowHistory';

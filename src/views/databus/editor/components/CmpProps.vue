@@ -132,12 +132,11 @@
           </div>
         </el-form-item>
         <el-form-item label="组件配置 data（JSON）">
-          <el-input
+          <JsonCodeEditor
             v-model="dataStr"
-            type="textarea"
-            :rows="8"
             :placeholder="dataHint"
-            @change="onDataChange"
+            height="280px"
+            @blur="onDataChange"
           />
         </el-form-item>
       </el-form>
@@ -199,6 +198,7 @@ import {
   type ElNode
 } from '../composables/useElTreeModel';
 import { useCanvasController } from '../composables/useCanvasController';
+import JsonCodeEditor from './JsonCodeEditor.vue';
 
 const props = defineProps<{
   node: Node<CmpNodeData> | null;

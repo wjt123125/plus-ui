@@ -93,8 +93,8 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'bpm-flow',
     name: 'BPM 全链路（需 BPM 环境）',
-    desc: '调 BPM 端总线 app 四件套（需先执行 bpm-default 种子 SQL、BPM 容器可达且总线 app 已部署，bindId/processDefId 按真实环境改）',
-    inputJson: '{"request":{"password":"1","code":"D001","users":[{"NAME":"张三"}]}}',
+    desc: '调 BPM 端总线 app 四件套',
+    inputJson: '{"request":{"password":"mlhg2004.3401","code":"D001","users":[{"NAME":"张三"}]}}',
     build: () => ({
       type: 'THEN',
       children: [
