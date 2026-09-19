@@ -207,7 +207,15 @@
               </template>
             </el-table-column>
             <el-table-column label="耗时(ms)" prop="timeSpent" width="84" />
-            <el-table-column label="错误信息" prop="errorMessage" min-width="160" show-overflow-tooltip />
+            <el-table-column label="执行结果" min-width="180">
+              <template #default="{ row }">
+                <span
+                  class="databus-editor__step-result"
+                  :class="{ 'is-error': !row.success }"
+                  @click="openStepDetail(row)"
+                >{{ stepResultText(row) }}</span>
+              </template>
+            </el-table-column>
           </el-table>
 
           <div class="databus-editor__section-title">执行后上下文（JSON 快照）</div>
@@ -223,6 +231,42 @@
         <el-button type="success" @click="reopenPreview">再跑一次</el-button>
       </template>
     </el-dialog>
+
+    <!-- 步骤明细抽屉：点击步骤表「执行结果」文本滑出，展示元信息 + $.<tag> 当场 JSON 快照 -->
+    <el-drawer v-model="stepDetailVisible" title="步骤明细" size="42%" append-to-body close-on-click-modal>
+      <template v-if="currentStep">
+        <el-descriptions :column="1" border size="small" style="margin-bottom: 12px">
+          <el-descriptions-item label="数据空间">{{ currentStep.tag || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="组件">{{ currentStep.nodeName || currentStep.nodeId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="结果">
+            <el-tag size="small" :type="currentStep.success ? 'success' : 'danger'">
+              {{ currentStep.success ? '成功' : '失败' }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="耗时">{{ currentStep.timeSpent ?? '-' }} ms</el-descriptions-item>
+          <el-descriptions-item label="开始时间">{{ currentStep.startTime || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="结束时间">{{ currentStep.endTime || '-' }}</el-descriptions-item>
+        </el-descriptions>
+
+        <el-alert
+          v-if="!currentStep.success && currentStep.errorMessage"
+          :title="currentStep.errorMessage"
+          type="error"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 12px"
+        />
+
+        <div class="databus-editor__section-title">数据明细（{{ currentStep.tag ? '$.' + currentStep.tag : '本步' }} 快照）</div>
+        <JsonCodeEditor
+          v-if="prettyStepDetail"
+          :model-value="prettyStepDetail"
+          readonly
+          height="320px"
+        />
+        <el-empty v-else description="本步未产出数据明细" :image-size="60" />
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -232,7 +276,7 @@ import { useVueFlow, type Node, type Edge } from '@vue-flow/core';
 import { ArrowDown, Check, Delete, Expand, Files, Fold, RefreshLeft, RefreshRight, VideoPlay } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { generateEl, previewRun } from '@/api/databus/el';
-import type { PreviewRunVo } from '@/api/databus/el/types';
+import type { NodeStep, PreviewRunVo } from '@/api/databus/el/types';
 import CmpPalette from './components/CmpPalette.vue';
 import FlowCanvas from './components/FlowCanvas.vue';
 import CmpProps from './components/CmpProps.vue';
@@ -547,6 +591,34 @@ const prettyContext = computed(() => {
   const obj = contextObj.value;
   if (obj === null) return previewResult.value?.contextJson ?? '';
   return JSON.stringify(obj, null, 2);
+});
+
+/** 步骤明细抽屉状态：当前选中步骤及其 $.<tag> 子树快照（详情文本） */
+const stepDetailVisible = ref(false);
+const currentStep = ref<NodeStep | null>(null);
+
+/** 步骤表「执行结果」列文本：成功用组件自报摘要，未报兜底「完成」；失败显示错误信息 */
+function stepResultText(row: NodeStep): string {
+  if (!row.success) {
+    return row.errorMessage || '执行失败';
+  }
+  return row.summary || '完成';
+}
+
+function openStepDetail(row: NodeStep) {
+  currentStep.value = row;
+  stepDetailVisible.value = true;
+}
+
+/** 抽屉中数据明细的 2 空格缩进 JSON（后端给的是当场序列化的 JSON 字符串，非法时原样展示） */
+const prettyStepDetail = computed(() => {
+  const raw = currentStep.value?.detailJson;
+  if (!raw) return '';
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
 });
 
 // 键盘快捷键组
@@ -867,6 +939,25 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown));
 .databus-editor__preview-input :deep(textarea) {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 12px;
+}
+
+.databus-editor__step-result {
+  display: inline-block;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--el-color-primary);
+  cursor: pointer;
+}
+
+.databus-editor__step-result:hover {
+  text-decoration: underline;
+}
+
+.databus-editor__step-result.is-error {
+  color: var(--el-color-danger);
 }
 
 .databus-editor__section-title {

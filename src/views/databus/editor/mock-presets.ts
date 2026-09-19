@@ -94,6 +94,37 @@ export const MOCK_PRESETS: MockPreset[] = [
     })
   },
 
+  // ── HTTP 完善档：免授权双请求（本地 RuoYi 一键运行，无需登录/加密开关） ──
+  // 节点1 GET /auth/code：CaptchaController @SaIgnore 无 @ApiEncrypt，恒返回 JSON 信封
+  //   data.captchaEnabled 必在；data.uuid 在验证码开关关闭时为 null → required:false
+  // 节点2 GET /：IndexController 免授权，返回纯文本（非 JSON），response 原样存字符串
+  // 注：RuoYi 的 POST 免登录接口（/auth/login、/auth/register）全部挂 @ApiEncrypt，
+  //     裸 HTTP 无法演示；POST(form/json/raw) 与 basic/bearer 的配置模板见属性面板占位。
+  {
+    key: 'http-anonymous-chain',
+    name: 'HTTP 免授权双请求（本地 RuoYi）',
+    desc: '免授权免加密：JSON 抽取 + 纯文本响应',
+    inputJson: '{}',
+    build: () => ({
+      type: 'THEN',
+      children: [
+        leaf('httpRequest', 'httpRequest1', {
+          method: 'GET',
+          url: 'http://localhost:8080/auth/code',
+          mappings: [
+            { field: 'captchaEnabled', path: '$.data.captchaEnabled' },
+            { field: 'uuid', path: '$.data.uuid', required: false }
+          ]
+        }),
+        leaf('httpRequest', 'httpRequest2', {
+          method: 'GET',
+          url: 'http://localhost:8080/',
+          headers: { 'X-Demo': 'databus' }
+        })
+      ]
+    })
+  },
+
   // ── BPM 业务主线（需 BPM 环境可试运行） ──
   // 顺序锁定：会话 → 启流程 → 建 BO → 完任务
   // 依据旧系统 ProcessCreateProcessor.save("result.processInstanceId") 在前、
@@ -223,28 +254,126 @@ export const MOCK_PRESETS: MockPreset[] = [
     })
   },
   {
-    key: 'bpm-rds-execute',
-    name: 'BPM SQL 参数化查询（需 BPM 环境）',
-    desc: '按入参身份证在 BPM 用户表参数化查询（只读）',
-    // idCard 替换为 ORGUSER.EXT1 真实值；rdsId 必须与 BPM 后台「注册数据源」ID 一致
-    inputJson: '{"request":{"password":"mlhg2004.3401","idCard":"522121199701255412"}}',
+    key: 'bpm-rds-methods',
+    name: 'BPM SQL 八方法全覆盖（需 BPM 环境）',
+    desc: '临时表自清理，覆盖查询写入与批量两种模式',
+    // MySQL 方言；rdsId 必须与 BPM 后台「注册数据源」ID 一致
+    inputJson: '{"request":{"password":"mlhg2004.3401"}}',
     build: () => ({
       type: 'THEN',
-      // 只读 getMaps，可重复试运行不产生脏数据；结果看 $.rdsExecute1.data
+      // 自清理可重复跑：首节点 DROP IF EXISTS + 建表，尾节点 DROP；
+      // 中途失败时 DATABUS_RDS_TEST 保留供排查，下次试运行首节点自动清掉。
+      // 预期观测：标量四件 data 为 张三/25/3/12000.75；getMap 单行、getMaps 三行；
+      // update 影响行数 1；batch 批量参数 [1,1,1]、多 SQL [1,1]；末尾验证查询剩 2 行
       children: [
         leaf('sessionCreate', 'sessionCreate1', {
           connectionId: 'bpm-default',
           userName: 'admin',
           password: '$.request.password'
         }),
+        // 0. 清理上次残留 + 建临时表（DDL 走 update 方法）
         leaf('rdsExecute', 'rdsExecute1', {
           connectionId: 'bpm-default',
           rdsId: '3ed8f0e7-d7fc-451c-b73c-301a6f22fcea',
+          method: 'update',
+          sql: 'drop table if exists DATABUS_RDS_TEST'
+        }),
+        leaf('rdsExecute', 'rdsExecute2', {
+          connectionId: 'bpm-default',
+          rdsId: '3ed8f0e7-d7fc-451c-b73c-301a6f22fcea',
+          method: 'update',
+          sql: 'create table DATABUS_RDS_TEST (ID varchar(32) not null primary key, NAME varchar(64), AGE int, SALARY decimal(10,2))'
+        }),
+        // 1. batch 模式二：单 SQL + 批量参数（DynamicBatchSetter），插 3 行 → [1,1,1]
+        leaf('rdsExecute', 'rdsExecute3', {
+          connectionId: 'bpm-default',
+          rdsId: '3ed8f0e7-d7fc-451c-b73c-301a6f22fcea',
+          method: 'batch',
+          sql: 'insert into DATABUS_RDS_TEST (ID, NAME, AGE, SALARY) values (?, ?, ?, ?)',
+          // args 数组的数组：每行一组参数，叶子走统一参数解析（常量原样、数字不转字符串）
+          args: [
+            ['t1', '张三', 30, 8800.5],
+            ['t2', '李四', 25, 7600],
+            ['t3', '王五', 41, 12000.75]
+          ]
+        }),
+        // 2. getString → 张三
+        leaf('rdsExecute', 'rdsExecute4', {
+          connectionId: 'bpm-default',
+          rdsId: '3ed8f0e7-d7fc-451c-b73c-301a6f22fcea',
+          method: 'getString',
+          sql: 'select NAME from DATABUS_RDS_TEST where ID = ?',
+          args: ['t1']
+        }),
+        // 3. getInt → 25
+        leaf('rdsExecute', 'rdsExecute5', {
+          connectionId: 'bpm-default',
+          rdsId: '3ed8f0e7-d7fc-451c-b73c-301a6f22fcea',
+          method: 'getInt',
+          sql: 'select AGE from DATABUS_RDS_TEST where ID = ?',
+          args: ['t2']
+        }),
+        // 4. getLong → 3
+        leaf('rdsExecute', 'rdsExecute6', {
+          connectionId: 'bpm-default',
+          rdsId: '3ed8f0e7-d7fc-451c-b73c-301a6f22fcea',
+          method: 'getLong',
+          sql: 'select count(*) from DATABUS_RDS_TEST'
+        }),
+        // 5. getDouble → 12000.75
+        leaf('rdsExecute', 'rdsExecute7', {
+          connectionId: 'bpm-default',
+          rdsId: '3ed8f0e7-d7fc-451c-b73c-301a6f22fcea',
+          method: 'getDouble',
+          sql: 'select SALARY from DATABUS_RDS_TEST where ID = ?',
+          args: ['t3']
+        }),
+        // 6. getMap → 单行 Map
+        leaf('rdsExecute', 'rdsExecute8', {
+          connectionId: 'bpm-default',
+          rdsId: '3ed8f0e7-d7fc-451c-b73c-301a6f22fcea',
+          method: 'getMap',
+          sql: 'select ID, NAME, AGE, SALARY from DATABUS_RDS_TEST where ID = ?',
+          args: ['t1']
+        }),
+        // 7. getMaps → 3 行
+        leaf('rdsExecute', 'rdsExecute9', {
+          connectionId: 'bpm-default',
+          rdsId: '3ed8f0e7-d7fc-451c-b73c-301a6f22fcea',
           method: 'getMaps',
-          sql: 'select userid, ext1 as idCard from orguser where ext1 = ?',
-          // args 元素走统一参数解析：裸路径从入参取值
-          args: ['$.request.idCard'],
-          maxRows: 10
+          sql: 'select ID, NAME, AGE, SALARY from DATABUS_RDS_TEST order by ID'
+        }),
+        // 8. update 单条参数化 → 影响行数 1
+        leaf('rdsExecute', 'rdsExecute10', {
+          connectionId: 'bpm-default',
+          rdsId: '3ed8f0e7-d7fc-451c-b73c-301a6f22fcea',
+          method: 'update',
+          sql: 'update DATABUS_RDS_TEST set NAME = ? where ID = ?',
+          args: ['张三-改', 't1']
+        }),
+        // 9. batch 模式一：多 SQL 无参（update + delete 各一条）→ [1,1]
+        leaf('rdsExecute', 'rdsExecute11', {
+          connectionId: 'bpm-default',
+          rdsId: '3ed8f0e7-d7fc-451c-b73c-301a6f22fcea',
+          method: 'batch',
+          sql: [
+            "update DATABUS_RDS_TEST set AGE = AGE + 1 where ID = 't2'",
+            "delete from DATABUS_RDS_TEST where ID = 't3'"
+          ]
+        }),
+        // 10. 写后验证：剩 2 行，t1 改名、t2 年龄 +1
+        leaf('rdsExecute', 'rdsExecute12', {
+          connectionId: 'bpm-default',
+          rdsId: '3ed8f0e7-d7fc-451c-b73c-301a6f22fcea',
+          method: 'getMaps',
+          sql: 'select ID, NAME, AGE, SALARY from DATABUS_RDS_TEST order by ID'
+        }),
+        // 11. 尾清理
+        leaf('rdsExecute', 'rdsExecute13', {
+          connectionId: 'bpm-default',
+          rdsId: '3ed8f0e7-d7fc-451c-b73c-301a6f22fcea',
+          method: 'update',
+          sql: 'drop table DATABUS_RDS_TEST'
         })
       ]
     })
@@ -253,11 +382,38 @@ export const MOCK_PRESETS: MockPreset[] = [
     key: 'bpm-idcard-to-userid',
     name: 'BPM 身份证换用户（需 BPM 环境）',
     desc: '逗号分隔身份证号批量换 userId 原地写回',
-    // idCards 替换为 ORGUSER.EXT1 真实身份证号；试运行后 $.request.idCards 被写回为 userId 串
-    inputJson: '{"request":{"password":"mlhg2004.3401","idCards":"522121199701255412,34010119900202002X"}}',
+    // idCards/idCardsPartial 第一项须替换为 ORGUSER.EXT1 真实身份证号；
+    // 试运行后两个路径分别写回：全命中 userId 串 / 部分命中 userId（后端 warn 漏掉项）
+    inputJson: '{"request":{"password":"mlhg2004.3401","idCards":"522121199701255412","idCardsPartial":"522121199701255412,34010119900202002X"}}',
     build: () => ({
       type: 'THEN',
-      // 三场景观测：全命中→写回全部 userId；部分未命中→warn 写回命中项；全未命中→链路报错中断
+      // 一个节点两字段覆盖两场景：idCards 全命中→写回 userId；
+      // idCardsPartial 一真一假→后端 warn 未匹配项，写回命中的 userId
+      // （全未命中必抛错中断，无法同链，见「身份证全未命中」示例）
+      children: [
+        leaf('sessionCreate', 'sessionCreate1', {
+          connectionId: 'bpm-default',
+          userName: 'admin',
+          password: '$.request.password'
+        }),
+        leaf('idCardToUserId', 'idCardToUserId1', {
+          connectionId: 'bpm-default',
+          fields: [
+            { path: '$.request.idCards', separator: ',' },
+            { path: '$.request.idCardsPartial', separator: ',' }
+          ]
+        })
+      ]
+    })
+  },
+  {
+    key: 'bpm-idcard-all-miss',
+    name: 'BPM 身份证全未命中（需 BPM 环境）',
+    desc: '全部身份证查无用户，节点预期抛错中断',
+    // 两个均为不存在的假号；预期链路在 idCardToUserId1 失败，错误信息含「均未匹配」
+    inputJson: '{"request":{"password":"mlhg2004.3401","idCards":"34010119900202002X,999999999999999999"}}',
+    build: () => ({
+      type: 'THEN',
       children: [
         leaf('sessionCreate', 'sessionCreate1', {
           connectionId: 'bpm-default',

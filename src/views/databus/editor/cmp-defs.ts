@@ -211,7 +211,7 @@ export const CMP_DEFS: CmpDef[] = [
   {
     type: 'httpRequest',
     label: 'Http 请求',
-    desc: '发起 HTTP 调用（GET/POST），响应存入 $.数据空间.response',
+    desc: '通用 HTTP：GET/POST/PUT/PATCH/DELETE，JSON/表单/raw 三种请求体，basic/bearer 鉴权；状态码与响应存入 $.数据空间.status/response，mappings 抽取字段',
     color: '#409eff',
     icon: 'ph:globe',
     group: 'business'

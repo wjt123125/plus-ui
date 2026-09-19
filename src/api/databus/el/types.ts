@@ -54,6 +54,10 @@ export interface NodeStep {
   timeSpent?: number;
   startTime?: string;
   endTime?: string;
+  /** 组件自报的人话执行结果（未报时前端兜底显示「完成」） */
+  summary?: string;
+  /** 该步数据空间 $.<tag> 子树的当场 JSON 快照（条件组件为 {conditionResult}） */
+  detailJson?: string;
 }
 
 /**

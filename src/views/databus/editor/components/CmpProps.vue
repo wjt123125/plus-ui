@@ -217,7 +217,7 @@ const booleanDefs = CMP_DEFS.filter((d) => isBooleanDef(d));
 
 /** 各物料配置 JSON 的示例占位文案 */
 const DATA_HINTS: Record<string, string> = {
-  httpRequest: '{"method":"GET","url":"http://localhost:8080/auth/code"}',
+  httpRequest: '{"method":"POST","url":"http://localhost:8080/api/login","headers":{"X-Tenant":"default"},"query":{"ids":["$.id1","$.id2"]},"bodyType":"json","body":{"username":"admin","password":"$.pwd"},"rawContentType":"text/plain","auth":{"type":"bearer","token":"$.login.token"},"timeoutMs":10000,"failOnHttpError":true,"responseCharset":"UTF-8","responseHeaders":["X-Total-Count"],"mappings":[{"field":"bizCode","path":"$.code","required":true}]}',
   condition: '{"path":"$.httpRequest1.response.code","op":"eq","value":200}',
   setValue: '{"path":"$.setValue1.demo","value":"常量 或 $.入参路径"}',
   fieldMap: '{"mappings":[{"from":"$.httpRequest1.response.code","to":"$.fieldMap1.code","type":"int"},{"from":"$.httpRequest1.response.data[*].NAME","to":"$.fieldMap1.items[*].name","type":"string"}]}',
