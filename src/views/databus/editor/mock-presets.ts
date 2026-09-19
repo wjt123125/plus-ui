@@ -227,7 +227,7 @@ export const MOCK_PRESETS: MockPreset[] = [
     name: 'BPM SQL 参数化查询（需 BPM 环境）',
     desc: '按入参身份证在 BPM 用户表参数化查询（只读）',
     // idCard 替换为 ORGUSER.EXT1 真实值；rdsId 必须与 BPM 后台「注册数据源」ID 一致
-    inputJson: '{"request":{"password":"mlhg2004.3401","idCard":"34010119900101001X"}}',
+    inputJson: '{"request":{"password":"mlhg2004.3401","idCard":"522121199701255412"}}',
     build: () => ({
       type: 'THEN',
       // 只读 getMaps，可重复试运行不产生脏数据；结果看 $.rdsExecute1.data
@@ -239,7 +239,7 @@ export const MOCK_PRESETS: MockPreset[] = [
         }),
         leaf('rdsExecute', 'rdsExecute1', {
           connectionId: 'bpm-default',
-          rdsId: 'default',
+          rdsId: '3ed8f0e7-d7fc-451c-b73c-301a6f22fcea',
           method: 'getMaps',
           sql: 'select userid, ext1 as idCard from orguser where ext1 = ?',
           // args 元素走统一参数解析：裸路径从入参取值
@@ -254,7 +254,7 @@ export const MOCK_PRESETS: MockPreset[] = [
     name: 'BPM 身份证换用户（需 BPM 环境）',
     desc: '逗号分隔身份证号批量换 userId 原地写回',
     // idCards 替换为 ORGUSER.EXT1 真实身份证号；试运行后 $.request.idCards 被写回为 userId 串
-    inputJson: '{"request":{"password":"mlhg2004.3401","idCards":"34010119900101001X,34010119900202002X"}}',
+    inputJson: '{"request":{"password":"mlhg2004.3401","idCards":"522121199701255412,34010119900202002X"}}',
     build: () => ({
       type: 'THEN',
       // 三场景观测：全命中→写回全部 userId；部分未命中→warn 写回命中项；全未命中→链路报错中断
