@@ -31,6 +31,7 @@ import dagre from '@dagrejs/dagre';
 import { useVueFlow } from '@vue-flow/core';
 import {
   GATEWAY_H,
+  GATEWAY_TOTAL_H,
   GATEWAY_W,
   JUNCTION_H,
   JUNCTION_W,
@@ -41,10 +42,11 @@ import {
 import type { ElTreeModel, CmpNodeData } from './useElTreeModel';
 
 /** dagre 未测出 DOM 尺寸时的兜底。dagre 用这些值算节点间距和连线端点,
- *  不直接写入 VueFlow style(那是 buildGatewayNode/buildJunctionNode 的事)。 */
+ *  不直接写入 VueFlow style(那是 buildGatewayNode/buildJunctionNode 的事)。
+ *  gateway 用含 label 的总高(GATEWAY_TOTAL_H),virtual cmp 起止节点走 GATEWAY_H(shape 本身)。 */
 const SIZE_MAP: Record<string, { w: number; h: number }> = {
   cmp: { w: NODE_W, h: NODE_H },
-  gateway: { w: GATEWAY_W, h: GATEWAY_H },
+  gateway: { w: GATEWAY_W, h: GATEWAY_TOTAL_H },
   junction: { w: JUNCTION_W, h: JUNCTION_H },
   placeholder: { w: NODE_W, h: NODE_H }
 };

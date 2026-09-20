@@ -16,6 +16,9 @@ export interface CmpProperties {
   id?: string;
   tag?: string;
   data?: string;
+  /** 节点标题（用户填写的业务名，留空则前端按组件类型 + cfg 实时推断默认）；
+   *  前端编辑态字段，不参与 EL 生成；后端透传到 NodeStep.title */
+  title?: string;
   /** 算子出口 label 自定义（按 branchIndex 存）；前端编辑态字段，
    *  序列化时写入算子 properties.outletLabels，后端往返需保留未知字段 */
   outletLabels?: string[];
@@ -48,6 +51,8 @@ export interface NodeStep {
   nodeName?: string;
   /** 数据空间名（组件 tag） */
   tag?: string;
+  /** 节点标题（画布上用户填写的业务名；未填为 null，前端再按 cfg 推断默认） */
+  title?: string;
   success?: boolean;
   errorMessage?: string;
   /** 耗时毫秒 */

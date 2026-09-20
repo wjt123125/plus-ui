@@ -17,6 +17,34 @@
         <el-tag v-else-if="node.data.operator" size="small" type="warning">算子</el-tag>
       </div>
 
+      <!-- 节点标题：业务叶子/条件件/算子可编辑；留空时 placeholder 显按 cfg 推断的默认名 -->
+      <el-form
+        v-if="canEditTitle"
+        label-position="top"
+        size="small"
+        class="cmp-props__title-form"
+      >
+        <el-form-item label="节点标题">
+          <el-input
+            v-model="titleInput"
+            :placeholder="defaultTitleText"
+            @change="onTitleChange"
+          >
+            <template #suffix>
+              <el-icon
+                v-if="hasCustomTitle"
+                class="cmp-props__title-reset"
+                title="恢复默认命名"
+                @click="resetTitle"
+              >
+                <Refresh />
+              </el-icon>
+            </template>
+          </el-input>
+          <div class="cmp-props__hint">留空时按组件配置自动命名；自定义后不随配置变化</div>
+        </el-form-item>
+      </el-form>
+
       <el-alert
         v-if="node.data.virtual"
         :title="virtualHint"
@@ -115,7 +143,7 @@
       </el-form>
 
       <!-- 业务组件 / 已挂载的条件件：数据空间 + 配置 JSON -->
-      <el-form v-else label-position="top" size="small" class="cmp-props__form">
+      <el-form v-else-if="!isScriptLeaf" label-position="top" size="small" class="cmp-props__form">
         <el-form-item v-if="isConditionLeaf" :label="`${opNode?.type ?? ''} 条件组件`.trim()">
           <el-tag size="small" type="warning">{{ leafDef?.label ?? elNode?.componentCode }}</el-tag>
           <el-button size="small" text type="primary" @click="openReplaceCondition">更换条件组件</el-button>
@@ -138,6 +166,58 @@
             height="280px"
             @blur="onDataChange"
           />
+        </el-form-item>
+      </el-form>
+
+      <!-- 脚本节点（script/booleanScript）专用编辑器：数据空间 + language 下拉 + 脚本文本 -->
+      <el-form v-else label-position="top" size="small" class="cmp-props__form">
+        <el-form-item v-if="isConditionLeaf" :label="`${opNode?.type ?? ''} 条件组件`.trim()">
+          <el-tag size="small" type="warning">{{ leafDef?.label ?? elNode?.componentCode }}</el-tag>
+          <el-button size="small" text type="primary" @click="openReplaceCondition">更换条件组件</el-button>
+        </el-form-item>
+        <el-form-item label="数据空间" required :error="spaceError || undefined">
+          <el-input
+            v-model="dataSpace"
+            placeholder="如 script1（字母开头，字母数字下划线）"
+            clearable
+            @change="onDataSpaceChange"
+          />
+          <div class="cmp-props__hint">
+            脚本 nodeId 即数据空间名（画布唯一）；脚本可通过 databusContext.save('$.{{ dataSpace || '数据空间名' }}.xxx', value) 写出
+          </div>
+        </el-form-item>
+        <el-form-item label="语言 language">
+          <el-select
+            v-model="scriptLanguage"
+            placeholder="无可用引擎时手填 groovy"
+            filterable
+            allow-create
+            default-first-option
+            style="width: 100%"
+            @change="onScriptFieldChange"
+          >
+            <el-option
+              v-for="lang in scriptEngines"
+              :key="lang"
+              :label="lang"
+              :value="lang"
+            />
+          </el-select>
+          <div v-if="scriptEngines.length === 0" class="cmp-props__hint">
+            后端未装任何脚本引擎 jar，可手填语言名（如 groovy）但试运行会报错
+          </div>
+        </el-form-item>
+        <el-form-item label="脚本 script">
+          <el-input
+            v-model="scriptText"
+            type="textarea"
+            :rows="10"
+            placeholder="def v = databusContext.read('$.request.code'); databusContext.save('$.script1.out', v)"
+            @change="onScriptFieldChange"
+          />
+          <div class="cmp-props__hint">
+            Groovy 语法；布尔脚本必须 return true/false；可直接调任意 Java/hutool 类
+          </div>
         </el-form-item>
       </el-form>
 
@@ -173,8 +253,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
-import { Delete, Plus } from '@element-plus/icons-vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import { Delete, Plus, Refresh } from '@element-plus/icons-vue';
 import type { Node } from '@vue-flow/core';
 import {
   ElAlert,
@@ -183,6 +263,7 @@ import {
   ElEmpty,
   ElForm,
   ElFormItem,
+  ElIcon,
   ElInput,
   ElMessage,
   ElOption,
@@ -191,7 +272,8 @@ import {
   ElSelect,
   ElTag
 } from 'element-plus';
-import { CMP_DEFS, getDef, isBooleanDef } from '../cmp-defs';
+import { listScriptEngines } from '@/api/databus/script';
+import { CMP_DEFS, getDef, isBooleanDef, resolveNodeTitle } from '../cmp-defs';
 import {
   useElTreeModelInject,
   type CmpNodeData,
@@ -232,7 +314,9 @@ const DATA_HINTS: Record<string, string> = {
   processTerminate: '{"connectionId":"bpm-default","instanceId":"$.processStart1.processInstanceId","userId":"admin"}',
   taskComplete: '{"connectionId":"bpm-default","processInstanceId":"$.processStart1.processInstanceId","uid":"admin","failOnError":false}',
   rdsExecute: '{"connectionId":"bpm-default","rdsId":"default","method":"getMaps","sql":"select userid,ext1 as idCard from orguser where ext1=?","args":["$.request.idCard"],"maxRows":100}',
-  idCardToUserId: '{"connectionId":"bpm-default","fields":[{"path":"$.request.idCards","separator":","}]}'
+  idCardToUserId: '{"connectionId":"bpm-default","fields":[{"path":"$.request.idCards","separator":","}]}',
+  fileUpload: '{"connectionId":"bpm-default","sourcePath":"$.request.files","boId":"$.boCreate1.boResults[0].records[0].ID","appId":"com.awspaas.user.apps.data.bus","boName":"BO_EU_API_TEST_MAIN","boItemName":"BO_FIELD_FILE","processInstId":"$.processStart1.processInstanceId","validateChecksum":false}',
+  fileDownload: '{"connectionId":"bpm-default","boId":"$.boCreate1.boResults[0].records[0].ID","fieldName":"BO_FIELD_FILE"}'
 };
 
 const SPACE_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
@@ -254,6 +338,13 @@ const elNode = computed<ElNode | null>(() =>
 /** 业务叶子的物料定义 */
 const leafDef = computed(() =>
   elNode.value?.componentCode ? getDef(elNode.value.componentCode) : undefined
+);
+
+/** 当前选中节点是否脚本叶子（script/booleanScript）—— 用脚本专用编辑器替 JSON 编辑器 */
+const isScriptLeaf = computed(
+  () =>
+    elNode.value?.componentCode === 'script' ||
+    elNode.value?.componentCode === 'booleanScript'
 );
 
 /** 当前选中的是已挂载条件件（condition 叶子充当网关） */
@@ -306,7 +397,25 @@ const caseCount = computed(() => {
 const dataSpace = ref('');
 const tag = ref('');
 const dataStr = ref('');
+const titleInput = ref('');
 const spaceError = ref('');
+
+// 脚本编辑器状态：language 下拉 + 脚本文本，与 dataStr 同源于 ElNode.data（JSON 字符串）
+const scriptLanguage = ref('');
+const scriptText = ref('');
+const scriptEngines = ref<string[]>([]);
+
+onMounted(async () => {
+  try {
+    const res = await listScriptEngines();
+    scriptEngines.value = (res.data ?? [])
+      .map((e) => e.language ?? '')
+      .filter((lang) => !!lang);
+  } catch {
+    // 接口未部署/未登录时静默：用户可手填语言名，试运行时由后端报错
+    scriptEngines.value = [];
+  }
+});
 
 watch(
   () => props.node?.id,
@@ -315,10 +424,43 @@ watch(
     dataSpace.value = n?.cmpId ?? '';
     tag.value = n?.tag ?? '';
     dataStr.value = n?.data ?? '';
+    titleInput.value = n?.title ?? '';
     spaceError.value = '';
+    // 从 dataStr 解析出 language/script 同步到脚本编辑器；非法 JSON 时给空 defaults
+    const parsed = parseScriptCfg(n?.data);
+    scriptLanguage.value = parsed.language;
+    scriptText.value = parsed.script;
   },
   { immediate: true }
 );
+
+/** 解析 dataStr 为 {language, script}；非 JSON 或缺字段返回空串 */
+function parseScriptCfg(dataStr?: string): { language: string; script: string } {
+  if (!dataStr) return { language: '', script: '' };
+  try {
+    const obj = JSON.parse(dataStr) as { language?: string; script?: string };
+    return {
+      language: typeof obj.language === 'string' ? obj.language : '',
+      script: typeof obj.script === 'string' ? obj.script : ''
+    };
+  } catch {
+    return { language: '', script: '' };
+  }
+}
+
+/** 脚本编辑器任意字段变更：序列化为 JSON 写回 ElNode.data 并重投影 */
+function onScriptFieldChange() {
+  if (!props.node || !elNode.value) return;
+  const language = scriptLanguage.value.trim();
+  const script = scriptText.value;
+  const cfg: Record<string, string> = {};
+  if (language) cfg.language = language;
+  if (script) cfg.script = script;
+  const json = Object.keys(cfg).length > 0 ? JSON.stringify(cfg) : '';
+  treeModel.updateLeafData(elNode.value.id, { data: json });
+  dataStr.value = json;
+  emit('data-change');
+}
 
 /** 数据空间改名：校验 → renameDataSpace 联动替换全树路径引用 → 重投影 */
 function onDataSpaceChange() {
@@ -362,6 +504,54 @@ function onDataChange() {
 function onOperatorTagChange() {
   if (!props.node) return;
   treeModel.updateOperatorTag(props.node.id, tag.value);
+  emit('data-change');
+}
+
+// ── 节点标题：留空实时按 cfg 推断，填了锁定；Refresh 图标清空恢复默认 ──
+
+/** 可编辑标题的节点：业务叶子/条件件/算子（虚拟节点与汇合点/空槽除外） */
+const canEditTitle = computed(() => {
+  const n = elNode.value;
+  if (!n || isJunction.value || isPlaceholder.value) return false;
+  return !getDef(n.type)?.virtual;
+});
+
+/** 标题推断所用物料：叶子按注册名反查，算子用自身类型 */
+const titleDef = computed(() => {
+  const n = elNode.value;
+  if (!n) return undefined;
+  return n.componentCode ? getDef(n.componentCode) : getDef(n.type);
+});
+
+/** 解析组件配置 JSON（编辑中的 dataStr 优先，实现 cfg 变默认名即时变） */
+function parseCfgForTitle(): unknown {
+  const raw = dataStr.value || elNode.value?.data || '';
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+/** 留空时的实时默认名（输入框 placeholder） */
+const defaultTitleText = computed(() => resolveNodeTitle(titleDef.value, null, parseCfgForTitle()));
+
+const hasCustomTitle = computed(() => !!titleInput.value.trim());
+
+/** 标题改完（失焦/回车）：写树正本并重投影；空白等同恢复默认 */
+function onTitleChange() {
+  if (!elNode.value) return;
+  treeModel.updateNodeTitle(elNode.value.id, titleInput.value);
+  titleInput.value = elNode.value.title ?? '';
+  emit('data-change');
+}
+
+/** 点 Refresh：清空用户正本，恢复按 cfg 实时推断 */
+function resetTitle() {
+  if (!elNode.value) return;
+  treeModel.updateNodeTitle(elNode.value.id, '');
+  titleInput.value = '';
   emit('data-change');
 }
 
@@ -457,6 +647,19 @@ function removeCase(index: number) {
 
 .cmp-props__form {
   margin-top: 4px;
+}
+
+.cmp-props__title-form {
+  margin-top: 4px;
+}
+
+.cmp-props__title-reset {
+  cursor: pointer;
+  color: var(--el-text-color-secondary);
+}
+
+.cmp-props__title-reset:hover {
+  color: var(--el-color-primary);
 }
 
 .cmp-props__hint {

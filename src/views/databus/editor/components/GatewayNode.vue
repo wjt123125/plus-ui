@@ -66,11 +66,12 @@ function handleStyle(handle: string): Record<string, string> {
 .cmp-gateway {
   position: relative;
   width: 56px;
-  height: 56px;
+  height: 72px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  padding-top: 6px;
   --gw-color: #409eff;
 }
 

@@ -54,46 +54,45 @@ function thenWrap(...children: CmpProperty[]): CmpProperty {
 }
 
 export const MOCK_PRESETS: MockPreset[] = [
-  // ── 1C 试运行主示例 ──
   {
-    key: 'preview-http-if',
-    name: '本地服务探测（试运行主示例）',
-    desc: 'code=200 映射验证码开关并成功返回，否则未就绪',
+    key: 'script-if-booleanScript',
+    name: '条件脚本与脚本（纯本地）',
+    desc: 'Groovy 脚本读写数据空间与 IF 条件脚本（结构展示）',
+    inputJson: '{"flag":true,"name":"databus"}',
+    // 结构：THEN( IF(booleanScript1, THEN(script1), setValue1) )
+    // - booleanScript1 读 $.flag，返回 boolean 决定 IF 走真分支
+    // - 真分支 THEN(script1)：读 $.name 拼 greeting 写回 $.script1.greeting
+    // - 假分支 setValue1：仅占位
+    // 注：脚本叶子 serializeNode 已对 script/booleanScript 特例——序列化时 CmpProperty.id
+    //     替换为数据空间名（cmpId），后端 EL 引用与 LiteFlowNodeBuilder 注册一致。
     build: () => ({
       type: 'THEN',
       children: [
-        leaf('httpRequest', 'httpRequest1', { method: 'GET', url: 'http://localhost:8080/auth/code' }),
         {
           type: 'IF',
           condition: leaf(
-            'condition',
-            'condition1',
-            { path: '$.httpRequest1.response.code', op: 'eq', value: 200 },
+            'booleanScript',
+            'booleanScript1',
+            {
+              language: 'groovy',
+              script: "def v = databusContext.read('$.flag'); return v == true"
+            },
             true
           ),
           children: [
             thenWrap(
-              leaf('fieldMap', 'fieldMap1', {
-                mappings: [
-                  {
-                    from: '$.httpRequest1.response.data.captchaEnabled',
-                    to: '$.fieldMap1.captchaEnabled'
-                  }
-                ]
-              }),
-              leaf('response', 'response1', {
-                result: true,
-                msg: '$.httpRequest1.response.msg',
-                dataPath: '$.fieldMap1'
+              leaf('script', 'script1', {
+                language: 'groovy',
+                script:
+                  "def name = databusContext.read('$.name'); databusContext.save('$.script1.greeting', 'hello ' + name)"
               })
             ),
-            leaf('response', 'response2', { result: false, msg: '服务未就绪' })
+            leaf('setValue', 'setValue1', { path: '$.response1.msg', value: '已完成' })
           ]
         }
       ]
     })
   },
-
   // ── HTTP 完善档：免授权双请求（本地 RuoYi 一键运行，无需登录/加密开关） ──
   // 节点1 GET /auth/code：CaptchaController @SaIgnore 无 @ApiEncrypt，恒返回 JSON 信封
   //   data.captchaEnabled 必在；data.uuid 在验证码开关关闭时为 null → required:false
@@ -133,8 +132,8 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'bpm-flow',
     name: 'BPM 全链路（需 BPM 环境）',
-    desc: '会话→启流程→建 BO（绑定流程实例）→完任务',
-    inputJson: '{"request":{"password":"mlhg2004.3401","code":"D001","boList":[{"BO_FIELD_TEXT":"测试","BO_FIELD_USER":"张三","BO_FIELD_NUM":123456}]}}',
+    desc: '会话→启流程→建 BO→附件上传/读回→完任务',
+    inputJson: '{"request":{"password":"mlhg2004.3401","code":"D001","boList":[{"BO_FIELD_TEXT":"测试","BO_FIELD_USER":"张三","BO_FIELD_NUM":123456}],"files":[{"fileName":"hello.txt","fileContent":"aGVsbG8gZGF0YWJ1cw==","securityLevel":1}]}}',
     build: () => ({
       type: 'THEN',
       children: [
@@ -164,6 +163,22 @@ export const MOCK_PRESETS: MockPreset[] = [
             }
           ]
         }),
+        // 附件两件：boId 取新建记录 ID（创建响应已回写，无需再 query），
+        // 同时透传流程实例 ID；fileDownload 读回验证上传生效，预期 fileCount=1
+        leaf('fileUpload', 'fileUpload1', {
+          connectionId: 'bpm-default',
+          sourcePath: '$.request.files',
+          boId: '$.boCreate1.boResults[0].records[0].ID',
+          appId: 'com.awspaas.user.apps.data.bus',
+          boName: 'BO_EU_API_TEST_MAIN',
+          boItemName: 'BO_FIELD_FILE',
+          processInstId: '$.processStart1.processInstanceId'
+        }),
+        leaf('fileDownload', 'fileDownload1', {
+          connectionId: 'bpm-default',
+          boId: '$.boCreate1.boResults[0].records[0].ID',
+          fieldName: 'BO_FIELD_FILE'
+        }),
         leaf('taskComplete', 'taskComplete1', {
           connectionId: 'bpm-default',
           processInstanceId: '$.processStart1.processInstanceId',
@@ -176,11 +191,13 @@ export const MOCK_PRESETS: MockPreset[] = [
   {
     key: 'bpm-bo-update',
     name: 'BPM BO 查改验证（需 BPM 环境）',
-    desc: '查 → 改 USER → 写回 → 二次查询验证（数据保留）',
+    desc: '按查询结果分流：有数据则改并验证，无则跳过',
     inputJson: '{"request":{"password":"mlhg2004.3401","newUser":"张三-已更新","conditions":[{"fieldName":"BO_FIELD_TEXT","operator":"=","paramValue":"测试"}]}}',
     build: () => ({
       type: 'THEN',
       // 数据保留不删；清理测试数据请加载「BPM BO 条件清理」示例
+      // IF 条件检 $.boQuery1.records[0]：空数组越界触发 PathNotFoundException，
+      // readOptional 兜底返 null → notBlank=false；命中首条返回 Map，toString 非空 → true
       children: [
         leaf('sessionCreate', 'sessionCreate1', {
           connectionId: 'bpm-default',
@@ -197,27 +214,41 @@ export const MOCK_PRESETS: MockPreset[] = [
             conditionSourcePath: '$.request.conditions'
           }
         }),
-        leaf('dataPatch', 'dataPatch1', {
-          // 原地给查出的每条记录打补丁：只改 USER 字段，ID/TEXT 等其余字段原样保留
-          // 改 USER 不改查询条件里的 TEXT，保证二次同条件查询仍能命中
-          target: '$.boQuery1.records[*]',
-          patch: { BO_FIELD_USER: '$.request.newUser' }
-        }),
-        leaf('boUpdate', 'boUpdate1', {
-          connectionId: 'bpm-default',
-          // records 已被 dataPatch 原地打补丁，每条仍含 ID，整体回写
-          boList: [{ boName: 'BO_EU_API_TEST_MAIN', sourcePath: '$.boQuery1.records' }]
-        }),
-        leaf('boQuery', 'boQuery2', {
-          connectionId: 'bpm-default',
-          // 二次查询验证：返回记录的 BO_FIELD_USER 应为入参 newUser；数据保留不删
-          main: {
-            boName: 'BO_EU_API_TEST_MAIN',
-            method: 'list',
-            maxRecord: 10,
-            conditionSourcePath: '$.request.conditions'
-          }
-        })
+        {
+          type: 'IF',
+          condition: leaf(
+            'condition',
+            'hasData1',
+            { path: '$.boQuery1.records[0]', op: 'notBlank' },
+            true
+          ),
+          children: [
+            thenWrap(
+              leaf('dataPatch', 'dataPatch1', {
+                // 原地给查出的每条记录打补丁：只改 USER 字段，ID/TEXT 等其余字段原样保留
+                // 改 USER 不改查询条件里的 TEXT，保证二次同条件查询仍能命中
+                target: '$.boQuery1.records[*]',
+                patch: { BO_FIELD_USER: '$.request.newUser' }
+              }),
+              leaf('boUpdate', 'boUpdate1', {
+                connectionId: 'bpm-default',
+                // records 已被 dataPatch 原地打补丁，每条仍含 ID，整体回写
+                boList: [{ boName: 'BO_EU_API_TEST_MAIN', sourcePath: '$.boQuery1.records' }]
+              }),
+              leaf('boQuery', 'boQuery2', {
+                connectionId: 'bpm-default',
+                // 二次查询验证：返回记录的 BO_FIELD_USER 应为入参 newUser；数据保留不删
+                main: {
+                  boName: 'BO_EU_API_TEST_MAIN',
+                  method: 'list',
+                  maxRecord: 10,
+                  conditionSourcePath: '$.request.conditions'
+                }
+              })
+            ),
+            leaf('response', 'response1', { result: false, msg: '查询无数据，已跳过更新' })
+          ]
+        }
       ]
     })
   },

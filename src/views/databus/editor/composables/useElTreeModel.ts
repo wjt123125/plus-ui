@@ -13,7 +13,7 @@
 import { inject, provide, ref, type InjectionKey, type Ref } from 'vue';
 import type { Edge, Node } from '@vue-flow/core';
 import type { CmpProperty } from '@/api/databus/el/types';
-import { getDef, type CmpDef } from '../cmp-defs';
+import { getDef, resolveNodeTitle, type CmpDef } from '../cmp-defs';
 
 // ────────────────────────────────────────────────────────────────
 // 1. ElNode 模型（与 client ELNode 同构，字段命名沿用本项目）
@@ -43,6 +43,9 @@ export interface ElNode {
   tag?: string;
   /** LiteFlow data 属性（叶子为组件配置 JSON 字符串） */
   data?: string;
+  /** 节点标题（用户填写的业务名正本，留空则展示端按组件 cfg 实时推断默认；
+   *  纯编辑态字段，不参与 EL 生成，仅随 properties.title 往返） */
+  title?: string;
   /** 算子各自定义的出口 label（按 branchIndex 存），用户双击/属性面板改的 label 持久化到这里；
    *  projectXxx 构造 outlets 时优先用 outletLabels[i]，未定义则用默认 label（真/假/case1 等） */
   outletLabels?: string[];
@@ -59,7 +62,10 @@ export interface ElNode {
 export const NODE_W = 150;
 export const NODE_H = 56;
 export const GATEWAY_W = 56;
+/** Gateway 形状本身高度（圆/菱形 56×56）——virtual 起止节点也复用这个尺寸 */
 export const GATEWAY_H = 56;
+/** Gateway 含 label 的总高度（dagre 布局按这个算间距，避免 label 被下一个节点 handle 压住） */
+export const GATEWAY_TOTAL_H = 72;
 export const JUNCTION_W = 16;
 export const JUNCTION_H = 16;
 /** 默认起始坐标（start 节点位置；仅投影器内部使用） */
@@ -89,6 +95,8 @@ export interface CmpNodeData {
   tag: string;
   data: string;
   label: string;
+  /** 节点标题展示文本（投影时按「用户 title → cfg 推断默认 → label」算好；缺省回退 label） */
+  title?: string;
   color: string;
   virtual: boolean;
   operator?: boolean;
@@ -164,6 +172,9 @@ function parseNode(cmp: CmpProperty, parentOperatorId: string | undefined): ElNo
     type: cmp.type,
     parentOperatorId
   };
+
+  // 节点标题为纯编辑态字段，叶子与算子都随 properties.title 往返（空白不恢复）
+  if (cmp.properties?.title?.trim()) node.title = cmp.properties.title;
 
   if (!isOperator) {
     // 业务组件叶子：CmpProperty.id 是注册名，properties.tag 是数据空间名
@@ -263,20 +274,32 @@ function serializeNode(node: ElNode): CmpProperty | null {
       id: node.cmpId || node.tag || node.id,
       type: 'NodeComponent'
     };
-    if (node.tag) leaf.properties = { tag: node.tag };
+    const title = node.title?.trim();
+    if (node.tag || title) {
+      leaf.properties = {
+        ...(node.tag ? { tag: node.tag } : {}),
+        ...(title ? { title } : {})
+      };
+    }
     return leaf;
   }
 
   if (!isOperator) {
-    // 业务叶子：id=组件注册名（可重复），properties.tag=数据空间名（画布唯一）
+    // 业务叶子：id=组件注册名（可重复），properties.tag=数据空间名（画布唯一）。
+    // 脚本叶子（script/booleanScript）特例：后端无 @LiteflowComponent 注册名，
+    // 必须用唯一的 nodeId（数据空间名 cmpId）才能被 DatabusExecutor 的
+    // LiteFlowNodeBuilder 正确注册与 EL 引用。
+    const isScriptLeaf = node.componentCode === 'script' || node.componentCode === 'booleanScript';
     const leaf: CmpProperty = {
-      id: node.componentCode || undefined,
+      id: isScriptLeaf ? (node.cmpId || undefined) : (node.componentCode || undefined),
       type: node.type === 'NodeBooleanComponent' ? 'NodeBooleanComponent' : 'NodeComponent'
     };
-    if (node.cmpId || node.data) {
+    const title = node.title?.trim();
+    if (node.cmpId || node.data || title) {
       leaf.properties = {
         ...(node.cmpId ? { tag: node.cmpId } : {}),
-        ...(node.data ? { data: node.data } : {})
+        ...(node.data ? { data: node.data } : {}),
+        ...(title ? { title } : {})
       };
     }
     return leaf;
@@ -295,10 +318,12 @@ function serializeNode(node: ElNode): CmpProperty | null {
       .filter((c): c is CmpProperty => c !== null);
     if (mapped.length > 0) prop.children = mapped;
   }
-  if (node.tag || node.outletLabels) {
+  const opTitle = node.title?.trim();
+  if (node.tag || node.outletLabels || opTitle) {
     prop.properties = {
       ...(node.tag ? { tag: node.tag } : {}),
-      ...(node.outletLabels ? { outletLabels: node.outletLabels } : {})
+      ...(node.outletLabels ? { outletLabels: node.outletLabels } : {}),
+      ...(opTitle ? { title: opTitle } : {})
     };
   }
   return prop;
@@ -351,6 +376,16 @@ function projectToGraph(
   return { nodes: ctx.nodes, edges: ctx.edges };
 }
 
+/** 解析叶子组件配置 JSON 供标题推断；空/非法 JSON 返回空对象（推断回退 label） */
+function parseLeafCfg(dataStr?: string): unknown {
+  if (!dataStr) return {};
+  try {
+    return JSON.parse(dataStr);
+  } catch {
+    return {};
+  }
+}
+
 /** 投影单个 ElNode，返回 {startId, endId} 端口 */
 function projectNode(node: ElNode, ctx: ProjectContext, parentOperatorId: string | undefined): Port {
   const def = getDef(node.type);
@@ -365,6 +400,8 @@ function projectNode(node: ElNode, ctx: ProjectContext, parentOperatorId: string
       : (node.componentCode ? getDef(node.componentCode) : undefined)
           ?? fallbackDef(node.componentCode ?? node.cmpId ?? '');
     const id = node.id;
+    // 业务卡上 label（顶行）= 组件类型名（稳定、易扫）；title（中间行）= 业务标题（推断/自定义）。
+    // 两者相同或 title 为空时，CmpNode.vue 模板会条件隐藏中间行，视觉上只剩类型名。
     const data: CmpNodeData = {
       defType: cmpDef.type,
       cmpId: node.cmpId ?? '',
@@ -372,6 +409,7 @@ function projectNode(node: ElNode, ctx: ProjectContext, parentOperatorId: string
       tag: node.cmpId ?? '',
       data: node.data ?? '',
       label: cmpDef.label,
+      title: resolveNodeTitle(cmpDef, node.title, isVirtual ? {} : parseLeafCfg(node.data)),
       color: cmpDef.color,
       virtual: isVirtual
     };
@@ -486,7 +524,9 @@ function projectWhen(node: ElNode, ctx: ProjectContext): Port {
     handle: `branch_${i}`,
     label: node.outletLabels?.[i] ?? `并行${i + 1}`
   }));
-  const gatewayNode = buildGatewayNode(ctx, gatewayId, def, 'WHEN', outlets, node.tag);
+  const gatewayNode = buildGatewayNode(
+    ctx, gatewayId, def, 'WHEN', outlets, node.tag, resolveNodeTitle(def, node.title)
+  );
   ctx.nodes.push(gatewayNode);
   ctx.produced.add(gatewayId);
 
@@ -564,7 +604,10 @@ function projectIf(node: ElNode, ctx: ProjectContext): Port {
   } else {
     condId = node.id;
   }
-  const condNode = buildConditionGatewayNode(ctx, condId, condDef, outlets, condTag);
+  // 标题随条件件走：挂了条件件读条件件的 title/cfg，没挂则用 IF 算子自身（label 兜底）
+  const titleNode = node.condition ?? node;
+  const condTitle = resolveNodeTitle(condDef, titleNode.title, parseLeafCfg(titleNode.data));
+  const condNode = buildConditionGatewayNode(ctx, condId, condDef, outlets, condTag, condTitle);
   ctx.nodes.push(condNode);
   ctx.produced.add(condId);
 
@@ -646,7 +689,10 @@ function projectSwitch(node: ElNode, ctx: ProjectContext): Port {
   } else {
     condId = node.id;
   }
-  const condNode = buildConditionGatewayNode(ctx, condId, condDef, outlets, condTag);
+  // 标题随条件件走：挂了条件件读条件件的 title/cfg，没挂则用 SWITCH 算子自身（label 兜底）
+  const titleNode = node.condition ?? node;
+  const condTitle = resolveNodeTitle(condDef, titleNode.title, parseLeafCfg(titleNode.data));
+  const condNode = buildConditionGatewayNode(ctx, condId, condDef, outlets, condTag, condTitle);
   // SWITCH 的 cases 字段供属性面板用
   condNode.data.cases = outlets.map((o) => o.label);
   ctx.nodes.push(condNode);
@@ -710,7 +756,10 @@ function projectLoop(node: ElNode, ctx: ProjectContext): Port {
   } else {
     condId = node.id;
   }
-  const condNode = buildConditionGatewayNode(ctx, condId, condDef, outlets, condTag);
+  // 标题随条件件走：挂了条件件读条件件的 title/cfg，没挂则用循环算子自身（label 兜底）
+  const titleNode = node.condition ?? node;
+  const condTitle = resolveNodeTitle(condDef, titleNode.title, parseLeafCfg(titleNode.data));
+  const condNode = buildConditionGatewayNode(ctx, condId, condDef, outlets, condTag, condTitle);
   ctx.nodes.push(condNode);
   ctx.produced.add(condId);
 
@@ -753,7 +802,9 @@ function projectCatch(node: ElNode, ctx: ProjectContext): Port {
     { handle: 'try', label: node.outletLabels?.[0] ?? '主体' },
     { handle: 'catch', label: node.outletLabels?.[1] ?? '异常' }
   ];
-  const gatewayNode = buildGatewayNode(ctx, gatewayId, def, 'CATCH', outlets, node.tag);
+  const gatewayNode = buildGatewayNode(
+    ctx, gatewayId, def, 'CATCH', outlets, node.tag, resolveNodeTitle(def, node.title)
+  );
   ctx.nodes.push(gatewayNode);
   ctx.produced.add(gatewayId);
 
@@ -806,7 +857,9 @@ function projectBoolean(node: ElNode, ctx: ProjectContext): Port {
     handle: `b${i + 1}`,
     label: node.outletLabels?.[i] ?? labels[i]
   }));
-  const gatewayNode = buildGatewayNode(ctx, gatewayId, def, node.type, outlets, node.tag);
+  const gatewayNode = buildGatewayNode(
+    ctx, gatewayId, def, node.type, outlets, node.tag, resolveNodeTitle(def, node.title)
+  );
   ctx.nodes.push(gatewayNode);
   ctx.produced.add(gatewayId);
 
@@ -854,6 +907,7 @@ function projectChain(node: ElNode, ctx: ProjectContext): Port {
     tag: node.tag ?? '',
     data: '',
     label: def.label,
+    title: resolveNodeTitle(def, node.title),
     color: def.color,
     virtual: false,
     operator: true
@@ -881,6 +935,7 @@ function projectLeafFallback(node: ElNode, ctx: ProjectContext): Port {
     tag: node.tag ?? '',
     data: node.data ?? '',
     label: def.label,
+    title: resolveNodeTitle(def, node.title, parseLeafCfg(node.data)),
     color: def.color,
     virtual: false
   };
@@ -908,7 +963,8 @@ function buildGatewayNode(
   def: CmpDef,
   gatewayKind: string,
   outlets: { handle: string; label: string }[],
-  tag?: string
+  tag?: string,
+  title?: string
 ): Node<CmpNodeData> {
   const pos = getPosition(ctx, id);
   return {
@@ -921,13 +977,14 @@ function buildGatewayNode(
       tag: tag ?? '',
       data: '',
       label: def.label,
+      title,
       color: def.color,
       virtual: false,
       operator: true,
       gatewayKind,
       outlets
     },
-    style: { width: `${GATEWAY_W}px`, height: `${GATEWAY_H}px` },
+    style: { width: `${GATEWAY_W}px`, height: `${GATEWAY_TOTAL_H}px` },
     deletable: true
   };
 }
@@ -938,7 +995,8 @@ function buildConditionGatewayNode(
   id: string,
   condDef: CmpDef,
   outlets: { handle: string; label: string }[],
-  tag?: string
+  tag?: string,
+  title?: string
 ): Node<CmpNodeData> {
   const pos = getPosition(ctx, id);
   return {
@@ -951,13 +1009,14 @@ function buildConditionGatewayNode(
       tag: tag ?? '',
       data: '',
       label: condDef.label,
+      title,
       color: condDef.color,
       virtual: false,
       operator: true,
       isCondition: true,
       outlets
     },
-    style: { width: `${GATEWAY_W}px`, height: `${GATEWAY_H}px` },
+    style: { width: `${GATEWAY_W}px`, height: `${GATEWAY_TOTAL_H}px` },
     deletable: true
   };
 }
@@ -1490,6 +1549,23 @@ export function useElTreeModel() {
   }
 
   /**
+   * 更新节点标题（属性面板编辑用，叶子与算子通用）。
+   * 传入空白串等同「恢复默认」：删除正本字段，展示端重新按 cfg 推断，
+   * 序列化时 properties.title 空就不写入画布 JSON 正本。
+   */
+  function updateNodeTitle(nodeId: string, title: string): boolean {
+    const node = findNode(nodeId);
+    if (!node || getDef(node.type)?.virtual) return false;
+    const trimmed = title.trim();
+    if (trimmed) {
+      node.title = trimmed;
+    } else {
+      delete node.title;
+    }
+    return true;
+  }
+
+  /**
    * 更新算子出口的自定义 label（双击边/属性面板编辑用）。
    * - label 非空：设到 outletLabels[branchIndex]，projectXxx 时优先用
    * - label 为空/null：删 outletLabels[branchIndex]（恢复默认 label）
@@ -1608,6 +1684,7 @@ export function useElTreeModel() {
     isDataSpaceNameTaken,
     renameDataSpace,
     updateOperatorTag,
+    updateNodeTitle,
     updateOutletLabel,
     addCase,
     removeCase,

@@ -198,7 +198,12 @@
           <el-table :data="previewResult.steps ?? []" size="small" border style="margin-bottom: 10px">
             <el-table-column type="index" label="#" width="42" />
             <el-table-column label="数据空间" prop="tag" min-width="120" show-overflow-tooltip />
-            <el-table-column label="组件" prop="nodeId" min-width="100" show-overflow-tooltip />
+            <el-table-column label="节点标题" min-width="130">
+              <template #default="{ row }">
+                <div class="databus-editor__step-nodeid">{{ row.nodeId }}</div>
+                <div class="databus-editor__step-title">{{ stepTitle(row) }}</div>
+              </template>
+            </el-table-column>
             <el-table-column label="结果" width="70">
               <template #default="{ row }">
                 <el-tag size="small" :type="row.success ? 'success' : 'danger'">
@@ -284,7 +289,8 @@ import EdgeProps from './components/EdgeProps.vue';
 import FlowElPreview from './components/FlowElPreview.vue';
 import FlowOutline from './components/FlowOutline.vue';
 import JsonCodeEditor from './components/JsonCodeEditor.vue';
-import { type CmpNodeData } from './composables/useElTreeModel';
+import { type CmpNodeData, type ElNode } from './composables/useElTreeModel';
+import { getDef, resolveNodeTitle } from './cmp-defs';
 import { getMockPreset, MOCK_PRESETS } from './mock-presets';
 import { useFlowHistory } from './composables/useFlowHistory';
 import { provideCanvasController } from './composables/useCanvasController';
@@ -603,6 +609,42 @@ function stepResultText(row: NodeStep): string {
     return row.errorMessage || '执行失败';
   }
   return row.summary || '完成';
+}
+
+/**
+ * 画布业务叶子按数据空间名（tag）索引：tag → {组件注册名, 解析后的 cfg}。
+ * 后端 NodeStep.title 只透传用户正本（未填为 null），步骤表再用当前画布 cfg 推断默认。
+ */
+const leafCfgByTag = computed(() => {
+  const map = new Map<string, { code: string; cfg: unknown }>();
+  const walk = (n: ElNode | null | undefined) => {
+    if (!n) return;
+    if (n.componentCode) {
+      let cfg: unknown = {};
+      if (n.data) {
+        try {
+          cfg = JSON.parse(n.data);
+        } catch {
+          cfg = {};
+        }
+      }
+      if (n.cmpId) map.set(n.cmpId, { code: n.componentCode, cfg });
+    }
+    walk(n.condition);
+    n.children?.forEach(walk);
+  };
+  walk(treeModel.root.value);
+  return map;
+});
+
+/** 步骤表「节点标题」列：用户正本（后端透传）优先，未填按画布节点 cfg 推断，再退组件类型名 */
+function stepTitle(row: NodeStep): string {
+  if (row.title?.trim()) {
+    return row.title;
+  }
+  const leaf = row.tag ? leafCfgByTag.value.get(row.tag) : undefined;
+  const def = getDef(leaf?.code ?? row.nodeId ?? '');
+  return resolveNodeTitle(def, null, leaf?.cfg ?? {});
 }
 
 function openStepDetail(row: NodeStep) {
@@ -958,6 +1000,25 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown));
 
 .databus-editor__step-result.is-error {
   color: var(--el-color-danger);
+}
+
+.databus-editor__step-nodeid {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--el-text-color-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.databus-editor__step-title {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--el-text-color-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .databus-editor__section-title {

@@ -9,7 +9,7 @@ import { inject, provide, reactive, ref, type InjectionKey, type Ref } from 'vue
 import { useVueFlow, type Node, type Rect } from '@vue-flow/core';
 import { ElMessage } from 'element-plus';
 import { getDef, isBooleanDef } from '../cmp-defs';
-import { getPlaceholderHandle, getPlaceholderSlotIndex, GATEWAY_H, GATEWAY_W, JUNCTION_H, JUNCTION_W, NODE_GAP_Y, NODE_H, NODE_W, type CmpNodeData, type ElNode, type ElTreeModel, type EdgeTreeAnchor } from './useElTreeModel';
+import { getPlaceholderHandle, getPlaceholderSlotIndex, GATEWAY_TOTAL_H, GATEWAY_W, JUNCTION_H, JUNCTION_W, NODE_GAP_Y, NODE_H, NODE_W, type CmpNodeData, type ElNode, type ElTreeModel, type EdgeTreeAnchor } from './useElTreeModel';
 
 /** 组件选择弹层的使用场景 */
 export type PickerMode = 'prepend' | 'append' | 'replace' | 'insertEdge';
@@ -197,7 +197,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
       const d = n.data as CmpNodeData;
       if (!d.isCondition) continue;
       const w = n.dimensions?.width ?? GATEWAY_W;
-      const h = n.dimensions?.height ?? GATEWAY_H;
+      const h = n.dimensions?.height ?? GATEWAY_TOTAL_H;
       const p = n.computedPosition;
       if (cx >= p.x && cx <= p.x + w && cy >= p.y && cy <= p.y + h) return n;
     }
@@ -292,7 +292,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     if (canvasNodes.length > 0) {
       const bottom = (n: typeof canvasNodes[number]) => {
         const d = n.data as CmpNodeData;
-        const h = d.defType === 'junction' ? JUNCTION_H : (d.operator ? GATEWAY_H : NODE_H);
+        const h = d.defType === 'junction' ? JUNCTION_H : (d.operator ? GATEWAY_TOTAL_H : NODE_H);
         return n.position.y + h;
       };
       const maxBottom = canvasNodes.reduce((m, n) => Math.max(m, bottom(n)), 0);
@@ -434,7 +434,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
 
   /** 尺寸兜底（dimensions 未测出时），与 useAutoLayout 的 SIZE_MAP 同源 */
   function fallbackNodeSize(nodeType?: string): { w: number; h: number } {
-    if (nodeType === 'gateway') return { w: GATEWAY_W, h: GATEWAY_H };
+    if (nodeType === 'gateway') return { w: GATEWAY_W, h: GATEWAY_TOTAL_H };
     if (nodeType === 'junction') return { w: JUNCTION_W, h: JUNCTION_H };
     return { w: NODE_W, h: NODE_H };
   }
