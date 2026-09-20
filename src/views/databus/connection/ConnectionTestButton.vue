@@ -21,33 +21,16 @@ import { ElMessage } from 'element-plus';
  *
  * 契约：
  * - 接收当前表单值（无需落库），POST /databus/connection/test 直传后端实测
- * - 成功：后端 R.data 为"BPM 连接测试成功: ..."说明文本，弹 success 提示
+ * - 成功：后端 R.data 为网关自检说明文本，弹 success 提示
  * - 失败：request 拦截器已统一弹出 R.msg 错误提示，这里 catch 静默避免重复弹窗
- * - 前置校验只做后端实测必需项（connectorType/endpoint/username）与白名单 JSON 格式，
- *   必填项的完整校验仍由 ConnectionForm 表单 rules 负责
+ * - 前置校验网关实测必需项（connectorType/endpoint/accessKey），
+ *   编辑场景 secret 已回显；必填项的完整校验仍由 ConnectionForm 表单 rules 负责
  */
 const props = defineProps<{
   formData: SysDatabusConnectionBo;
 }>();
 
 const loading = ref(false);
-
-/** 校验非空时的 IP 白名单必须是 JSON 数组（与后端 parseIpWhiteList 口径一致） */
-function validateIpWhiteList(raw?: string): string | null {
-  if (!raw || !raw.trim()) {
-    return null;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return 'IP 白名单不是合法 JSON，格式如 ["192.168.1.1","10.0.0.0/24"]';
-  }
-  if (!Array.isArray(parsed)) {
-    return 'IP 白名单必须是 JSON 数组，格式如 ["192.168.1.1","10.0.0.0/24"]';
-  }
-  return null;
-}
 
 async function handleTest() {
   const form = props.formData;
@@ -59,13 +42,12 @@ async function handleTest() {
     ElMessage.warning('请先填写连接地址');
     return;
   }
-  if (!form.username) {
-    ElMessage.warning('请先填写用户名');
+  if (!form.accessKey) {
+    ElMessage.warning('请先填写 AccessKey');
     return;
   }
-  const ipError = validateIpWhiteList(form.ipWhiteList);
-  if (ipError) {
-    ElMessage.warning(ipError);
+  if (!form.id && !form.apiSecret) {
+    ElMessage.warning('请先填写 Secret');
     return;
   }
   loading.value = true;

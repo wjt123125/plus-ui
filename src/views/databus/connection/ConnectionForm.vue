@@ -2,13 +2,13 @@
   连接新增/编辑弹窗 — UI 范式决策(2026-09-18 拍板,影响后续 1D-P0 多种 connector 表单)
   范式:Vercel/Linear 极简留白(单列 label-top + 大留白)
     - 弹窗宽度 680→520px,label-position="top"
-    - el-tabs 2 分组(2026-09-18 调整):基础+凭据 6 字段在「基础」tab,IP白名单/超时/重试/备注 4 字段在「高级」tab(替代早期 <details> 折叠,缩短弹窗高度)
-    - IP 白名单:复用 JsonCodeEditor.vue(不再用 textarea 手写 JSON)
+    - el-tabs 2 分组:基础+凭据 5 字段在「基础」tab,超时/重试/备注 3 字段在「高级」tab
     - 单位后缀:el-input #append slot(如 [ 30000 | 毫秒 ]),弃用 input-number 步进
-    - 凭据区:username/password 单列堆叠 + var(--el-font-family-mono);编辑场景密码 placeholder 加「留空不修改」
+    - 凭据区:accessKey/apiSecret 单列堆叠 + var(--el-font-family-mono);编辑场景密码 placeholder 加「留空不修改」
     - enabled:移到 el-dialog header slot 右上角小开关(Linear active/inactive 风)
     - connectorType:改成只读 tag(当前仅 bpmHttp 一个选项,无下拉意义);第二种 connector 落地时切换动态表单
     - footer:测试按钮左 + 取消/确定右,中间 flex:1 占位消解视觉不平衡
+  鉴权(2026-09-20):唯一通道 BPM /portal/openapi 签名网关(access_key + HmacMD5),旧 jd 免会话字段已移除
 -->
 <template>
   <el-dialog
@@ -64,28 +64,24 @@
           <el-form-item label="连接地址" prop="endpoint">
             <el-input v-model="form.endpoint" maxlength="255" placeholder="BPM 容器地址,如 http://localhost:8088" />
           </el-form-item>
-          <el-form-item label="用户名" prop="username" class="connection-form__credential">
-            <el-input v-model="form.username" maxlength="64" placeholder="BPM 登录用户名" />
-          </el-form-item>
-          <el-form-item label="密码" prop="password" class="connection-form__credential">
+          <el-form-item label="AccessKey" prop="accessKey" class="connection-form__credential">
             <el-input
-              v-model="form.password"
+              v-model="form.accessKey"
+              maxlength="128"
+              placeholder="CC 身份策略 access_key,如 databus"
+            />
+          </el-form-item>
+          <el-form-item label="Secret" prop="apiSecret" class="connection-form__credential">
+            <el-input
+              v-model="form.apiSecret"
               type="password"
               maxlength="128"
               show-password
-              :placeholder="form.id ? '留空表示不修改' : 'BPM 登录密码'"
+              :placeholder="form.id ? '留空表示不修改' : 'CC 身份策略 secret'"
             />
           </el-form-item>
         </el-tab-pane>
         <el-tab-pane label="高级" name="advanced">
-          <el-form-item label="IP 白名单" prop="ipWhiteList">
-            <JsonCodeEditor
-              v-model="form.ipWhiteList"
-              height="120px"
-              placeholder='JSON 数组,如 ["192.168.1.1","10.0.0.0/24"];留空表示不限制'
-              @blur="handleIpBlur"
-            />
-          </el-form-item>
           <el-form-item label="超时时间" prop="timeout">
             <el-input
               :model-value="form.timeout == null ? '' : String(form.timeout)"
@@ -129,9 +125,7 @@
 import type { SysDatabusConnectionBo } from '@/api/databus/connection/types';
 import { CONNECTOR_OPTIONS, addConnection, getConnection, updateConnection } from '@/api/databus/connection';
 import modal from '@/plugins/modal';
-import JsonCodeEditor from '../editor/components/JsonCodeEditor.vue';
 import ConnectionTestButton from './ConnectionTestButton.vue';
-import { tr } from 'element-plus/es/locale/index.mjs';
 
 /**
  * 连接新增/编辑弹窗。
@@ -158,9 +152,8 @@ const buildInitFormData = (): SysDatabusConnectionBo => ({
   connectionName: '',
   connectorType: 'bpmHttp',
   endpoint: '',
-  username: '',
-  password: '',
-  ipWhiteList: '',
+  accessKey: '',
+  apiSecret: '',
   timeout: 30000,
   retryCount: 0,
   enabled: 'Y',
@@ -177,21 +170,10 @@ const currentConnectorLabel = computed(
   () => CONNECTOR_OPTIONS.find(item => item.value === form.value.connectorType)?.label ?? form.value.connectorType
 );
 
-/** 非空时必须为 JSON 数组,与后端 SysDatabusConnectionServiceImpl.parseIpWhiteList 口径一致 */
-const validateIpWhiteList = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
-  if (!value || !value.trim()) {
-    callback();
-    return;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    callback(new Error('IP 白名单不是合法 JSON,格式如 ["192.168.1.1","10.0.0.0/24"]'));
-    return;
-  }
-  if (!Array.isArray(parsed)) {
-    callback(new Error('IP 白名单必须是 JSON 数组,格式如 ["192.168.1.1","10.0.0.0/24"]'));
+/** openapi 网关 secret：新增必填，编辑留空表示沿用原密钥 */
+const validateApiSecret = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+  if (!form.value.id && (!value || !value.trim())) {
+    callback(new Error('Secret 不能为空'));
     return;
   }
   callback();
@@ -208,9 +190,8 @@ const rules = {
   ],
   connectorType: [{ required: true, message: '连接器类型不能为空', trigger: 'change' }],
   endpoint: [{ max: 255, message: '连接地址长度不能超过255', trigger: 'blur' }],
-  username: [{ max: 64, message: '用户名长度不能超过64', trigger: 'blur' }],
-  password: [{ max: 128, message: '密码长度不能超过128', trigger: 'blur' }],
-  ipWhiteList: [{ required: false, validator: validateIpWhiteList, trigger: 'blur' }],
+  accessKey: [{ required: true, message: 'AccessKey 不能为空', trigger: 'blur' }, { max: 128, message: 'AccessKey 长度不能超过128', trigger: 'blur' }],
+  apiSecret: [{ max: 128, message: 'Secret 长度不能超过128', trigger: 'blur' }, { validator: validateApiSecret, trigger: 'blur' }],
   timeout: [{ required: true, message: '超时时间不能为空', trigger: 'blur' }]
 };
 
@@ -225,11 +206,6 @@ function handleNumberUpdate(field: 'timeout' | 'retryCount', value: string) {
   }
   const num = Number(value);
   form.value[field] = Number.isNaN(num) ? undefined : num;
-}
-
-/** JsonCodeEditor 失焦后手动触发 ipWhiteList 校验(CodeMirror 不是原生 input,el-form-item 监听不到原生 blur) */
-function handleIpBlur() {
-  formRef.value?.validateField('ipWhiteList');
 }
 
 /** 新增:openDialog();编辑:openDialog(id)(内部按主键拉详情回显) */

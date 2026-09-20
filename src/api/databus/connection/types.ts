@@ -15,12 +15,10 @@ export interface SysDatabusConnectionVo {
   connectorType: string;
   /** 连接地址（BPM 容器地址，如 http://localhost:8088） */
   endpoint?: string;
-  /** 默认用户名（连接级默认 uid） */
-  username?: string;
-  /** 默认密码 */
-  password?: string;
-  /** IP 白名单（JSON 数组字符串，如 ["192.168.1.1","10.0.0.0/24"]，空表示不限制） */
-  ipWhiteList?: string;
+  /** OpenAPI access_key（CC 身份策略访问凭证） */
+  accessKey?: string;
+  /** OpenAPI secret（CC 身份策略私钥，敏感字段；编辑留空不修改） */
+  apiSecret?: string;
   /** HTTP 超时（毫秒，后端兜底默认 30000） */
   timeout?: number;
   /** 失败重试次数（后端兜底默认 0；1D-P0 保留字段） */

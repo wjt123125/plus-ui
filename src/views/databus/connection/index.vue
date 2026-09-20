@@ -131,7 +131,7 @@
               <el-icon><Link /></el-icon>{{ row.endpoint || '未配置地址' }}
             </span>
             <span class="mt-meta-item">
-              <el-icon><User /></el-icon>{{ row.username || '未配置用户' }}
+              <el-icon><Key /></el-icon>{{ row.accessKey || '未配置 AccessKey' }}
             </span>
           </div>
 
@@ -184,7 +184,7 @@
 </template>
 
 <script setup name="DatabusConnection" lang="ts">
-import { Plus, Search, Edit, Delete, Link, User, CopyDocument, Connection } from '@element-plus/icons-vue';
+import { Plus, Search, Edit, Delete, Link, Key, CopyDocument, Connection } from '@element-plus/icons-vue';
 import {
   CONNECTOR_OPTIONS,
   delConnection,
