@@ -15,7 +15,7 @@ defineOptions({ name: 'FlowLayoutButton' });
 
 withDefaults(defineProps<{ disabled?: boolean }>(), { disabled: false });
 
-// autoLayout 由 CanvasController 统一注入（与 loadMock/insertNodeAt 共用同一份实现）
+// autoLayout 由 CanvasController 统一注入（与 insertNodeAt 共用同一份实现）
 const ctrl = useCanvasController();
 
 function onClick() {

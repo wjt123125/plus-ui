@@ -31,27 +31,6 @@
             <el-icon class="el-icon--left"><RefreshRight /></el-icon>重做
           </el-button>
         </el-tooltip>
-        <el-dropdown trigger="click" popper-class="databus-mock-dropdown" @command="loadMock">
-          <el-button size="small">
-            <el-icon class="el-icon--left"><Files /></el-icon>载入示例
-            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item
-                v-for="(preset, i) in MOCK_PRESETS"
-                :key="preset.key"
-                :command="preset.key"
-              >
-                <div class="databus-editor__mock-item">
-                  <span class="databus-editor__mock-num">#{{ String(i + 1).padStart(2, '0') }}</span>
-                  <span>{{ preset.name }}</span>
-                  <span class="databus-editor__mock-desc">{{ preset.desc }}</span>
-                </div>
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
         <el-button size="small" @click="resetCanvas">
           <el-icon class="el-icon--left"><Delete /></el-icon>清空
         </el-button>
@@ -302,7 +281,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useVueFlow, type Node, type Edge } from '@vue-flow/core';
 import { useRoute, useRouter } from 'vue-router';
-import { ArrowDown, ArrowLeft, Check, Delete, Expand, Files, Fold, RefreshLeft, RefreshRight, Select, VideoPlay } from '@element-plus/icons-vue';
+import { ArrowLeft, Check, Delete, Expand, Fold, RefreshLeft, RefreshRight, Select, VideoPlay } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { generateEl, previewRun } from '@/api/databus/el';
 import type { CmpProperty, NodeStep, PreviewRunVo } from '@/api/databus/el/types';
@@ -316,7 +295,6 @@ import FlowOutline from './components/FlowOutline.vue';
 import JsonCodeEditor from './components/JsonCodeEditor.vue';
 import { type CmpNodeData, type ElNode } from './composables/useElTreeModel';
 import { getDef } from './cmp-defs';
-import { getMockPreset, MOCK_PRESETS } from './mock-presets';
 import { useFlowHistory } from './composables/useFlowHistory';
 import { provideCanvasController } from './composables/useCanvasController';
 import { provideEditorFullscreen } from './composables/useEditorFullscreen';
@@ -456,47 +434,17 @@ async function resetCanvas() {
     return;
   }
   treeModel.loadFromCmpProperty(null);
-  currentMockKey = null;
   const { nodes, edges } = treeModel.project();
   setNodes(nodes);
   setEdges(edges);
   ctrl.select(null);
-}
-
-/** 载入预设示例链路：解析 CmpProperty → 投影 → 替换画布 → 重建历史基线 → 自适应视口 */
-async function loadMock(key: string) {
-  const preset = getMockPreset(key);
-  if (!preset) {
-    return;
-  }
-  if (isDirty()) {
-    try {
-      await ElMessageBox.confirm(`载入「${preset.name}」将替换当前画布内容，确定继续？`, '载入示例', {
-        type: 'warning'
-      });
-    } catch {
-      return;
-    }
-  }
-  treeModel.loadFromCmpProperty(preset.build());
-  currentMockKey = key;
-  const { nodes, edges } = treeModel.project();
-  setNodes(nodes);
-  setEdges(edges);
-  ctrl.select(null);
-  nextTick(() => {
-    reset();
-    // 载入示例必须 dagre 重排：投影默认坐标是顺序摆放，分支结构会绕圈
-    // 拖拽/编辑时不自动重排（保留用户位置控制），仅载入示例时自动
-    ctrl.autoLayout();
-  });
 }
 
 /** 画布上至少有一个真实（非虚拟）节点 */
 function ensureCanvasHasNodes(): boolean {
   const realNodes = getNodes.value.filter((n) => !(n.data as CmpNodeData).virtual);
   if (realNodes.length === 0) {
-    ElMessage.warning('画布上还没有真实组件，先从左侧拖入或「载入示例」');
+    ElMessage.warning('画布上还没有真实组件，先从左侧拖入组件');
     return false;
   }
   return true;
@@ -543,7 +491,7 @@ async function saveAsEl() {
 /**
  * 按链路主键加载已保存链路到画布：
  * 取 Vo 的 cmpProperty 对象（后端 TypeHandler 已反序列化）→ 载入模型树 →
- * 重投影 → 重建历史基线 → dagre 重排。与 loadMock 的投影流程一致。
+ * 重投影 → 重建历史基线 → dagre 重排。
  */
 async function loadChainToEditor(id: number | string) {
   const { data } = await getChain(id);
@@ -621,8 +569,6 @@ function backToList() {
 const previewVisible = ref(false);
 const previewRunning = ref(false);
 const previewRequest = ref('{}');
-/** 当前画布来源示例 key（载入示例时记录，清空画布时清除），用于试运行弹窗预填示例入参 */
-let currentMockKey: string | null = null;
 const previewResultVisible = ref(false);
 const previewResult = ref<PreviewRunVo | null>(null);
 
@@ -631,17 +577,7 @@ function openPreview() {
   if (!ensureCanvasHasNodes()) return;
   if (!ensureDataSpacesValid()) return;
   previewResult.value = null;
-  // 画布来自示例时预填该示例的入参 JSON（格式化为 2 空格缩进，与执行时回写格式一致）
-  const mockInput = currentMockKey ? getMockPreset(currentMockKey)?.inputJson : undefined;
-  if (mockInput) {
-    try {
-      previewRequest.value = JSON.stringify(JSON.parse(mockInput), null, 2);
-    } catch {
-      previewRequest.value = mockInput;
-    }
-  } else {
-    previewRequest.value = '{}';
-  }
+  previewRequest.value = '{}';
   previewVisible.value = true;
 }
 
@@ -844,6 +780,22 @@ function onKeyDown(e: KeyboardEvent) {
       break;
   }
 }
+
+/**
+ * 监听路由 query.id 变化：编辑器组件名会被 TagsView 收入 keep-alive 缓存，
+ * 且 AppMain 的组件 key 只取 route.path——从链路列表连续编排不同链路时，
+ * 组件实例被缓存复用、不会重建，onMounted 仅在首次进入时执行一次，
+ * 必须靠这里捕获 id 变化重新加载，否则画布停留在上一条链路（整页刷新才恢复）。
+ * 非 immediate：首次加载由 onMounted 负责，避免重复请求。
+ */
+watch(
+  () => route.query.id,
+  (newId) => {
+    if (newId === undefined || newId === null || newId === '') return;
+    // 保持字符串原样传递：19 位雪花 id 超出 Number 安全整数，转数字会精度丢失
+    void loadChainToEditor(String(newId));
+  }
+);
 
 onMounted(() => {
   // 建立历史基线，保证撤销按钮初始禁用且首次编辑可撤销
@@ -1080,25 +1032,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown));
   color: var(--el-text-color-secondary);
 }
 
-.databus-editor__mock-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  line-height: 1.4;
-}
-
-.databus-editor__mock-num {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: 11px;
-  color: var(--el-color-primary);
-  min-width: 28px;
-}
-
-.databus-editor__mock-desc {
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
-}
-
 .databus-editor__preview-input :deep(textarea) {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 12px;
@@ -1164,28 +1097,5 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown));
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 12px;
   background-color: var(--el-color-success-light-9);
-}
-</style>
-
-<!-- 非 scoped：el-dropdown 浮层渲染在 body，需用 popper-class 全局命中 -->
-<style>
-.databus-mock-dropdown.el-popper {
-  /* 限制最大高度避免下拉过长溢出视口；超出滚动 */
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-/* 滚动条样式与 Element Plus 风格一致 */
-.databus-mock-dropdown.el-popper::-webkit-scrollbar {
-  width: 6px;
-}
-
-.databus-mock-dropdown.el-popper::-webkit-scrollbar-thumb {
-  background-color: var(--el-border-color);
-  border-radius: 3px;
-}
-
-.databus-mock-dropdown.el-popper::-webkit-scrollbar-track {
-  background-color: transparent;
 }
 </style>
