@@ -27,7 +27,7 @@
       @mouseleave="hover = false"
     >
       <CmpContextPad v-if="!data.junctionOf && !data.placeholderOf" :node-id="id" :hover="hover" :selected="selected" />
-      <Handle v-if="data.defType !== 'start'" type="target" :position="Position.Top" />
+      <Handle v-if="data.defType !== 'start'" type="target" :position="Position.Left" />
       <div class="cmp-node__icon">
         <SvgIcon :icon-class="iconName" />
       </div>
@@ -35,7 +35,7 @@
         <div class="cmp-node__label">{{ data.label }}</div>
         <div v-if="showTitle" ref="titleRef" class="cmp-node__title">{{ data.title }}</div>
       </div>
-      <Handle v-if="data.defType !== 'end'" type="source" :position="Position.Bottom" />
+      <Handle v-if="data.defType !== 'end'" type="source" :position="Position.Right" />
     </div>
     <template #content>
       <div class="cmp-tip">
@@ -249,12 +249,12 @@ const tipVisible = computed(() => showTipTitle.value || (!props.data.virtual && 
   background: transparent;
 }
 
-.vue-flow__handle-top::before {
-  transform: translate(-50%, calc(-50% + 4px));
+.vue-flow__handle-left::before {
+  transform: translate(calc(-50% - 4px), -50%);
 }
 
-.vue-flow__handle-bottom::before {
-  transform: translate(-50%, calc(-50% - 4px));
+.vue-flow__handle-right::before {
+  transform: translate(calc(-50% + 4px), -50%);
 }
 
 .vue-flow__handle::after {

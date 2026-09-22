@@ -5,9 +5,9 @@
 -->
 <template>
   <div class="cmp-placeholder" :class="{ 'is-dragover': dragOverMe }">
-    <Handle type="target" :position="Position.Top" />
+    <Handle type="target" :position="Position.Left" />
     <div class="cmp-placeholder__label">{{ data.label }}</div>
-    <Handle type="source" :position="Position.Bottom" />
+    <Handle type="source" :position="Position.Right" />
   </div>
 </template>
 

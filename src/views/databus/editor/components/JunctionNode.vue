@@ -9,11 +9,11 @@
       :id="out.handle"
       :key="out.handle"
       type="target"
-      :position="Position.Top"
+      :position="Position.Left"
       :style="inletStyle(i)"
     />
     <div class="cmp-junction__dot" />
-    <Handle type="source" :position="Position.Bottom" />
+    <Handle type="source" :position="Position.Right" />
   </div>
 </template>
 
@@ -30,11 +30,11 @@ const inlets = computed(() => {
   return outlets.length > 0 ? outlets : [{ handle: 'in', label: '' }];
 });
 
-/** 多入口沿顶边均匀分布：第 i 个 handle 的 left% */
+/** 多入口沿左边均匀分布：第 i 个 handle 的 top% */
 function inletStyle(i: number): Record<string, string> {
   const n = inlets.value.length || 1;
-  const left = n === 1 ? 50 : (i / (n - 1)) * 100;
-  return { left: `${left}%` };
+  const top = n === 1 ? 50 : (i / (n - 1)) * 100;
+  return { top: `${top}%` };
 }
 </script>
 

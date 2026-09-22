@@ -13,7 +13,7 @@
 import { inject, provide, ref, type InjectionKey, type Ref } from 'vue';
 import type { Edge, Node } from '@vue-flow/core';
 import type { CmpProperty } from '@/api/databus/el/types';
-import { getDef, resolveNodeTitle, type CmpDef } from '../cmp-defs';
+import { getDef, type CmpDef } from '../cmp-defs';
 
 // ────────────────────────────────────────────────────────────────
 // 1. ElNode 模型（与 client ELNode 同构，字段命名沿用本项目）
@@ -72,8 +72,8 @@ export const JUNCTION_H = 16;
 const START_X = 40;
 const START_Y = 40;
 /** 默认节点间距（投影时初始摆放，dagre 会重排）
- *  默认走 TB 方向：cursorY 递增、cursorX 固定，
- *  与 handle Top/Bottom 方位一致，避免横向排布导致连线绕圈。 */
+ *  默认走 LR 方向：cursorX 递增、cursorY 固定，
+ *  与 handle Left/Right 方位一致，避免纵向排布导致连线绕圈。 */
 export const NODE_GAP_X = 210;
 export const NODE_GAP_Y = 100;
 
@@ -111,10 +111,6 @@ export interface CmpNodeData {
   outlets?: { handle: string; label: string }[];
   /** SWITCH 的 case 名称列表（用于属性面板编辑，与 outlets 同步） */
   cases?: string[];
-  /** FOR 循环参数 */
-  forStart?: string;
-  forEnd?: string;
-  forStep?: string;
   [key: string]: unknown;
 }
 
@@ -164,6 +160,21 @@ function parseCmpProperty(cmp: CmpProperty | null | undefined): ElNode | null {
   return parsed;
 }
 
+/**
+ * 业务叶子在 LiteFlow 中的合法节点类型（NodeTypeEnum.mappingClazz 简称）。
+ * 普通/脚本节点 NodeComponent；布尔条件 NodeBooleanComponent；
+ * 计数循环 NodeForComponent、迭代循环 NodeIteratorComponent、选择路由 NodeSwitchComponent。
+ * 画布树 ElNode.type 对叶子使用本集合值（区别于算子的 FOR/IF/SWITCH 关键字），
+ * 组件注册名另存 componentCode。
+ */
+const LEAF_LF_TYPES = new Set([
+  'NodeComponent',
+  'NodeBooleanComponent',
+  'NodeForComponent',
+  'NodeIteratorComponent',
+  'NodeSwitchComponent'
+]);
+
 function parseNode(cmp: CmpProperty, parentOperatorId: string | undefined): ElNode {
   const def = getDef(cmp.type);
   const isOperator = !!def?.operator;
@@ -178,8 +189,8 @@ function parseNode(cmp: CmpProperty, parentOperatorId: string | undefined): ElNo
 
   if (!isOperator) {
     // 业务组件叶子：CmpProperty.id 是注册名，properties.tag 是数据空间名
-    node.type =
-      cmp.type === 'NodeBooleanComponent' ? 'NodeBooleanComponent' : 'NodeComponent';
+    // type 保留 LiteFlow 节点类型（5 种叶子），未知值兜底 NodeComponent
+    node.type = LEAF_LF_TYPES.has(cmp.type) ? cmp.type : 'NodeComponent';
     node.componentCode = cmp.id ?? '';
     node.cmpId = cmp.properties?.tag ?? '';
     if (cmp.properties?.data) node.data = cmp.properties.data;
@@ -292,7 +303,8 @@ function serializeNode(node: ElNode): CmpProperty | null {
     const isScriptLeaf = node.componentCode === 'script' || node.componentCode === 'booleanScript';
     const leaf: CmpProperty = {
       id: isScriptLeaf ? (node.cmpId || undefined) : (node.componentCode || undefined),
-      type: node.type === 'NodeBooleanComponent' ? 'NodeBooleanComponent' : 'NodeComponent'
+      // 原样输出 5 种 LiteFlow 叶子类型，异常值兜底 NodeComponent
+      type: LEAF_LF_TYPES.has(node.type) ? node.type : 'NodeComponent'
     };
     const title = node.title?.trim();
     if (node.cmpId || node.data || title) {
@@ -319,10 +331,18 @@ function serializeNode(node: ElNode): CmpProperty | null {
     if (mapped.length > 0) prop.children = mapped;
   }
   const opTitle = node.title?.trim();
-  if (node.tag || node.outletLabels || opTitle) {
+  // SWITCH 的分支 tag 是 switchRoute 运行时命中的依据：未命名分支补默认 caseN
+  // （与投影展示的默认名一致），保证生成的 EL 每个 to 分支都带 .tag
+  const serializedOutletLabels =
+    node.type === 'SWITCH'
+      ? (node.children ?? [])
+          .filter((c): c is ElNode => !!c)
+          .map((_, i) => node.outletLabels?.[i]?.trim() || `case${i + 1}`)
+      : node.outletLabels;
+  if (node.tag || serializedOutletLabels || opTitle) {
     prop.properties = {
       ...(node.tag ? { tag: node.tag } : {}),
-      ...(node.outletLabels ? { outletLabels: node.outletLabels } : {}),
+      ...(serializedOutletLabels ? { outletLabels: serializedOutletLabels } : {}),
       ...(opTitle ? { title: opTitle } : {})
     };
   }
@@ -355,8 +375,8 @@ function projectToGraph(
     seq: 0,
     positionCache,
     produced: new Set(),
-    cursorX: START_X,
-    cursorY: START_Y + NODE_GAP_Y
+    cursorX: START_X + NODE_GAP_X,
+    cursorY: START_Y
   };
 
   if (!root) {
@@ -374,16 +394,6 @@ function projectToGraph(
   }
 
   return { nodes: ctx.nodes, edges: ctx.edges };
-}
-
-/** 解析叶子组件配置 JSON 供标题推断；空/非法 JSON 返回空对象（推断回退 label） */
-function parseLeafCfg(dataStr?: string): unknown {
-  if (!dataStr) return {};
-  try {
-    return JSON.parse(dataStr);
-  } catch {
-    return {};
-  }
 }
 
 /** 投影单个 ElNode，返回 {startId, endId} 端口 */
@@ -409,7 +419,7 @@ function projectNode(node: ElNode, ctx: ProjectContext, parentOperatorId: string
       tag: node.cmpId ?? '',
       data: node.data ?? '',
       label: cmpDef.label,
-      title: resolveNodeTitle(cmpDef, node.title, isVirtual ? {} : parseLeafCfg(node.data)),
+      title: node.title?.trim() || cmpDef.label,
       color: cmpDef.color,
       virtual: isVirtual
     };
@@ -525,7 +535,7 @@ function projectWhen(node: ElNode, ctx: ProjectContext): Port {
     label: node.outletLabels?.[i] ?? `并行${i + 1}`
   }));
   const gatewayNode = buildGatewayNode(
-    ctx, gatewayId, def, 'WHEN', outlets, node.tag, resolveNodeTitle(def, node.title)
+    ctx, gatewayId, def, 'WHEN', outlets, node.tag, node.title?.trim() || def.label
   );
   ctx.nodes.push(gatewayNode);
   ctx.produced.add(gatewayId);
@@ -604,9 +614,9 @@ function projectIf(node: ElNode, ctx: ProjectContext): Port {
   } else {
     condId = node.id;
   }
-  // 标题随条件件走：挂了条件件读条件件的 title/cfg，没挂则用 IF 算子自身（label 兜底）
+  // 标题随条件件走：挂了条件件读条件件的 title，没挂则用 IF 算子自身（label 兜底）
   const titleNode = node.condition ?? node;
-  const condTitle = resolveNodeTitle(condDef, titleNode.title, parseLeafCfg(titleNode.data));
+  const condTitle = titleNode.title?.trim() || condDef.label;
   const condNode = buildConditionGatewayNode(ctx, condId, condDef, outlets, condTag, condTitle);
   ctx.nodes.push(condNode);
   ctx.produced.add(condId);
@@ -689,9 +699,9 @@ function projectSwitch(node: ElNode, ctx: ProjectContext): Port {
   } else {
     condId = node.id;
   }
-  // 标题随条件件走：挂了条件件读条件件的 title/cfg，没挂则用 SWITCH 算子自身（label 兜底）
+  // 标题随条件件走：挂了条件件读条件件的 title，没挂则用 SWITCH 算子自身（label 兜底）
   const titleNode = node.condition ?? node;
-  const condTitle = resolveNodeTitle(condDef, titleNode.title, parseLeafCfg(titleNode.data));
+  const condTitle = titleNode.title?.trim() || condDef.label;
   const condNode = buildConditionGatewayNode(ctx, condId, condDef, outlets, condTag, condTitle);
   // SWITCH 的 cases 字段供属性面板用
   condNode.data.cases = outlets.map((o) => o.label);
@@ -756,9 +766,9 @@ function projectLoop(node: ElNode, ctx: ProjectContext): Port {
   } else {
     condId = node.id;
   }
-  // 标题随条件件走：挂了条件件读条件件的 title/cfg，没挂则用循环算子自身（label 兜底）
+  // 标题随条件件走：挂了条件件读条件件的 title，没挂则用循环算子自身（label 兜底）
   const titleNode = node.condition ?? node;
-  const condTitle = resolveNodeTitle(condDef, titleNode.title, parseLeafCfg(titleNode.data));
+  const condTitle = titleNode.title?.trim() || condDef.label;
   const condNode = buildConditionGatewayNode(ctx, condId, condDef, outlets, condTag, condTitle);
   ctx.nodes.push(condNode);
   ctx.produced.add(condId);
@@ -803,7 +813,7 @@ function projectCatch(node: ElNode, ctx: ProjectContext): Port {
     { handle: 'catch', label: node.outletLabels?.[1] ?? '异常' }
   ];
   const gatewayNode = buildGatewayNode(
-    ctx, gatewayId, def, 'CATCH', outlets, node.tag, resolveNodeTitle(def, node.title)
+    ctx, gatewayId, def, 'CATCH', outlets, node.tag, node.title?.trim() || def.label
   );
   ctx.nodes.push(gatewayNode);
   ctx.produced.add(gatewayId);
@@ -858,7 +868,7 @@ function projectBoolean(node: ElNode, ctx: ProjectContext): Port {
     label: node.outletLabels?.[i] ?? labels[i]
   }));
   const gatewayNode = buildGatewayNode(
-    ctx, gatewayId, def, node.type, outlets, node.tag, resolveNodeTitle(def, node.title)
+    ctx, gatewayId, def, node.type, outlets, node.tag, node.title?.trim() || def.label
   );
   ctx.nodes.push(gatewayNode);
   ctx.produced.add(gatewayId);
@@ -907,7 +917,7 @@ function projectChain(node: ElNode, ctx: ProjectContext): Port {
     tag: node.tag ?? '',
     data: '',
     label: def.label,
-    title: resolveNodeTitle(def, node.title),
+    title: node.title?.trim() || def.label,
     color: def.color,
     virtual: false,
     operator: true
@@ -935,7 +945,7 @@ function projectLeafFallback(node: ElNode, ctx: ProjectContext): Port {
     tag: node.tag ?? '',
     data: node.data ?? '',
     label: def.label,
-    title: resolveNodeTitle(def, node.title, parseLeafCfg(node.data)),
+    title: node.title?.trim() || def.label,
     color: def.color,
     virtual: false
   };
@@ -1136,12 +1146,12 @@ function buildEdge(
   return edge;
 }
 
-/** 从缓存取坐标，无缓存则用 cursor 默认摆放（TB 方向：y 递增、x 固定） */
+/** 从缓存取坐标，无缓存则用 cursor 默认摆放（LR 方向：x 递增、y 固定） */
 function getPosition(ctx: ProjectContext, id: string): { x: number; y: number } {
   const cached = ctx.positionCache.get(id);
   if (cached) return cached;
   const pos = { x: ctx.cursorX, y: ctx.cursorY };
-  ctx.cursorY += NODE_GAP_Y;
+  ctx.cursorX += NODE_GAP_X;
   return pos;
 }
 
@@ -1600,13 +1610,19 @@ export function useElTreeModel() {
     return true;
   }
 
-  /** SWITCH 删 case：移除 children[index] */
+  /** SWITCH 删 case：移除 children[index]（outletLabels 同步裁剪，避免分支名错位） */
   function removeCase(switchId: string, index: number): boolean {
     const node = findNode(switchId);
     if (!node || node.type !== 'SWITCH' || !node.children) return false;
     if (index < 0 || index >= node.children.length) return false;
     if (node.children.length <= 1) return false; // 至少保留一个 case
     node.children.splice(index, 1);
+    if (node.outletLabels) {
+      node.outletLabels.splice(index, 1);
+      if (node.outletLabels.every((v) => v === undefined)) {
+        delete node.outletLabels;
+      }
+    }
     return true;
   }
 

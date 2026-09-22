@@ -8,19 +8,19 @@
     :class="[shapeClass, { 'is-selected': selected }]"
     :style="{ '--gw-color': data.color }"
   >
-    <Handle type="target" :position="Position.Top" />
+    <Handle type="target" :position="Position.Left" />
     <div class="cmp-gateway__inner">
       <SvgIcon class="cmp-gateway__icon" :icon-class="iconName" />
       <span v-if="symbol" class="cmp-gateway__symbol">{{ symbol }}</span>
     </div>
     <div class="cmp-gateway__label">{{ data.label }}</div>
-    <!-- 网关出口 handle：按 outlets 数量在底部分布 -->
+    <!-- 网关出口 handle：按 outlets 数量在右边分布 -->
     <Handle
       v-for="out in data.outlets"
       :id="out.handle"
       :key="out.handle"
       type="source"
-      :position="Position.Bottom"
+      :position="Position.Right"
       :style="handleStyle(out.handle)"
     />
   </div>
@@ -52,13 +52,13 @@ const symbol = computed(() => {
   return '';
 });
 
-/** 多 handle 沿底边均匀分布：第 i 个 handle 的 left% */
+/** 多 handle 沿右边均匀分布：第 i 个 handle 的 top% */
 function handleStyle(handle: string): Record<string, string> {
   const outlets = props.data.outlets ?? [];
   const idx = outlets.findIndex((o) => o.handle === handle);
   const n = outlets.length || 1;
-  const left = n === 1 ? 50 : (idx / (n - 1)) * 100;
-  return { left: `${left}%` };
+  const top = n === 1 ? 50 : (idx / (n - 1)) * 100;
+  return { top: `${top}%` };
 }
 </script>
 

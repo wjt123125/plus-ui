@@ -1,21 +1,21 @@
 /**
- * 自动排列 composable:dagre 分层 + 补丁档后处理修正分支顺序,消除贝塞尔 X 交叉。
+ * 自动排列 composable:dagre 分层 + 补丁档后处理修正分支顺序,消除贝塞尔 Y 交叉。
  *
  * 两层分工:
- *   ① dagre 负责分层(y 坐标)和整体排布——把节点按链路顺序分配到不同 rank,
- *      同 rank 内节点用 barycenter 启发式估算一个"合理"的左右顺序。
+ *   ① dagre 负责分层(x 坐标)和整体排布——把节点按链路顺序分配到不同 rank,
+ *      同 rank 内节点用 barycenter 启发式估算一个"合理"的上下顺序。
  *   ② 补丁档后处理:dagre 跑完后,对每个 gateway 直接扇出的分支层按 outlet
- *      数组索引从左到右重新分配 x 坐标。分支节点的子孙整体跟随平移。
+ *      数组索引从上到下重新分配 y 坐标。分支节点的子孙整体跟随平移。
  *
  * 为什么需要补丁档?
- *   GatewayNode.vue 的 outlet handle 位置物理钉死:left% = i/(n-1)*100,
- *   即 outlets[0] 最左、outlets[1] 居中、outlets[2] 最右。dagre barycenter
+ *   GatewayNode.vue 的 outlet handle 位置物理钉死:top% = i/(n-1)*100,
+ *   即 outlets[0] 最上、outlets[1] 居中、outlets[2] 最下。dagre barycenter
  *   启发式对"网关扇出 + 对称汇合"的菱形结构,三个分支重心值完全相同,
  *   tie-break 取决于喂入顺序,可能排出 case3/case2/case1 反序——
- *   此时 case3 节点在最左列,但 handle 在最右端(left%=100%),贝塞尔
- *   曲线从右端甩到最左列再甩回 junction 最右端,自然 X 交叉。
+ *   此时 case3 节点在最上排,但 handle 在最下端(top%=100%),贝塞尔
+ *   曲线从下端甩到最上排再甩回 junction 最下端,自然 Y 交叉。
  *   补丁档强制 dagre 的同层节点按 outlet 顺序排列,handle 物理位置
- *   和节点列顺序一致,贝塞尔零交叉。
+ *   和节点排顺序一致,贝塞尔零交叉。
  *
  * 为什么不直接改 dagre?
  *   dagre 无公开 API 固定层内顺序(已核实 @dagrejs/dagre 3.1.1)。
@@ -35,7 +35,7 @@ import {
   GATEWAY_W,
   JUNCTION_H,
   JUNCTION_W,
-  NODE_GAP_X,
+  NODE_GAP_Y,
   NODE_H,
   NODE_W
 } from './useElTreeModel';
@@ -71,10 +71,10 @@ export function useAutoLayout(treeModel: ElTreeModel) {
     if (flowNodes.length === 0) return;
 
     // ── 阶段 1:dagre 分层 ─────────────────────────────────────────
-    // 只负责 rank 分配(y 坐标)和整体排布,x 坐标后处理修正
+    // 只负责 rank 分配(x 坐标)和整体排布,y 坐标后处理修正
 
     const g = new dagre.graphlib.Graph();
-    g.setGraph({ rankdir: 'TB', nodesep: 40, ranksep: 80, marginx: 20, marginy: 20 });
+    g.setGraph({ rankdir: 'LR', nodesep: 40, ranksep: 80, marginx: 20, marginy: 20 });
     g.setDefaultEdgeLabel(() => ({}));
 
     // 给 dagre 喂节点尺寸(中心坐标),输出后再转左上角坐标
@@ -98,7 +98,7 @@ export function useAutoLayout(treeModel: ElTreeModel) {
 
     // ── 阶段 2:补丁档后处理修正分支顺序 ──────────────────────────────
     // dagre 输出的是中心点,转成左上角坐标存进 laid 字典,
-    // 后处理原地改 x(保持 dagre 算的 y 不变),最后 setNodes 写回
+    // 后处理原地改 y(保持 dagre 算的 x 不变),最后 setNodes 写回
 
     type LaidNode = { x: number; y: number; w: number; h: number };
     const laid: Record<string, LaidNode> = {};
@@ -108,7 +108,7 @@ export function useAutoLayout(treeModel: ElTreeModel) {
     }
 
     // 预构建 descendants 邻接表:sourceId → 所有通过非 merge 边可达的 targetIds
-    // 用于 BFS 把 branch 根节点的 deltaX 传播到整棵子树(保持 dagre 排好的相对结构)
+    // 用于 BFS 把 branch 根节点的 deltaY 传播到整棵子树(保持 dagre 排好的相对结构)
     // 排除 merge 边是因为它指向 junction,子树到此为止
     const edgeList = getEdges.value;
     const descendants = new Map<string, string[]>();
@@ -121,9 +121,9 @@ export function useAutoLayout(treeModel: ElTreeModel) {
     }
 
     // 对每个 gateway,把 dagre 排好的分支顺序按 outlet 数组索引重新分配
-    // outlet 数组顺序 = 物理 handle 顺序(GatewayNode.vue handleStyle left% 钉死):
-    //   IF: outlets[0]=true(左) outlets[1]=false(右)
-    //   SWITCH: outlets[0]=case_1(最左) outlets[1]=case_2 outlets[2]=case_3(最右)
+    // outlet 数组顺序 = 物理 handle 顺序(GatewayNode.vue handleStyle top% 钉死):
+    //   IF: outlets[0]=true(上) outlets[1]=false(下)
+    //   SWITCH: outlets[0]=case_1(最上) outlets[1]=case_2 outlets[2]=case_3(最下)
     //   CATCH: outlets[0]=try outlets[1]=catch
     //   AND/OR/NOT: outlets[0]=b1 outlets[1]=b2
     //   WHEN: outlets[0]=branch_0 outlets[1]=branch_1 ...
@@ -137,7 +137,7 @@ export function useAutoLayout(treeModel: ElTreeModel) {
       // 步骤 a:对每个 outlet handle,找到 gateway 发出的非 merge 边 → 目标节点
       // 分支边有两种:kind='branch'(业务分支)和 kind='jump'(placeholder 分支)
       // 两种都要纳入修正,否则 placeholder 分支仍按 dagre 原始顺序排列 → 交叉
-      type BranchInfo = { outletIdx: number; nodeId: string; centerX: number };
+      type BranchInfo = { outletIdx: number; nodeId: string; centerY: number };
       const branches: BranchInfo[] = [];
       for (let i = 0; i < outlets.length; i++) {
         const handle = outlets[i].handle;
@@ -153,48 +153,48 @@ export function useAutoLayout(treeModel: ElTreeModel) {
         if (branchEdge) {
           const target = laid[branchEdge.target];
           if (target) {
-            branches.push({ outletIdx: i, nodeId: branchEdge.target, centerX: target.x + target.w / 2 });
+            branches.push({ outletIdx: i, nodeId: branchEdge.target, centerY: target.y + target.h / 2 });
           }
         }
       }
       if (branches.length < 2) continue;
 
-      // 步骤 b:按 outletIdx 排序(outlets 数组顺序即预期从左到右顺序)
+      // 步骤 b:按 outletIdx 排序(outlets 数组顺序即预期从上到下顺序)
       branches.sort((a, b) => a.outletIdx - b.outletIdx);
 
-      // 步骤 c:算分支群总宽,整体在 gateway 中心两侧居中
-      const gwCenterX = laid[gwId].x + laid[gwId].w / 2;
-      let branchGroupWidth = 0;
+      // 步骤 c:算分支群总高,整体在 gateway 中心两侧居中
+      const gwCenterY = laid[gwId].y + laid[gwId].h / 2;
+      let branchGroupHeight = 0;
       for (let i = 0; i < branches.length; i++) {
-        branchGroupWidth += laid[branches[i].nodeId].w;
-        if (i < branches.length - 1) branchGroupWidth += NODE_GAP_X;
+        branchGroupHeight += laid[branches[i].nodeId].h;
+        if (i < branches.length - 1) branchGroupHeight += NODE_GAP_Y;
       }
-      // cursorX:分支群起始 x(左边缘),从 gateway 中心向左偏移半群宽
-      let cursorX = gwCenterX - branchGroupWidth / 2;
+      // cursorY:分支群起始 y(上边缘),从 gateway 中心向上偏移半群高
+      let cursorY = gwCenterY - branchGroupHeight / 2;
 
-      // 步骤 d:按 outlet 顺序依次分配每个 branch 根节点的目标中心 x,
-      //  算出与 dagre 原始 centerX 的差值 deltaX
-      const deltaXPerBranch = new Map<string, number>();
+      // 步骤 d:按 outlet 顺序依次分配每个 branch 根节点的目标中心 y,
+      //  算出与 dagre 原始 centerY 的差值 deltaY
+      const deltaYPerBranch = new Map<string, number>();
       for (const b of branches) {
-        const nodeW = laid[b.nodeId].w;
-        const targetCenterX = cursorX + nodeW / 2;
-        const deltaX = targetCenterX - b.centerX;
-        deltaXPerBranch.set(b.nodeId, deltaX);
-        cursorX += nodeW + NODE_GAP_X;
+        const nodeH = laid[b.nodeId].h;
+        const targetCenterY = cursorY + nodeH / 2;
+        const deltaY = targetCenterY - b.centerY;
+        deltaYPerBranch.set(b.nodeId, deltaY);
+        cursorY += nodeH + NODE_GAP_Y;
       }
 
-      // 步骤 e:BFS 把 deltaX 应用到 branch 根及其所有 reachable 子孙
+      // 步骤 e:BFS 把 deltaY 应用到 branch 根及其所有 reachable 子孙
       //  为什么 BFS?因为 dagre 已经把子孙节点排好了相对位置,整体平移就能
-      //  保持分支内部结构不变,只改它在整图中的水平位置
+      //  保持分支内部结构不变,只改它在整图中的垂直位置
       //  不同 branch 各走各的 BFS,互不干扰
-      for (const [rootId, delta] of deltaXPerBranch) {
+      for (const [rootId, delta] of deltaYPerBranch) {
         const visited = new Set<string>();
         const stack = [rootId];
         while (stack.length > 0) {
           const id = stack.pop()!;
           if (visited.has(id)) continue;
           visited.add(id);
-          laid[id].x += delta;
+          laid[id].y += delta;
           const kids = descendants.get(id) ?? [];
           for (const k of kids) {
             if (!visited.has(k)) stack.push(k);
