@@ -781,22 +781,6 @@ function onKeyDown(e: KeyboardEvent) {
   }
 }
 
-/**
- * 监听路由 query.id 变化：编辑器组件名会被 TagsView 收入 keep-alive 缓存，
- * 且 AppMain 的组件 key 只取 route.path——从链路列表连续编排不同链路时，
- * 组件实例被缓存复用、不会重建，onMounted 仅在首次进入时执行一次，
- * 必须靠这里捕获 id 变化重新加载，否则画布停留在上一条链路（整页刷新才恢复）。
- * 非 immediate：首次加载由 onMounted 负责，避免重复请求。
- */
-watch(
-  () => route.query.id,
-  (newId) => {
-    if (newId === undefined || newId === null || newId === '') return;
-    // 保持字符串原样传递：19 位雪花 id 超出 Number 安全整数，转数字会精度丢失
-    void loadChainToEditor(String(newId));
-  }
-);
-
 onMounted(() => {
   // 建立历史基线，保证撤销按钮初始禁用且首次编辑可撤销
   nextTick(reset);
