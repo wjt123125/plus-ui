@@ -8,7 +8,7 @@
 import { inject, provide, reactive, ref, type InjectionKey, type Ref } from 'vue';
 import { useVueFlow, type Node, type Rect } from '@vue-flow/core';
 import { ElMessage } from 'element-plus';
-import { getDef, isBooleanDef } from '../cmp-defs';
+import { getDef } from '../cmp-defs';
 import { getPlaceholderHandle, getPlaceholderSlotIndex, GATEWAY_TOTAL_H, GATEWAY_W, JUNCTION_H, JUNCTION_W, NODE_GAP_Y, NODE_H, NODE_W, type CmpNodeData, type ElNode, type ElTreeModel, type EdgeTreeAnchor } from './useElTreeModel';
 
 /** 组件选择弹层的使用场景 */
@@ -218,12 +218,29 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     return opNode.condition?.id ?? null;
   }
 
-  /** 本档支持试运行的条件算子（条件件为 NodeBooleanComponent） */
-  const BOOLEAN_CONDITION_OPS = new Set(['IF', 'WHILE']);
+  /**
+   * 条件算子条件槽准入规则：算子类型 → 条件件的 LiteFlow 节点类型与默认物料。
+   * IF/WHILE 收布尔条件件；FOR/ITERATOR/SWITCH 各收专属控制组件。
+   */
+  const CONDITION_SLOT_RULES: Record<string, { nodeType: string; defType: string; label: string }> = {
+    IF: { nodeType: 'NodeBooleanComponent', defType: 'condition', label: '条件判断' },
+    WHILE: { nodeType: 'NodeBooleanComponent', defType: 'condition', label: '条件判断' },
+    FOR: { nodeType: 'NodeForComponent', defType: 'forLoop', label: '计数循环组件' },
+    ITERATOR: { nodeType: 'NodeIteratorComponent', defType: 'iteratorLoop', label: '迭代循环组件' },
+    SWITCH: { nodeType: 'NodeSwitchComponent', defType: 'switchRoute', label: '选择路由组件' }
+  };
+
+  /** 条件件节点类型 → 可投放的算子名（拒绝误拖时的提示文案用） */
+  const SLOT_OP_HINTS: Record<string, string> = {
+    NodeBooleanComponent: 'IF/WHILE',
+    NodeForComponent: 'FOR',
+    NodeIteratorComponent: 'ITERATOR',
+    NodeSwitchComponent: 'SWITCH'
+  };
 
   /**
    * 拖业务/算子到画布，落点所见即所得（resolveDropTarget 统一裁决，与 dragover 高亮同源）：
-   * - 落在 IF/WHILE 条件菱形：挂/替换布尔条件件（条件槽护栏，只收 boolean 物料）
+   * - 落在 IF/WHILE/FOR/ITERATOR/SWITCH 条件菱形：挂/替换对应条件件（条件槽护栏，按准入映射校验）
    * - 指针中心落在占位符虚框本体（含 4px 抗抖动）：填充该槽
    * - 落在边上（即使边连着空槽）：一律按边自身语义在线上插入（insertOnEdge）——
    *   不做「端点是占位符就改成填槽」的隐性重定向。空 THEN 邻接的 seq 边插入后
@@ -240,7 +257,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
       return;
     }
 
-    // 条件槽护栏：布尔条件件只能进 IF/WHILE 的条件菱形；普通业务件不能进条件菱形
+    // 条件槽护栏：按算子类型只收匹配 lfNodeType 的条件件
     const condGateway = findConditionGatewayAt(x, y);
     if (condGateway) {
       const gwElNode = treeModel.findNode(condGateway.id);
@@ -251,9 +268,10 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
             ? treeModel.findNode(gwElNode.parentOperatorId)
             : null;
       const opType = opNode?.type ?? '';
-      if (BOOLEAN_CONDITION_OPS.has(opType)) {
-        if (!isBooleanDef(def)) {
-          ElMessage.warning(`「${opType}」的条件槽只能放入「条件判断」组件`);
+      const rule = CONDITION_SLOT_RULES[opType];
+      if (rule) {
+        if (def.lfNodeType !== rule.nodeType) {
+          ElMessage.warning(`「${opType}」的条件槽只能放入「${rule.label}」组件`);
           return;
         }
         const condId = attachCondition(opNode!.id, type);
@@ -264,12 +282,14 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
         }
         return;
       }
-      // SWITCH/FOR/ITERATOR 条件件不是布尔组件，本档不支持配置
-      ElMessage.warning(`「${getDef(opType)?.label ?? opType}」的条件组件本档暂不支持配置`);
+      ElMessage.warning(`「${getDef(opType)?.label ?? opType}」没有可配置的条件组件槽位`);
       return;
     }
-    if (isBooleanDef(def)) {
-      ElMessage.warning('「条件判断」是布尔组件，请拖到 IF/WHILE 的条件菱形槽位上');
+    // 各类条件件都不是普通顺序叶子，只能落到对应算子的条件菱形
+    if (def.lfNodeType && def.lfNodeType !== 'NodeComponent') {
+      ElMessage.warning(
+        `「${def.label}」是条件组件，请拖到 ${SLOT_OP_HINTS[def.lfNodeType] ?? '对应算子'} 的条件菱形槽位上`
+      );
       return;
     }
 

@@ -24,9 +24,6 @@ export type ConditionKind = 'if' | 'switch' | 'for' | 'while' | 'iterator' | 'bo
  * - lfNodeType: 业务组件在 LiteFlow 中的节点类型（缺省 NodeComponent；
  *   布尔条件组件为 NodeBooleanComponent，只能放在 IF/WHILE 等条件槽）
  * - group: 物料面板分组
- * - defaultTitle: 业务组件留空「节点标题」时的默认推断（动宾 + 参数值，≤15 字）。
- *   入参为组件配置 data 解析后的 cfg；返回空串表示 cfg 缺字段推断不出，由展示层
- *   回退 label。算子/虚拟节点不填，展示层直接用 label 兜底。
  */
 export interface CmpDef {
   type: string;
@@ -41,10 +38,13 @@ export interface CmpDef {
   singleton?: boolean;
   operator?: boolean;
   conditionKind?: ConditionKind;
-  lfNodeType?: 'NodeComponent' | 'NodeBooleanComponent';
+  lfNodeType?:
+    | 'NodeComponent'
+    | 'NodeBooleanComponent'
+    | 'NodeForComponent'
+    | 'NodeIteratorComponent'
+    | 'NodeSwitchComponent';
   group?: 'flow' | 'sequence' | 'branch' | 'loop' | 'other' | 'subflow' | 'business';
-  /** 留空节点标题时的默认推断（仅业务组件）；风格见文件末 title builders 注释 */
-  defaultTitle?: (cfg: any) => string;
 }
 
 export const CMP_DEFS: CmpDef[] = [
@@ -123,7 +123,7 @@ export const CMP_DEFS: CmpDef[] = [
     type: 'FOR',
     label: 'For循环(FOR)',
     short: '计数循环',
-    desc: '按次数循环：FOR(起始;结束;步长).DO(循环体)',
+    desc: '按次数循环：FOR(计数器).DO(循环体)，体内用 $i 取当前轮下标（0 基）',
     color: '#67c23a',
     icon: 'ph:list-numbers',
     operator: true,
@@ -219,8 +219,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '通用 HTTP：GET/POST/PUT/PATCH/DELETE，JSON/表单/raw 三种请求体，basic/bearer 鉴权；状态码与响应存入 $.数据空间.status/response，mappings 抽取字段',
     color: '#409eff',
     icon: 'ph:globe',
-    group: 'business',
-    defaultTitle: titleOfHttpRequest
+    group: 'business'
   },
   {
     type: 'condition',
@@ -229,8 +228,34 @@ export const CMP_DEFS: CmpDef[] = [
     color: '#e6a23c',
     icon: 'ph:equals',
     lfNodeType: 'NodeBooleanComponent',
-    group: 'business',
-    defaultTitle: () => '条件判定'
+    group: 'business'
+  },
+  {
+    type: 'forLoop',
+    label: '计数循环组件',
+    desc: 'FOR 算子条件位：count 填循环次数（整数或 $.路径），体内用 $i 引用当前轮下标；indexVar 可自定义下标名',
+    color: '#67c23a',
+    icon: 'ph:number-circle-one',
+    lfNodeType: 'NodeForComponent',
+    group: 'business'
+  },
+  {
+    type: 'iteratorLoop',
+    label: '迭代循环组件',
+    desc: 'ITERATOR 算子条件位：source 填数组/集合路径，逐轮迭代；体内用 $i 取当前轮下标（嵌套时内层为 $j）',
+    color: '#67c23a',
+    icon: 'ph:shuffle',
+    lfNodeType: 'NodeIteratorComponent',
+    group: 'business'
+  },
+  {
+    type: 'switchRoute',
+    label: '选择路由组件',
+    desc: 'SWITCH 算子条件位：读 source 当前值，按 cases 顺序匹配分支名跳转；全不命中报错（暂不支持 DEFAULT）',
+    color: '#e6a23c',
+    icon: 'ph:signpost',
+    lfNodeType: 'NodeSwitchComponent',
+    group: 'business'
   },
   {
     type: 'setValue',
@@ -238,8 +263,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '把值（常量或路径取值）写入上下文 $.数据空间.path',
     color: '#67c23a',
     icon: 'ph:pencil-simple',
-    group: 'business',
-    defaultTitle: titleOfSetValue
+    group: 'business'
   },
   {
     type: 'fieldMap',
@@ -247,8 +271,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '按 mappings 把来源路径逐条搬运到目标路径；from/to 同时含 [*] 触发数组批量搬运，可选 type 字段做类型转换（int/string/boolean/double）',
     color: '#9c27b0',
     icon: 'ph:arrows-left-right',
-    group: 'business',
-    defaultTitle: titleOfFieldMap
+    group: 'business'
   },
   {
     type: 'dataPatch',
@@ -256,8 +279,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '按 merge 语义把 patch 字段覆盖到 target 命中的每个对象：[*] 全量/[i] 索引/[?(...)] 过滤均可，未声明字段（含 ID）保留、缺失字段新增；典型用于 boQuery 后改字段再交 boUpdate 回写，命中对象数写入 $.数据空间.patchedCount',
     color: '#009688',
     icon: 'ph:git-diff',
-    group: 'business',
-    defaultTitle: () => '补丁合并'
+    group: 'business'
   },
   {
     type: 'response',
@@ -265,8 +287,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '设置链路返回结果，固定写入 $.response.result/msg/data',
     color: '#f56c6c',
     icon: 'ph:flag-checkered',
-    group: 'business',
-    defaultTitle: () => '流程响应'
+    group: 'business'
   },
 
   // ── BPM 业务组件（均有后端真实现，注册名与后端 @LiteflowComponent 一致；
@@ -280,8 +301,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '创建 BPM 会话（登录获取 sid），响应平铺到 $.数据空间',
     color: '#409eff',
     icon: 'ph:sign-in',
-    group: 'business',
-    defaultTitle: () => '创建会话'
+    group: 'business'
   },
   {
     type: 'processStart',
@@ -290,8 +310,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '启动 BPM 流程实例，title 支持 ${$.xxx} 模板替换，响应平铺到 $.数据空间（含 processInstanceId 供下游 boCreate.bindId 引用）',
     color: '#e6a23c',
     icon: 'ph:rocket',
-    group: 'business',
-    defaultTitle: () => '启动流程'
+    group: 'business'
   },
   {
     type: 'boCreate',
@@ -300,8 +319,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '创建 BPM 业务对象（BO），method=create 时 bindId 必填且引用上一步 processStart.processInstanceId，支持 6 种回写策略',
     color: '#9c27b0',
     icon: 'ph:database',
-    group: 'business',
-    defaultTitle: (cfg: any) => titleOfBoVerb(cfg, '新建')
+    group: 'business'
   },
   {
     type: 'boQuery',
@@ -310,8 +328,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '查询 BPM 业务对象（BO）数据，支持 list/listPage/count 三种方法、maxRecord 影响量校验、动态条件与关联表/子表挂载',
     color: '#409eff',
     icon: 'ph:magnifying-glass',
-    group: 'business',
-    defaultTitle: titleOfBoQuery
+    group: 'business'
   },
   {
     type: 'boUpdate',
@@ -320,8 +337,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '按记录 ID 更新 BPM 业务对象（BO）数据，records 必须含 ID 字段（可先 boQuery 查出再整体回写），BPM 端整体事务 all-or-nothing',
     color: '#e6a23c',
     icon: 'ph:pencil-line',
-    group: 'business',
-    defaultTitle: (cfg: any) => titleOfBoVerb(cfg, '更新')
+    group: 'business'
   },
   {
     type: 'boDelete',
@@ -330,8 +346,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '删除 BPM 业务对象（BO）数据，method=remove 按记录 ID 逐条删 / removeByBindId 按流程实例批量删，BPM 端整体事务 all-or-nothing',
     color: '#f56c6c',
     icon: 'ph:trash',
-    group: 'business',
-    defaultTitle: (cfg: any) => titleOfBoVerb(cfg, '删除')
+    group: 'business'
   },
   {
     type: 'processTerminate',
@@ -340,8 +355,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '终止 BPM 流程实例（userId 为终止操作人），流程已结束时幂等返回 terminated=false 不报错',
     color: '#909399',
     icon: 'ph:prohibit',
-    group: 'business',
-    defaultTitle: () => '终止流程'
+    group: 'business'
   },
   {
     type: 'taskComplete',
@@ -350,8 +364,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '按 processInstanceId 提交 BPM 任务（全部尝试），部分失败按 failOnError 决定是否中断',
     color: '#67c23a',
     icon: 'ph:seal-check',
-    group: 'business',
-    defaultTitle: () => '提交任务'
+    group: 'business'
   },
   {
     type: 'rdsExecute',
@@ -360,8 +373,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '在 BPM 后台注册的 RDS 数据源上执行 SQL：标量/单行/多行查询、更新与批量（8 种方法），结果存 $.数据空间.data',
     color: '#16a34a',
     icon: 'ph:table',
-    group: 'business',
-    defaultTitle: titleOfRdsExecute
+    group: 'business'
   },
   {
     type: 'idCardToUserId',
@@ -370,8 +382,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '按 path 读取逗号分隔的身份证号，查 BPM 用户表换成 userId 原地写回；全部未命中报错，部分未命中告警',
     color: '#0891b2',
     icon: 'ph:identification-card',
-    group: 'business',
-    defaultTitle: () => '身份证换 ID'
+    group: 'business'
   },
   {
     type: 'fileUpload',
@@ -380,8 +391,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '读取数据空间文件数组（base64），本地摘要校验后上传到 BO 记录附件字段，结果存 $.数据空间.files',
     color: '#7c3aed',
     icon: 'ph:upload-simple',
-    group: 'business',
-    defaultTitle: titleOfFileUpload
+    group: 'business'
   },
   {
     type: 'fileDownload',
@@ -390,8 +400,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: '按 boId + 附件字段名读取 BO 记录全部文件转 base64，结果存 $.数据空间.files（可直接接上传组件）',
     color: '#0369a1',
     icon: 'ph:download-simple',
-    group: 'business',
-    defaultTitle: titleOfFileDownload
+    group: 'business'
   },
   {
     type: 'script',
@@ -400,8 +409,7 @@ export const CMP_DEFS: CmpDef[] = [
     desc: 'Groovy 等脚本语言编写的任意代码，可读写数据空间',
     color: '#9c27b0',
     icon: 'ph:code',
-    group: 'business',
-    defaultTitle: titleOfScript
+    group: 'business'
   },
   {
     type: 'booleanScript',
@@ -411,8 +419,7 @@ export const CMP_DEFS: CmpDef[] = [
     color: '#e6a23c',
     icon: 'ph:terminal-window',
     lfNodeType: 'NodeBooleanComponent',
-    group: 'business',
-    defaultTitle: titleOfBooleanScript
+    group: 'business'
   }
 ];
 
@@ -451,116 +458,4 @@ export function isBooleanDef(def: CmpDef | undefined | null): boolean {
  * - 组件产出统一写在 $.数据空间名.xxx 下（response 组件例外，固定写 $.response.*）。
  */
 
-// ── 节点标题默认推断（2026-09-20 拍板，设计正本 databus-preview-step-result.md §5）──────────
-// 风格：动宾 + 参数值，≤15 字，不带运行时数量（数量归 summary）、不带 tag/nodeId（已有列）。
-// 函数声明提升，故可在上方 CMP_DEFS 字面量中直接引用；cfg 缺关键字段时返回空串，
-// 由 resolveNodeTitle 回退 def.label。
 
-/** 超 15 字截断（路径/BO 名可能很长），保留 14 字加省略号 */
-function clipTitle(text: string): string {
-  return text.length > 15 ? `${text.slice(0, 14)}…` : text;
-}
-
-/** httpRequest：method + URL 路径，如 GET /auth/code */
-function titleOfHttpRequest(cfg: any): string {
-  const method = String(cfg?.method ?? '').trim().toUpperCase();
-  let path = String(cfg?.url ?? '').trim();
-  if (path) {
-    // 剥掉协议与主机，只留路径（相对地址直接补斜杠）
-    path = path.replace(/^[a-zA-Z][\w+.-]*:\/\/[^/]+/, '');
-    if (!path.startsWith('/')) {
-      path = `/${path}`;
-    }
-  }
-  if (!method && !path) {
-    return '';
-  }
-  return clipTitle(`${method} ${path}`.trim());
-}
-
-/** setValue：动作 + 写入路径，如 赋值 $.user.name */
-function titleOfSetValue(cfg: any): string {
-  const path = String(cfg?.path ?? '').trim();
-  return path ? clipTitle(`赋值 ${path}`) : '';
-}
-
-/** fieldMap：动作 + 静态映射条数，如 搬运 3 字段 */
-function titleOfFieldMap(cfg: any): string {
-  const count = Array.isArray(cfg?.mappings) ? cfg.mappings.length : 0;
-  return count > 0 ? `搬运 ${count} 字段` : '';
-}
-
-/** boCreate / boUpdate / boDelete：boList[0].boName，如 新建 用户表 */
-function titleOfBoVerb(cfg: any, verb: string): string {
-  const boName = String(cfg?.boList?.[0]?.boName ?? '').trim();
-  return boName ? clipTitle(`${verb} ${boName}`) : '';
-}
-
-/** boQuery：主表 main.boName，如 查询 用户表 */
-function titleOfBoQuery(cfg: any): string {
-  const boName = String(cfg?.main?.boName ?? '').trim();
-  return boName ? clipTitle(`查询 ${boName}`) : '';
-}
-
-/** rdsExecute：SQL: + 方法名，如 SQL: getMaps */
-function titleOfRdsExecute(cfg: any): string {
-  const method = String(cfg?.method ?? '').trim();
-  return method ? clipTitle(`SQL: ${method}`) : '';
-}
-
-/** fileUpload / fileDownload：动作 + 附件字段名，如 上传 BO_FIELD_FILE；缺字段时回退「上传附件」 */
-function titleOfFileVerb(cfg: any, verb: string): string {
-  const field = String(cfg?.boItemName ?? cfg?.fieldName ?? '').trim();
-  return field ? clipTitle(`${verb} ${field}`) : `${verb}附件`;
-}
-
-function titleOfFileUpload(cfg: any): string {
-  return titleOfFileVerb(cfg, '上传');
-}
-
-function titleOfFileDownload(cfg: any): string {
-  return titleOfFileVerb(cfg, '下载');
-}
-
-/** script：language + 「脚本」，如 Groovy 脚本；缺 language 返回空串回退 label */
-function titleOfScript(cfg: any): string {
-  const language = String(cfg?.language ?? '').trim();
-  if (!language) return '';
-  const lang = language.charAt(0).toUpperCase() + language.slice(1);
-  return clipTitle(`${lang} 脚本`);
-}
-
-/** booleanScript：直接返回「条件脚本」风格名，与 label 等价、不重复 cfg */
-function titleOfBooleanScript(_cfg: any): string {
-  return '条件脚本';
-}
-
-/**
- * 节点展示标题三段兜底（画布节点 / 属性面板 / 试运行步骤表统一入口）：
- * 用户显式标题 → 业务组件按当前 cfg 推断默认 → 组件 label。
- *
- * @param def       物料定义（算子/虚拟节点没有 defaultTitle，直接落 label）
- * @param userTitle 画布 properties.title（用户填的正本，空白等同未填）
- * @param cfg       组件配置 data 解析后的对象；data 为空或非法 JSON 时传 null/{}
- */
-export function resolveNodeTitle(
-  def: Pick<CmpDef, 'label' | 'defaultTitle'> | undefined,
-  userTitle?: string | null,
-  cfg?: unknown
-): string {
-  const custom = userTitle?.trim();
-  if (custom) {
-    return custom;
-  }
-  if (def?.defaultTitle) {
-    try {
-      const inferred = def.defaultTitle(cfg ?? {});
-      if (inferred) {
-        return inferred;
-      }
-    } catch {
-      // cfg 形态异常时静默回退 label
-    }
-  }
-  return def?.label ?? '';
-}

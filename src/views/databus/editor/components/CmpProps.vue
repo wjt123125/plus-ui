@@ -17,7 +17,7 @@
         <el-tag v-else-if="node.data.operator" size="small" type="warning">算子</el-tag>
       </div>
 
-      <!-- 节点标题：业务叶子/条件件/算子可编辑；留空时 placeholder 显按 cfg 推断的默认名 -->
+      <!-- 节点标题：业务叶子/条件件/算子可编辑；留空时 placeholder 显组件 label -->
       <el-form
         v-if="canEditTitle"
         label-position="top"
@@ -41,7 +41,7 @@
               </el-icon>
             </template>
           </el-input>
-          <div class="cmp-props__hint">留空时按组件配置自动命名；自定义后不随配置变化</div>
+          <div class="cmp-props__hint">留空时显示组件 label；自定义后不随配置变化</div>
         </el-form-item>
       </el-form>
 
@@ -59,13 +59,27 @@
         <span v-else>拖入业务组件可替换此空槽。</span>
       </div>
 
-      <!-- IF/WHILE 条件菱形：未挂条件件时选择条件组件，已挂则编辑条件件本身 -->
+      <!-- 条件菱形：未挂条件件时按算子类型选择对应条件组件，已挂则编辑条件件本身 -->
       <el-form
-        v-else-if="node.data.isCondition && supportedCondOp && !hasCondition"
+        v-else-if="node.data.isCondition && condPickDefs.length > 0 && !hasCondition"
         label-position="top"
         size="small"
         class="cmp-props__form"
       >
+        <el-form-item v-if="opNode?.type === 'SWITCH'" label="分支 (case)">
+          <div class="cmp-props__cases">
+            <div v-for="(name, i) in caseNames" :key="i" class="cmp-props__case-row">
+              <el-input
+                :model-value="name"
+                size="small"
+                placeholder="case 名（路由按此名命中）"
+                @change="(v: string) => onCaseNameChange(i, v)"
+              />
+              <el-button :icon="Delete" size="small" text :disabled="caseNames.length <= 1" @click="removeCase(i)" />
+            </div>
+            <el-button size="small" :icon="Plus" @click="addCase">添加分支</el-button>
+          </div>
+        </el-form-item>
         <el-form-item :label="`${opNode?.type} 条件组件`">
           <el-select
             :model-value="''"
@@ -74,7 +88,7 @@
             @change="onPickCondition"
           >
             <el-option
-              v-for="d in booleanDefs"
+              v-for="d in condPickDefs"
               :key="d.type"
               :label="d.label"
               :value="d.type"
@@ -84,35 +98,9 @@
             </el-option>
           </el-select>
           <div class="cmp-props__hint">
-            条件组件为布尔组件，运行时返回真/假决定{{ opNode?.type === 'WHILE' ? '是否继续循环' : '走哪个分支' }}
+            {{ conditionSlotHint }}
           </div>
         </el-form-item>
-      </el-form>
-
-      <!-- SWITCH/FOR/ITERATOR 条件菱形：本档暂不支持配置条件件 -->
-      <el-form
-        v-else-if="node.data.isCondition && !supportedCondOp"
-        label-position="top"
-        size="small"
-        class="cmp-props__form"
-      >
-        <template v-if="needsCasesEdit">
-          <el-form-item label="分支 (case)">
-            <div class="cmp-props__cases">
-              <div v-for="(_, i) in caseCount" :key="i" class="cmp-props__case-row">
-                <span class="cmp-props__case-label">case{{ i + 1 }}</span>
-                <el-button :icon="Delete" size="small" text :disabled="caseCount <= 1" @click="removeCase(i)" />
-              </div>
-              <el-button size="small" :icon="Plus" @click="addCase">添加分支</el-button>
-            </div>
-          </el-form-item>
-        </template>
-        <el-alert
-          title="该算子的条件组件本档暂不支持配置，试运行不会执行此结构"
-          type="warning"
-          :closable="false"
-          show-icon
-        />
       </el-form>
 
       <!-- 普通算子网关（WHEN/CATCH/AND/OR/NOT/CHAIN）：只编辑 tag -->
@@ -125,9 +113,14 @@
         <!-- SWITCH cases 管理（condition 网关由 condition 叶子充当的情形） -->
         <el-form-item v-if="needsCasesEdit" label="分支 (case)">
           <div class="cmp-props__cases">
-            <div v-for="(_, i) in caseCount" :key="i" class="cmp-props__case-row">
-              <span class="cmp-props__case-label">case{{ i + 1 }}</span>
-              <el-button :icon="Delete" size="small" text :disabled="caseCount <= 1" @click="removeCase(i)" />
+            <div v-for="(name, i) in caseNames" :key="i" class="cmp-props__case-row">
+              <el-input
+                :model-value="name"
+                size="small"
+                placeholder="case 名（路由按此名命中）"
+                @change="(v: string) => onCaseNameChange(i, v)"
+              />
+              <el-button :icon="Delete" size="small" text :disabled="caseNames.length <= 1" @click="removeCase(i)" />
             </div>
             <el-button size="small" :icon="Plus" @click="addCase">添加分支</el-button>
           </div>
@@ -142,7 +135,124 @@
         </el-form-item>
       </el-form>
 
-      <!-- 业务组件 / 已挂载的条件件：数据空间 + 配置 JSON -->
+      <!-- forLoop / iteratorLoop / switchRoute：结构化小表单 + 数据空间 -->
+      <el-form v-else-if="structuredCode" label-position="top" size="small" class="cmp-props__form">
+        <el-form-item v-if="isConditionLeaf" :label="`${opNode?.type ?? ''} 条件组件`.trim()">
+          <el-tag size="small" type="warning">{{ leafDef?.label ?? elNode?.componentCode }}</el-tag>
+          <el-button size="small" text type="primary" @click="openReplaceCondition">更换条件组件</el-button>
+        </el-form-item>
+        <el-form-item label="数据空间" required :error="spaceError || undefined">
+          <el-input
+            v-model="dataSpace"
+            placeholder="如 forLoop1（字母开头，字母数字下划线）"
+            clearable
+            @change="onDataSpaceChange"
+          />
+          <div class="cmp-props__hint">
+            组件产出挂在 $.{{ dataSpace || '数据空间名' }} 下；画布内唯一，改名会联动更新引用
+          </div>
+        </el-form-item>
+
+        <!-- forLoop：循环次数 + 自定义下标名 -->
+        <template v-if="structuredCode === 'forLoop'">
+          <el-form-item label="循环次数 count">
+            <el-input
+              v-model="loopForm.count"
+              placeholder="整数（如 3）或次数路径（如 $.request.total）"
+              @change="commitLoopForm"
+            />
+            <div class="cmp-props__hint">循环从 0 计数；0 表示循环体零次执行</div>
+          </el-form-item>
+          <el-form-item label="下标变量名 indexVar">
+            <el-input
+              v-model="loopForm.indexVar"
+              placeholder="留空默认 $i；嵌套循环第二层默认 $j、第三层 $k"
+              @change="commitLoopForm"
+            />
+            <div class="cmp-props__hint">字母开头，仅含字母数字下划线；体内用 ${'$'}{{ loopForm.indexVar.trim() || 'i' }} 引用当前轮下标</div>
+          </el-form-item>
+        </template>
+
+        <!-- iteratorLoop：数据源路径 + 自定义下标名 -->
+        <template v-else-if="structuredCode === 'iteratorLoop'">
+          <el-form-item label="数据源 source">
+            <el-input
+              v-model="loopForm.source"
+              placeholder="数组/集合路径，如 $.request.items"
+              @change="commitLoopForm"
+            />
+            <div class="cmp-props__hint">值为 null 按空集合处理（0 轮）；路径中可用外层下标（如 $.groups[$i].users）</div>
+          </el-form-item>
+          <el-form-item label="下标变量名 indexVar">
+            <el-input
+              v-model="loopForm.indexVar"
+              placeholder="留空默认 $i；嵌套循环第二层默认 $j、第三层 $k"
+              @change="commitLoopForm"
+            />
+            <div class="cmp-props__hint">字母开头，仅含字母数字下划线；体内用 ${'$'}{{ loopForm.indexVar.trim() || 'i' }} 引用当前轮下标</div>
+          </el-form-item>
+        </template>
+
+        <!-- switchRoute：判断值路径 + 值→分支映射 -->
+        <template v-else-if="structuredCode === 'switchRoute'">
+          <el-form-item v-if="needsCasesEdit" label="分支 (case)">
+            <div class="cmp-props__cases">
+              <div v-for="(name, i) in caseNames" :key="i" class="cmp-props__case-row">
+                <el-input
+                  :model-value="name"
+                  size="small"
+                  placeholder="case 名（路由按此名命中）"
+                  @change="(v: string) => onCaseNameChange(i, v)"
+                />
+                <el-button :icon="Delete" size="small" text :disabled="caseNames.length <= 1" @click="removeCase(i)" />
+              </div>
+              <el-button size="small" :icon="Plus" @click="addCase">添加分支</el-button>
+            </div>
+          </el-form-item>
+          <el-form-item label="判断值路径 source">
+            <el-input
+              v-model="loopForm.source"
+              placeholder="如 $.request.type"
+              @change="commitLoopForm"
+            />
+            <div class="cmp-props__hint">读出实际值后按下方顺序逐条匹配，命中第一条即跳转；全不命中执行报错（暂不支持 DEFAULT）</div>
+          </el-form-item>
+          <el-form-item label="值 → 分支 cases">
+            <div class="cmp-props__cases">
+              <div v-for="(row, i) in loopForm.cases" :key="i" class="cmp-props__case-mapping-row">
+                <el-input
+                  v-model="row.value"
+                  size="small"
+                  placeholder="值：常量或 $.路径"
+                  @change="commitLoopForm"
+                />
+                <el-select
+                  v-model="row.target"
+                  size="small"
+                  filterable
+                  allow-create
+                  default-first-option
+                  placeholder="目标 case 名"
+                  @change="commitLoopForm"
+                >
+                  <el-option v-for="name in caseNames" :key="name" :label="name" :value="name" />
+                </el-select>
+                <el-button
+                  :icon="Delete"
+                  size="small"
+                  text
+                  :disabled="loopForm.cases.length <= 1"
+                  @click="removeRouteCase(i)"
+                />
+              </div>
+              <el-button size="small" :icon="Plus" @click="addRouteCase">添加映射</el-button>
+            </div>
+            <div class="cmp-props__hint">数字按数值匹配（200 与 "200" 相等）；target 必须与上方某个 case 名一致</div>
+          </el-form-item>
+        </template>
+      </el-form>
+
+      <!-- 其他业务组件 / 已挂载的条件件：数据空间 + 配置 JSON -->
       <el-form v-else-if="!isScriptLeaf" label-position="top" size="small" class="cmp-props__form">
         <el-form-item v-if="isConditionLeaf" :label="`${opNode?.type ?? ''} 条件组件`.trim()">
           <el-tag size="small" type="warning">{{ leafDef?.label ?? elNode?.componentCode }}</el-tag>
@@ -226,7 +336,7 @@
       </div>
     </template>
 
-    <!-- 更换条件组件弹层（当前只有「条件判断」一个布尔物料） -->
+    <!-- 更换条件组件弹层（候选随所属算子变化：IF/WHILE→布尔物料，循环/SWITCH→专属控制组件） -->
     <el-dialog
       v-model="replaceDialogVisible"
       title="更换条件组件"
@@ -235,7 +345,7 @@
     >
       <el-radio-group v-model="pendingConditionType" class="cmp-props__radio-col">
         <el-radio
-          v-for="d in booleanDefs"
+          v-for="d in condPickDefs"
           :key="d.type"
           :value="d.type"
           style="display: flex; margin: 6px 0"
@@ -253,7 +363,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { Delete, Plus, Refresh } from '@element-plus/icons-vue';
 import type { Node } from '@vue-flow/core';
 import {
@@ -273,7 +383,7 @@ import {
   ElTag
 } from 'element-plus';
 import { listScriptEngines } from '@/api/databus/script';
-import { CMP_DEFS, getDef, isBooleanDef, resolveNodeTitle } from '../cmp-defs';
+import { CMP_DEFS, getDef, type CmpDef } from '../cmp-defs';
 import {
   useElTreeModelInject,
   type CmpNodeData,
@@ -294,8 +404,36 @@ const emit = defineEmits<{
 const treeModel = useElTreeModelInject();
 const ctrl = useCanvasController();
 
-/** 可选布尔条件物料（当前仅「条件判断」） */
-const booleanDefs = CMP_DEFS.filter((d) => isBooleanDef(d));
+/**
+ * 各算子条件槽可挂的条件物料（与 useCanvasController 的 CONDITION_SLOT_RULES 同源口径）。
+ * IF/WHILE 挂布尔条件件；FOR/ITERATOR/SWITCH 各挂专属控制组件。
+ */
+const CONDITION_SLOT_TYPES: Record<string, string[]> = {
+  IF: CMP_DEFS.filter((d) => d.lfNodeType === 'NodeBooleanComponent').map((d) => d.type),
+  WHILE: CMP_DEFS.filter((d) => d.lfNodeType === 'NodeBooleanComponent').map((d) => d.type),
+  FOR: ['forLoop'],
+  ITERATOR: ['iteratorLoop'],
+  SWITCH: ['switchRoute']
+};
+
+/** 条件槽选择列表/更换弹层的候选物料（按当前所属算子过滤） */
+const condPickDefs = computed<CmpDef[]>(() =>
+  (CONDITION_SLOT_TYPES[opNode.value?.type ?? ''] ?? [])
+    .map((t) => getDef(t))
+    .filter((d): d is CmpDef => !!d)
+);
+
+/** 条件件选择框下方的说明文案 */
+const CONDITION_SLOT_HINTS: Record<string, string> = {
+  IF: '条件组件为布尔组件，运行时返回真/假决定走哪个分支',
+  WHILE: '条件组件为布尔组件，运行时返回真/假决定是否继续循环',
+  FOR: '计数组件返回循环次数；循环体内用 $i 引用当前轮下标（0 基）',
+  ITERATOR: '迭代组件返回数组/集合的迭代器；体内用 $i 引用当前轮下标（0 基）',
+  SWITCH: '路由组件读取判断值，按 cases 配置匹配 case 名跳转；分支名在上方维护'
+};
+const conditionSlotHint = computed(
+  () => CONDITION_SLOT_HINTS[opNode.value?.type ?? ''] ?? ''
+);
 
 /** 各物料配置 JSON 的示例占位文案 */
 const DATA_HINTS: Record<string, string> = {
@@ -363,11 +501,6 @@ const opNode = computed<ElNode | null>(() => {
 /** 条件菱形是否还没挂条件件（网关仍由算子自身充当） */
 const hasCondition = computed(() => isConditionLeaf.value);
 
-/** 本档支持配置布尔条件件的算子 */
-const supportedCondOp = computed(() =>
-  ['IF', 'WHILE'].includes(opNode.value?.type ?? '')
-);
-
 const headerLabel = computed(() => {
   if (isConditionLeaf.value) {
     return leafDef.value?.label ?? elNode.value?.componentCode ?? props.node?.data.label ?? '';
@@ -386,12 +519,104 @@ const needsCasesEdit = computed(() => {
   return !!d?.isCondition && (opNode.value?.type === 'SWITCH' || d.defType === 'SWITCH');
 });
 
-const caseCount = computed(() => {
-  if (!needsCasesEdit.value) return 0;
-  const switchId =
-    opNode.value?.type === 'SWITCH' ? opNode.value.id : elNode.value?.parentOperatorId;
-  return switchId ? (treeModel.findNode(switchId)?.children?.length ?? 0) : 0;
+/** 当前编辑界面归属的 SWITCH 算子树节点 id（case 名读写都落它的 outletLabels） */
+const switchModelId = computed<string | null>(() => {
+  if (!needsCasesEdit.value) return null;
+  if (opNode.value?.type === 'SWITCH') return opNode.value.id;
+  return elNode.value?.parentOperatorId ?? null;
 });
+
+/** case 分支名（读 outletLabels，缺省回退 caseN，与投影展示一致） */
+const caseNames = computed<string[]>(() => {
+  const id = switchModelId.value;
+  const sw = id ? treeModel.findNode(id) : null;
+  const count = sw?.children?.length ?? 0;
+  return Array.from({ length: count }, (_, i) => sw?.outletLabels?.[i] ?? `case${i + 1}`);
+});
+
+/** forLoop/iteratorLoop/switchRoute 走结构化小表单（其余叶子走 JSON 编辑器） */
+const STRUCTURED_CODES = ['forLoop', 'iteratorLoop', 'switchRoute'] as const;
+const structuredCode = computed<(typeof STRUCTURED_CODES)[number] | ''>(() => {
+  const code = elNode.value?.componentCode ?? '';
+  return (STRUCTURED_CODES as readonly string[]).includes(code)
+    ? (code as (typeof STRUCTURED_CODES)[number])
+    : '';
+});
+
+/** 结构化表单本地状态（node 切换时从 data JSON 同步） */
+const loopForm = reactive({
+  count: '',
+  indexVar: '',
+  source: '',
+  cases: [] as { value: string; target: string }[]
+});
+
+/** 从叶子 data JSON 同步结构化表单；非法 JSON 按空配置处理 */
+function syncLoopForm(data?: string) {
+  let cfg: any = {};
+  if (data) {
+    try {
+      cfg = JSON.parse(data);
+    } catch {
+      cfg = {};
+    }
+  }
+  loopForm.count = cfg?.count == null ? '' : String(cfg.count);
+  loopForm.indexVar = typeof cfg?.indexVar === 'string' ? cfg.indexVar : '';
+  loopForm.source = typeof cfg?.source === 'string' ? cfg.source : '';
+  loopForm.cases = Array.isArray(cfg?.cases)
+    ? cfg.cases.map((c: any) => ({
+        value: c?.value == null ? '' : String(c.value),
+        target: c?.target == null ? '' : String(c.target)
+      }))
+    : [];
+}
+
+/** 表单值序列化回叶子 data（纯数字串转 number，与后端数字比较口径配套） */
+function commitLoopForm() {
+  if (!elNode.value || !structuredCode.value) return;
+  const cfg: Record<string, unknown> = {};
+  const indexVar = loopForm.indexVar.trim();
+  const source = loopForm.source.trim();
+  if (structuredCode.value === 'forLoop') {
+    const count = loopForm.count.trim();
+    if (count) {
+      cfg.count = /^-?\d+$/.test(count) ? Number(count) : count;
+    }
+    if (indexVar) cfg.indexVar = indexVar;
+  } else if (structuredCode.value === 'iteratorLoop') {
+    if (source) cfg.source = source;
+    if (indexVar) cfg.indexVar = indexVar;
+  } else {
+    if (source) cfg.source = source;
+    cfg.cases = loopForm.cases
+      .filter((row) => row.value.trim() !== '' || row.target.trim() !== '')
+      .map((row) => ({
+        value: coerceCaseValue(row.value.trim()),
+        target: row.target.trim()
+      }));
+  }
+  const json = JSON.stringify(cfg);
+  treeModel.updateLeafData(elNode.value.id, { data: json });
+  dataStr.value = json;
+  emit('data-change');
+}
+
+/** case 比较值：数字串转数字，其余原样（路径/常量字符串） */
+function coerceCaseValue(raw: string): string | number {
+  return /^-?\d+(\.\d+)?$/.test(raw) ? Number(raw) : raw;
+}
+
+function addRouteCase() {
+  loopForm.cases.push({ value: '', target: '' });
+  commitLoopForm();
+}
+
+function removeRouteCase(index: number) {
+  if (loopForm.cases.length <= 1) return;
+  loopForm.cases.splice(index, 1);
+  commitLoopForm();
+}
 
 // 本地输入框状态：node 切换时从 ElNode 树同步
 const dataSpace = ref('');
@@ -430,6 +655,8 @@ watch(
     const parsed = parseScriptCfg(n?.data);
     scriptLanguage.value = parsed.language;
     scriptText.value = parsed.script;
+    // 循环/路由三组件的结构化表单同步
+    syncLoopForm(n?.data);
   },
   { immediate: true }
 );
@@ -507,7 +734,7 @@ function onOperatorTagChange() {
   emit('data-change');
 }
 
-// ── 节点标题：留空实时按 cfg 推断，填了锁定；Refresh 图标清空恢复默认 ──
+// ── 节点标题：留空显组件 label，填了锁定；Refresh 图标清空恢复默认 ──
 
 /** 可编辑标题的节点：业务叶子/条件件/算子（虚拟节点与汇合点/空槽除外） */
 const canEditTitle = computed(() => {
@@ -516,26 +743,15 @@ const canEditTitle = computed(() => {
   return !getDef(n.type)?.virtual;
 });
 
-/** 标题推断所用物料：叶子按注册名反查，算子用自身类型 */
+/** 标题所用物料：叶子按注册名反查，算子用自身类型 */
 const titleDef = computed(() => {
   const n = elNode.value;
   if (!n) return undefined;
   return n.componentCode ? getDef(n.componentCode) : getDef(n.type);
 });
 
-/** 解析组件配置 JSON（编辑中的 dataStr 优先，实现 cfg 变默认名即时变） */
-function parseCfgForTitle(): unknown {
-  const raw = dataStr.value || elNode.value?.data || '';
-  if (!raw) return {};
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-
-/** 留空时的实时默认名（输入框 placeholder） */
-const defaultTitleText = computed(() => resolveNodeTitle(titleDef.value, null, parseCfgForTitle()));
+/** 留空时的默认名（输入框 placeholder，取组件 label） */
+const defaultTitleText = computed(() => titleDef.value?.label ?? '');
 
 const hasCustomTitle = computed(() => !!titleInput.value.trim());
 
@@ -547,7 +763,7 @@ function onTitleChange() {
   emit('data-change');
 }
 
-/** 点 Refresh：清空用户正本，恢复按 cfg 实时推断 */
+/** 点 Refresh：清空用户正本，恢复显示组件 label */
 function resetTitle() {
   if (!elNode.value) return;
   treeModel.updateNodeTitle(elNode.value.id, '');
@@ -571,7 +787,7 @@ const replaceDialogVisible = ref(false);
 const pendingConditionType = ref('');
 
 function openReplaceCondition() {
-  pendingConditionType.value = elNode.value?.componentCode ?? booleanDefs[0]?.type ?? '';
+  pendingConditionType.value = elNode.value?.componentCode ?? condPickDefs.value[0]?.type ?? '';
   replaceDialogVisible.value = true;
 }
 
@@ -598,11 +814,16 @@ function addCase() {
 }
 
 function removeCase(index: number) {
-  const switchId =
-    opNode.value?.type === 'SWITCH' ? opNode.value.id : elNode.value?.parentOperatorId;
-  if (switchId && treeModel.removeCase(switchId, index)) {
+  if (switchModelId.value && treeModel.removeCase(switchModelId.value, index)) {
     emit('data-change');
   }
+}
+
+/** case 改名：写 SWITCH 算子的 outletLabels[index]；空白恢复默认 caseN */
+function onCaseNameChange(index: number, raw: string) {
+  if (!switchModelId.value) return;
+  treeModel.updateOutletLabel(switchModelId.value, index, raw.trim() || null);
+  emit('data-change');
 }
 </script>
 
@@ -689,10 +910,22 @@ function removeCase(index: number) {
   align-items: center;
 }
 
-.cmp-props__case-label {
+.cmp-props__case-row :deep(.el-input) {
   flex: 1;
-  font-size: 12px;
-  color: var(--el-text-color-primary);
+}
+
+.cmp-props__case-mapping-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.cmp-props__case-mapping-row :deep(.el-input) {
+  flex: 1;
+}
+
+.cmp-props__case-mapping-row :deep(.el-select) {
+  flex: 1;
 }
 
 .cmp-props__opt-desc {

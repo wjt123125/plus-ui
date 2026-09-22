@@ -7,11 +7,12 @@
  * 标识规则（2026-09-16 修订）：
  * - leaf.id 是组件注册名（httpRequest/condition/setValue/fieldMap/response，可重复）
  * - leaf.properties.tag 是数据空间名（httpRequest1、condition1，画布唯一）
- * - 布尔条件件 type 为 NodeBooleanComponent，其余业务件为 NodeComponent
+ * - 布尔条件件 type 为 NodeBooleanComponent；循环/路由控制件为
+ *   NodeForComponent / NodeIteratorComponent / NodeSwitchComponent；其余业务件为 NodeComponent
  *
  * 可试运行性：有入参依赖的示例在 inputJson 提供入参 JSON，打开试运行弹窗时自动预填，
  * 无需手敲；标注「结构展示」的示例含本档不可执行的算子
- * （SWITCH/FOR/ITERATOR/AND/OR/NOT/CHAIN），仅用于验证画布投影。
+ * （AND/OR/NOT/CHAIN），仅用于验证画布投影。
  *
  * desc 硬约束（新增示例同样遵守）：
  * - 一句话只说「演示什么」，中文不超过 25 字左右，示例列表里一眼可读；
@@ -34,12 +35,25 @@ export interface MockPreset {
  * @param code      组件注册名（CmpProperty.id）
  * @param dataSpace 数据空间名（properties.tag），如 httpRequest1
  * @param cfg       组件配置（对象自动 JSON.stringify；字符串原样放入 data）
- * @param asBoolean 是否为布尔条件件（NodeBooleanComponent）
+ * @param nodeType  LiteFlow 节点类型：传 true 等同 NodeBooleanComponent（旧写法兼容）；
+ *                  循环/路由控制件传 NodeForComponent / NodeIteratorComponent / NodeSwitchComponent；
+ *                  缺省 NodeComponent
  */
-function leaf(code: string, dataSpace: string, cfg?: unknown, asBoolean = false): CmpProperty {
+function leaf(
+  code: string,
+  dataSpace: string,
+  cfg?: unknown,
+  nodeType: boolean | string = false
+): CmpProperty {
+  const type =
+    typeof nodeType === 'string'
+      ? nodeType
+      : nodeType
+        ? 'NodeBooleanComponent'
+        : 'NodeComponent';
   const node: CmpProperty = {
     id: code,
-    type: asBoolean ? 'NodeBooleanComponent' : 'NodeComponent',
+    type,
     properties: { tag: dataSpace }
   };
   if (cfg !== undefined) {
@@ -552,32 +566,55 @@ export const MOCK_PRESETS: MockPreset[] = [
     })
   },
 
-  // ── 选择（本档不可试运行，结构展示） ──
+  // ── 选择（switchRoute 真组件，可试运行） ──
   {
-    key: 'switch-multi',
-    name: '选择 SWITCH 三 case',
-    desc: '三 case 分支，验证多 outlet 菱形与 junction（结构展示）',
+    key: 'switch-cases',
+    name: 'SWITCH 按值选分支（纯本地）',
+    desc: '按 code 值命中对应 case 分支',
+    // 改 code 为 B 可观察另一分支；非 A/B 时 switchRoute 抛「未匹配」业务异常
+    inputJson: '{"code":"A"}',
     build: () => ({
-      type: 'SWITCH',
-      condition: leaf('setValue', 'setValue0', { path: '$.setValue0.switchOn', value: '占位' }),
+      type: 'THEN',
       children: [
-        leaf('setValue', 'setValue1', { path: '$.setValue1.out', value: 'case1' }),
-        leaf('setValue', 'setValue2', { path: '$.setValue2.out', value: 'case2' }),
-        leaf('setValue', 'setValue3', { path: '$.setValue3.out', value: 'case3' })
+        {
+          type: 'SWITCH',
+          // outletLabels[i] 即分支 tag：单节点分支生成 EL 时自动包 THEN(tag) 挂名
+          properties: { outletLabels: ['caseA', 'caseB'] },
+          condition: leaf('switchRoute', 'switchRoute1', {
+            source: '$.code',
+            cases: [
+              { value: 'A', target: 'caseA' },
+              { value: 'B', target: 'caseB' }
+            ]
+          }, 'NodeSwitchComponent'),
+          children: [
+            leaf('setValue', 'setValue1', { path: '$.setValue1.out', value: '命中 A 分支' }),
+            leaf('setValue', 'setValue2', { path: '$.setValue2.out', value: '命中 B 分支' })
+          ]
+        },
+        leaf('response', 'response1', { result: true, msg: '路由完成' })
       ]
     })
   },
 
-  // ── 循环 ──
+  // ── 循环（forLoop/iteratorLoop 真组件，可试运行） ──
   {
-    key: 'for-loop',
-    name: 'FOR 循环',
-    desc: '验证循环网关与 DO 出口（结构展示）',
+    key: 'for-count',
+    name: 'FOR 计数循环（纯本地）',
+    desc: '循环 3 轮，$i 下标写入数据空间',
+    inputJson: '{}',
     build: () => ({
-      type: 'FOR',
-      condition: leaf('setValue', 'setValue0', { path: '$.setValue0.for', value: '占位' }),
+      type: 'THEN',
       children: [
-        leaf('setValue', 'setValue1', { path: '$.setValue1.out', value: '循环体' })
+        {
+          type: 'FOR',
+          // 每轮 $i 覆盖写 $.forLoop1.cursor，终值 2；预期 response.data.cursor=2
+          condition: leaf('forLoop', 'forLoop1', { count: 3 }, 'NodeForComponent'),
+          children: [
+            leaf('setValue', 'setValue1', { path: '$.forLoop1.cursor', value: '$i' })
+          ]
+        },
+        leaf('response', 'response1', { result: true, dataPath: '$.forLoop1' })
       ]
     })
   },
@@ -596,14 +633,71 @@ export const MOCK_PRESETS: MockPreset[] = [
     })
   },
   {
-    key: 'iterator-loop',
-    name: 'ITERATOR 迭代',
-    desc: '验证迭代器网关（结构展示）',
+    key: 'iterator-items',
+    name: 'ITERATOR 迭代数组（纯本地）',
+    desc: '迭代数组，$i 取每项名称',
+    inputJson: '{"items":[{"name":"甲"},{"name":"乙"},{"name":"丙"}]}',
     build: () => ({
-      type: 'ITERATOR',
-      condition: leaf('setValue', 'setValue0', { path: '$.setValue0.iter', value: '占位' }),
+      type: 'THEN',
       children: [
-        leaf('setValue', 'setValue1', { path: '$.setValue1.out', value: '迭代体' })
+        {
+          // 3 轮，lastName 依次为 甲/乙/丙，终值 丙；空数组则 0 轮不报错
+          type: 'ITERATOR',
+          condition: leaf(
+            'iteratorLoop',
+            'iteratorLoop1',
+            { source: '$.items' },
+            'NodeIteratorComponent'
+          ),
+          children: [
+            leaf('setValue', 'setValue1', {
+              path: '$.iteratorLoop1.lastName',
+              value: '$.items[$i].name'
+            })
+          ]
+        },
+        leaf('response', 'response1', { result: true, dataPath: '$.iteratorLoop1' })
+      ]
+    })
+  },
+  {
+    key: 'iterator-nested',
+    name: 'ITERATOR 双层嵌套（纯本地）',
+    desc: '双层迭代：外层 $i 内层 $j',
+    inputJson:
+      '{"groups":[{"users":[{"name":"甲一"},{"name":"甲二"}]},{"users":[{"name":"乙一"}]}]}',
+    build: () => ({
+      type: 'THEN',
+      children: [
+        {
+          // 外层迭代 groups（$i），内层迭代 groups[$i].users（$j）；
+          // 共 3 轮，last 依次 甲一/甲二/乙一，终值 乙一
+          type: 'ITERATOR',
+          condition: leaf(
+            'iteratorLoop',
+            'iteratorLoop1',
+            { source: '$.groups' },
+            'NodeIteratorComponent'
+          ),
+          children: [
+            {
+              type: 'ITERATOR',
+              condition: leaf(
+                'iteratorLoop',
+                'iteratorLoop2',
+                { source: '$.groups[$i].users' },
+                'NodeIteratorComponent'
+              ),
+              children: [
+                leaf('setValue', 'setValue1', {
+                  path: '$.iteratorLoop1.last',
+                  value: '$.groups[$i].users[$j].name'
+                })
+              ]
+            }
+          ]
+        },
+        leaf('response', 'response1', { result: true, dataPath: '$.iteratorLoop1' })
       ]
     })
   },

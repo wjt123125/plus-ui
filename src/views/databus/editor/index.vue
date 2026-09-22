@@ -2,10 +2,24 @@
   <div ref="rootRef" class="databus-editor">
     <!-- 顶部工具栏 -->
     <div class="databus-editor__toolbar">
-      <span class="databus-editor__title">数据总线编排器</span>
+      <el-button
+        v-if="editingId"
+        size="small"
+        title="返回链路列表"
+        @click="backToList"
+      >
+        <el-icon class="el-icon--left"><ArrowLeft /></el-icon>返回
+      </el-button>
+      <span class="databus-editor__title">{{ editingId ? chainName : '数据总线编排器' }}</span>
       <el-divider direction="vertical" />
-      <span class="databus-editor__field-label">链路 ID</span>
-      <el-input v-model="chainId" class="databus-editor__chain-input" size="small" placeholder="databus_chain_1" />
+      <span class="databus-editor__field-label">链路编码</span>
+      <el-input
+        v-model="chainId"
+        class="databus-editor__chain-input"
+        size="small"
+        placeholder="databus_chain_1"
+        :readonly="!!editingId"
+      />
       <div class="databus-editor__toolbar-right">
         <el-tooltip content="撤销 (Ctrl+Z)" placement="bottom">
           <el-button size="small" :disabled="!canUndo" @click="undo">
@@ -44,8 +58,17 @@
         <el-button size="small" type="success" @click="openPreview">
           <el-icon class="el-icon--left"><VideoPlay /></el-icon>试运行
         </el-button>
-        <el-button size="small" type="primary" :loading="saving" @click="saveAsEl">
-          <el-icon class="el-icon--left"><Check /></el-icon>保存生成 EL
+        <el-button
+          v-if="editingId"
+          size="small"
+          type="primary"
+          :loading="chainSaving"
+          @click="saveChain"
+        >
+          <el-icon class="el-icon--left"><Select /></el-icon>保存链路
+        </el-button>
+        <el-button size="small" :type="editingId ? 'info' : 'primary'" plain :loading="saving" @click="saveAsEl">
+          <el-icon class="el-icon--left"><Check /></el-icon>生成 EL
         </el-button>
       </div>
     </div>
@@ -278,10 +301,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useVueFlow, type Node, type Edge } from '@vue-flow/core';
-import { ArrowDown, Check, Delete, Expand, Files, Fold, RefreshLeft, RefreshRight, VideoPlay } from '@element-plus/icons-vue';
+import { useRoute, useRouter } from 'vue-router';
+import { ArrowDown, ArrowLeft, Check, Delete, Expand, Files, Fold, RefreshLeft, RefreshRight, Select, VideoPlay } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { generateEl, previewRun } from '@/api/databus/el';
-import type { NodeStep, PreviewRunVo } from '@/api/databus/el/types';
+import type { CmpProperty, NodeStep, PreviewRunVo } from '@/api/databus/el/types';
+import { getChain, updateChain } from '@/api/databus/chain';
 import CmpPalette from './components/CmpPalette.vue';
 import FlowCanvas from './components/FlowCanvas.vue';
 import CmpProps from './components/CmpProps.vue';
@@ -290,7 +315,7 @@ import FlowElPreview from './components/FlowElPreview.vue';
 import FlowOutline from './components/FlowOutline.vue';
 import JsonCodeEditor from './components/JsonCodeEditor.vue';
 import { type CmpNodeData, type ElNode } from './composables/useElTreeModel';
-import { getDef, resolveNodeTitle } from './cmp-defs';
+import { getDef } from './cmp-defs';
 import { getMockPreset, MOCK_PRESETS } from './mock-presets';
 import { useFlowHistory } from './composables/useFlowHistory';
 import { provideCanvasController } from './composables/useCanvasController';
@@ -304,7 +329,19 @@ defineOptions({ name: 'DatabusEditor' });
 // ElNode 模型树是唯一数据源，画布是它的投影
 const treeModel = provideElTreeModel();
 
+/**
+ * 链路标识：从链路列表「编排」进入时由路由 query.id 指定已保存链路（编辑态），
+ * 工具栏展示其 chainCode（只读）；无 query.id 时为独立实验模式（不落库）。
+ */
+const route = useRoute();
+const router = useRouter();
+const editingId = ref<number | string | null>(null);
 const chainId = ref('databus_chain_1');
+/** 当前编辑链路的业务元数据（标题展示 + 保存时原样回传，避免丢档位/备注） */
+const chainName = ref('');
+const logLevel = ref('BASIC');
+const remark = ref('');
+const chainSaving = ref(false);
 // 初始画布：project 空树 → 仅 start 虚拟节点
 const initial = treeModel.project();
 
@@ -501,6 +538,84 @@ async function saveAsEl() {
   }
 }
 
+// ── 已保存链路的加载/保存（与链路管理页的跳转契约） ──
+
+/**
+ * 按链路主键加载已保存链路到画布：
+ * 取 Vo 的 cmpProperty 对象（后端 TypeHandler 已反序列化）→ 载入模型树 →
+ * 重投影 → 重建历史基线 → dagre 重排。与 loadMock 的投影流程一致。
+ */
+async function loadChainToEditor(id: number | string) {
+  const { data } = await getChain(id);
+  const cmpProperty: CmpProperty | null = data.cmpProperty ?? null;
+  if (!cmpProperty) {
+    ElMessage.warning('该链路尚未编排内容，画布为空');
+  }
+  editingId.value = data.id ?? id;
+  chainId.value = data.chainCode;
+  chainName.value = data.chainName;
+  logLevel.value = data.logLevel ?? 'BASIC';
+  remark.value = data.remark ?? '';
+
+  treeModel.loadFromCmpProperty(cmpProperty);
+  const { nodes, edges } = treeModel.project();
+  setNodes(nodes);
+  setEdges(edges);
+  ctrl.select(null);
+  nextTick(() => {
+    reset();
+    // 载入已保存链路同样需要 dagre 重排（投影默认坐标顺序摆放，分支会绕圈）
+    ctrl.autoLayout();
+  });
+}
+
+/**
+ * 保存当前画布到链路（不落 EL 到 Rule-DB——发布动作才推规则）。
+ * 校验同 saveAsEl：有真实组件 + 数据空间名非空唯一。
+ * canvasData 存画布 nodes/edges 快照（编辑器还原坐标用），cmpProperty 存逻辑树。
+ * 保存成功不跳走，用户可继续编排；点左上「返回」回列表。
+ */
+async function saveChain() {
+  if (!editingId.value) return;
+  if (!ensureCanvasHasNodes()) return;
+  if (!ensureDataSpacesValid()) return;
+
+  const cmpProperty = treeModel.toCmpProperty();
+  if (!cmpProperty) {
+    ElMessage.warning('画布上还没有真实组件');
+    return;
+  }
+  const canvasData = JSON.stringify({ nodes: getNodes.value, edges: getEdges.value });
+
+  chainSaving.value = true;
+  try {
+    await updateChain({
+      id: editingId.value,
+      chainCode: chainId.value,
+      chainName: chainName.value,
+      cmpProperty,
+      canvasData,
+      logLevel: logLevel.value,
+      remark: remark.value
+    });
+    ElMessage.success('链路已保存');
+  } finally {
+    chainSaving.value = false;
+  }
+}
+
+/** 返回链路列表（动态解析列表路由，与编排跳转同款，不硬编码父级路径） */
+function backToList() {
+  const target = router.getRoutes().find(
+    r => r.path.endsWith('/chain') && r.path.includes('databus')
+  );
+  if (target) {
+    router.push(target.path);
+  } else {
+    router.back();
+  }
+}
+
 // ── 试运行（1C：生成 EL → 校验 → 真执行，不落库） ──
 
 const previewVisible = ref(false);
@@ -637,14 +752,14 @@ const leafCfgByTag = computed(() => {
   return map;
 });
 
-/** 步骤表「节点标题」列：用户正本（后端透传）优先，未填按画布节点 cfg 推断，再退组件类型名 */
+/** 步骤表「节点标题」列：用户正本（后端透传）优先，未填退组件 label */
 function stepTitle(row: NodeStep): string {
   if (row.title?.trim()) {
     return row.title;
   }
   const leaf = row.tag ? leafCfgByTag.value.get(row.tag) : undefined;
   const def = getDef(leaf?.code ?? row.nodeId ?? '');
-  return resolveNodeTitle(def, null, leaf?.cfg ?? {});
+  return def?.label ?? '';
 }
 
 function openStepDetail(row: NodeStep) {
@@ -734,6 +849,12 @@ onMounted(() => {
   // 建立历史基线，保证撤销按钮初始禁用且首次编辑可撤销
   nextTick(reset);
   window.addEventListener('keydown', onKeyDown);
+  // 从链路列表「编排」跳入：query.id 指定已保存链路，异步加载替换空画布
+  // 保持字符串原样传递：19 位雪花 id 超出 Number 安全整数，转数字会精度丢失查不到链
+  const idParam = route.query.id;
+  if (idParam !== undefined && idParam !== null && idParam !== '') {
+    loadChainToEditor(String(idParam));
+  }
 });
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown));
 </script>
