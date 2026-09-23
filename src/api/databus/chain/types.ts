@@ -65,3 +65,18 @@ export interface DatabusChainQuery extends PageQuery {
   /** 状态（0草稿 1已发布 2已下线，精确匹配） */
   status?: string;
 }
+
+/**
+ * 链路管理页顶部统计块，与后端 org.dromara.databus.domain.vo.ChainStatsVo 对齐。
+ * 分页 list 无法前端聚合准确计数，故后端补轻量统计接口。
+ */
+export interface ChainStatsVo {
+  /** 总链路数 */
+  total?: number;
+  /** 待发布草稿数（status=0） */
+  draft?: number;
+  /** 运行中已发布数（status=1） */
+  published?: number;
+  /** 已下线数（status=2） */
+  offline?: number;
+}

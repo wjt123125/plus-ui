@@ -2,15 +2,22 @@
   <div ref="rootRef" class="databus-editor">
     <!-- 顶部工具栏 -->
     <div class="databus-editor__toolbar">
-      <el-button
-        v-if="editingId"
-        size="small"
-        title="返回链路列表"
-        @click="backToList"
-      >
-        <el-icon class="el-icon--left"><ArrowLeft /></el-icon>返回
-      </el-button>
-      <span class="databus-editor__title">{{ editingId ? chainName : '数据总线编排器' }}</span>
+      <!-- 左段固定 248px，与下方物料区等宽，竖分隔线对齐物料区右边框 -->
+      <div class="databus-editor__toolbar-left">
+        <el-button
+          v-if="editingId"
+          size="small"
+          title="返回链路列表"
+          @click="backToList"
+        >
+          <el-icon class="el-icon--left"><ArrowLeft /></el-icon>返回
+        </el-button>
+        <ChainSwitcher
+          :current-id="editingId"
+          :current-name="editingId ? chainName : ''"
+          @select="onChainSelect"
+        />
+      </div>
       <el-divider direction="vertical" />
       <span class="databus-editor__field-label">链路编码</span>
       <el-input
@@ -286,6 +293,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { generateEl, previewRun } from '@/api/databus/el';
 import type { CmpProperty, NodeStep, PreviewRunVo } from '@/api/databus/el/types';
 import { getChain, updateChain } from '@/api/databus/chain';
+import type { DatabusChainVo } from '@/api/databus/chain/types';
 import CmpPalette from './components/CmpPalette.vue';
 import FlowCanvas from './components/FlowCanvas.vue';
 import CmpProps from './components/CmpProps.vue';
@@ -293,6 +301,7 @@ import EdgeProps from './components/EdgeProps.vue';
 import FlowElPreview from './components/FlowElPreview.vue';
 import FlowOutline from './components/FlowOutline.vue';
 import JsonCodeEditor from './components/JsonCodeEditor.vue';
+import ChainSwitcher from './components/ChainSwitcher.vue';
 import { type CmpNodeData, type ElNode } from './composables/useElTreeModel';
 import { getDef } from './cmp-defs';
 import { useFlowHistory } from './composables/useFlowHistory';
@@ -550,6 +559,12 @@ async function saveChain() {
   } finally {
     chainSaving.value = false;
   }
+}
+
+/** 从切换器选中链路：直接加载到画布（复用 loadChainToEditor） */
+async function onChainSelect(row: DatabusChainVo) {
+  if (!row.id) return;
+  await loadChainToEditor(row.id);
 }
 
 /** 返回链路列表（动态解析列表路由，与编排跳转同款，不硬编码父级路径） */
@@ -816,8 +831,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown));
   align-items: center;
   flex-shrink: 0;
   height: 48px;
-  padding: 0 16px;
+  padding: 0 16px 0 0;
   border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+/* 左段：返回 + 链路标题，固定 248px 与下方物料区等宽，竖分隔线对齐物料区右边框 */
+.databus-editor__toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 240px;
+  flex-shrink: 0;
+  padding-left: 16px;
 }
 
 .databus-editor__title {
@@ -828,12 +853,33 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown));
 
 .databus-editor__field-label {
   margin-right: 8px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--el-text-color-regular);
 }
 
+/* 链路编码只读展示框：与左侧 ChainSwitcher 触发器同款（24px 高、圆角、细边） */
 .databus-editor__chain-input {
   width: 200px;
+
+  :deep(.el-input__wrapper) {
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 4px;
+    box-shadow: 0 0 0 1px var(--el-border-color, #e8eaec) inset;
+    background: transparent;
+    transition: box-shadow 0.2s ease;
+  }
+
+  :deep(.el-input__inner) {
+    font-size: 13px;
+    font-family: 'JetBrains Mono', Consolas, monospace;
+    color: var(--el-text-color-primary);
+  }
+
+  &:hover :deep(.el-input__wrapper) {
+    box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+  }
 }
 
 .databus-editor__toolbar-right {

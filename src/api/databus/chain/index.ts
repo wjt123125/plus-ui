@@ -1,7 +1,7 @@
 import type { PageResult } from '@/api/types';
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
-import type { DatabusChainBo, DatabusChainQuery, DatabusChainVo } from './types';
+import type { ChainStatsVo, DatabusChainBo, DatabusChainQuery, DatabusChainVo } from './types';
 
 /**
  * 查询链路分页列表
@@ -12,6 +12,17 @@ export function listChain(query?: DatabusChainQuery): AxiosPromise<PageResult<Da
     url: '/databus/chain/list',
     method: 'get',
     params: query
+  });
+}
+
+/**
+ * 按 status 分组计数（链路管理页顶部统计块用）
+ * GET /databus/chain/stats（权限 databus:editor:list）
+ */
+export function chainStats(): AxiosPromise<ChainStatsVo> {
+  return request({
+    url: '/databus/chain/stats',
+    method: 'get'
   });
 }
 

@@ -1,25 +1,24 @@
 <!--
-  链路新增/编辑弹窗 — 同项目 Vercel/Linear 极简留白范式(见 ConnectionForm)
-  链路基础字段少(编码/名称/记录档位/备注),无需 tabs,单列 label-top 堆叠。
+  链路新增/编辑抽屉 — 右侧滑出，同项目极简留白范式(见 ConnectionForm)
+  链路基础字段少(编码/名称/记录档位/备注),单列 label-top 堆叠。
   chainCode 编辑态只读:它是 Rule-DB lf_chain.chain_id,发布后变更会造成
   旧规则残留(后端 update 不迁移 lf_chain 主键),要换编码请新建链路。
 -->
 <template>
-  <el-dialog
+  <el-drawer
     v-model="visible"
-    width="520px"
+    direction="rtl"
+    size="520px"
     append-to-body
     destroy-on-close
-    :show-close="false"
+    :with-header="false"
     :close-on-click-modal="true"
     class="chain-form"
   >
-    <template #header>
-      <div class="chain-form__header">
-        <span class="chain-form__title">{{ form.id ? '编辑链路' : '新增链路' }}</span>
-        <el-icon class="chain-form__close" @click="visible = false"><Close /></el-icon>
-      </div>
-    </template>
+    <div class="chain-form__header">
+      <span class="chain-form__title">{{ form.id ? '编辑链路' : '新增链路' }}</span>
+      <el-icon class="chain-form__close" @click="visible = false"><Close /></el-icon>
+    </div>
 
     <el-form
       ref="formRef"
@@ -58,13 +57,11 @@
       </el-form-item>
     </el-form>
 
-    <template #footer>
-      <div class="chain-form__footer">
-        <el-button @click="visible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
-      </div>
-    </template>
-  </el-dialog>
+    <div class="chain-form__footer">
+      <el-button @click="visible = false">取消</el-button>
+      <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
+    </div>
+  </el-drawer>
 </template>
 
 <script setup lang="ts">
@@ -168,16 +165,11 @@ defineExpose({ openDialog });
 
 <style lang="scss" scoped>
 .chain-form {
-  :deep(.el-dialog__header) {
-    margin: 0;
+  :deep(.el-drawer__body) {
     padding: 0;
-  }
-  :deep(.el-dialog__body) {
-    padding: 0;
-  }
-  :deep(.el-dialog) {
-    border-radius: 16px;
-    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
   }
 }
 
@@ -185,7 +177,9 @@ defineExpose({ openDialog });
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px 0;
+  padding: 20px 24px 12px;
+  border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5);
+  flex-shrink: 0;
 }
 
 .chain-form__title {
@@ -206,7 +200,9 @@ defineExpose({ openDialog });
 }
 
 .chain-form__body {
-  padding: 8px 24px 4px;
+  padding: 16px 24px 4px;
+  flex: 1;
+  overflow-y: auto;
 }
 
 .chain-form__select {
@@ -227,5 +223,8 @@ defineExpose({ openDialog });
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+  padding: 12px 24px 20px;
+  border-top: 1px solid var(--el-border-color-lighter, #ebeef5);
+  flex-shrink: 0;
 }
 </style>
