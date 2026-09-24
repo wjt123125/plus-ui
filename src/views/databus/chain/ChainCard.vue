@@ -3,7 +3,7 @@
   - 卡片宽度由父级 page-inner max-width 1000px 限制，单列每行一个。
   - 头部：图标块（按首组件类型映射 6 类：http/bo/branch/loop/script/default）+ 标题/code + 状态圆点。
   - 元信息行：logLevel 胶囊 + 迷你拓扑预览（按 cmpProperty 递归画叶子节点小圆点链）+ 时间。
-  - 底部 link 操作常驻：编排 / 发布或下线 / 编辑 / 删除（破坏性递增）。
+  - 底部 link 操作常驻：发布或下线 / 编辑 / 复制 / 删除（破坏性递增）；编排＝点卡片主体。
   - 复制 chainCode 入口就近放在 code 文本旁（hover 显现）。
   状态用彩色圆点（§5 硬要求），不用文字标签。
 -->
@@ -84,6 +84,15 @@
         <el-icon><Edit /></el-icon>编辑
       </el-button>
       <el-button
+        v-hasPermi="['databus:editor:add']"
+        link
+        type="info"
+        size="small"
+        @click="$emit('copy-chain', row)"
+      >
+        <el-icon><CopyDocument /></el-icon>复制
+      </el-button>
+      <el-button
         v-hasPermi="['databus:editor:remove']"
         link
         type="danger"
@@ -125,6 +134,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'arrange', row: DatabusChainVo): void;
   (e: 'edit', row: DatabusChainVo): void;
+  (e: 'copy-chain', row: DatabusChainVo): void;
   (e: 'publish', row: DatabusChainVo): void;
   (e: 'offline', row: DatabusChainVo): void;
   (e: 'delete', row: DatabusChainVo): void;

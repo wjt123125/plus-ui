@@ -94,3 +94,15 @@ export function offlineChain(id: number | string) {
     method: 'post'
   });
 }
+
+/**
+ * 复制链路：以源链路的画布与配置生成一条全新草稿（状态=草稿、编码重新生成、名称加“副本”）；
+ * 草稿不推 Rule-DB、不影响源链路。
+ * POST /databus/chain/copy/{id}（权限 databus:editor:add）
+ */
+export function copyChain(id: number | string) {
+  return request({
+    url: '/databus/chain/copy/' + id,
+    method: 'post'
+  });
+}

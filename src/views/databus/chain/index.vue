@@ -55,6 +55,7 @@
           :row="row"
           @arrange="handleArrange"
           @edit="handleUpdate"
+          @copy-chain="handleCopyChain"
           @publish="handlePublish"
           @offline="handleOffline"
           @delete="handleDelete"
@@ -78,7 +79,7 @@
 
 <script setup name="DatabusChain" lang="ts">
 import { Plus, Search } from '@element-plus/icons-vue';
-import { delChain, listChain, offlineChain, publishChain } from '@/api/databus/chain';
+import { copyChain, delChain, listChain, offlineChain, publishChain } from '@/api/databus/chain';
 import type { DatabusChainQuery, DatabusChainVo } from '@/api/databus/chain/types';
 import { ElMessage } from 'element-plus';
 import { useLoading } from '@/hooks/async/useLoading';
@@ -91,7 +92,7 @@ import ChainForm from './ChainForm.vue';
  * 链路管理页（连接管理范式：单列居中 + 顶部标题/搜索/筛选 + 卡片列表）。
  * - 统一分页查询，status 字段做状态筛选（''全部 / '0'草稿 / '1'已发布 / '2'已下线）
  * - 状态用彩色圆点（不用文字标签）
- * - 编排/发布或下线/编辑/删除 link 按钮常驻卡片底部
+ * - 发布或下线/编辑/复制/删除 link 按钮常驻卡片底部
  * - 复制 chainCode 入口就近放在 code 文本旁
  * - 点击卡片主体 = 编排（跳转编辑器）
  */
@@ -157,6 +158,14 @@ const handleAdd = () => {
 const handleUpdate = (row: DatabusChainVo) => {
   if (!row.id) return;
   chainFormRef.value?.openDialog(row.id);
+};
+
+/** 复制链路：生成一条全新草稿，成功后留在列表查看副本 */
+const handleCopyChain = async (row: DatabusChainVo) => {
+  if (!row.id) return;
+  await copyChain(row.id);
+  modal.msgSuccess('复制成功');
+  getList();
 };
 
 /** 编排：跳转链路编辑器（隐藏菜单，路由 path 以 /databus/editor 结尾） */
