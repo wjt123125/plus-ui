@@ -41,6 +41,9 @@
         <el-button size="small" @click="resetCanvas">
           <el-icon class="el-icon--left"><Delete /></el-icon>清空
         </el-button>
+        <el-button size="small" @click="inputParamsVisible = true">
+          <el-icon class="el-icon--left"><Operation /></el-icon>入参登记
+        </el-button>
         <el-button size="small" type="success" @click="openPreview">
           <el-icon class="el-icon--left"><VideoPlay /></el-icon>试运行
         </el-button>
@@ -281,6 +284,13 @@
         <el-empty v-else description="本步未产出数据明细" :image-size="60" />
       </template>
     </el-drawer>
+
+    <!-- 入参登记：左右双栏联动，保存后随链路持久化 -->
+    <InputParamsDialog
+      v-model:visible="inputParamsVisible"
+      :params="inputParams"
+      @save="onInputParamsSave"
+    />
   </div>
 </template>
 
@@ -288,12 +298,12 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useVueFlow, type Node, type Edge } from '@vue-flow/core';
 import { useRoute, useRouter } from 'vue-router';
-import { ArrowLeft, Check, Delete, Expand, Fold, RefreshLeft, RefreshRight, Select, VideoPlay } from '@element-plus/icons-vue';
+import { ArrowLeft, Check, Delete, Expand, Fold, Operation, RefreshLeft, RefreshRight, Select, VideoPlay } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { generateEl, previewRun } from '@/api/databus/el';
 import type { CmpProperty, NodeStep, PreviewRunVo } from '@/api/databus/el/types';
 import { getChain, updateChain } from '@/api/databus/chain';
-import type { DatabusChainVo } from '@/api/databus/chain/types';
+import type { ChainInputParam, DatabusChainVo } from '@/api/databus/chain/types';
 import CmpPalette from './components/CmpPalette.vue';
 import FlowCanvas from './components/FlowCanvas.vue';
 import CmpProps from './components/CmpProps.vue';
@@ -302,6 +312,8 @@ import FlowElPreview from './components/FlowElPreview.vue';
 import FlowOutline from './components/FlowOutline.vue';
 import JsonCodeEditor from './components/JsonCodeEditor.vue';
 import ChainSwitcher from './components/ChainSwitcher.vue';
+import InputParamsDialog from './components/InputParamsDialog.vue';
+import { buildDefaultsJson, getPathValue } from './input-params';
 import { type CmpNodeData, type ElNode } from './composables/useElTreeModel';
 import { getDef } from './cmp-defs';
 import { useFlowHistory } from './composables/useFlowHistory';
@@ -329,6 +341,17 @@ const chainName = ref('');
 const logLevel = ref('BASIC');
 const remark = ref('');
 const chainSaving = ref(false);
+
+/**
+ * 链路入参登记表（跟链路走；试运行按默认值预填，执行前按必填校验）。
+ */
+const inputParams = ref<ChainInputParam[]>([]);
+const inputParamsVisible = ref(false);
+
+/** 入参登记保存：深拷贝落到编辑器状态（保存链路时随链持久化） */
+function onInputParamsSave(params: ChainInputParam[]) {
+  inputParams.value = JSON.parse(JSON.stringify(params));
+}
 // 初始画布：project 空树 → 仅 start 虚拟节点
 const initial = treeModel.project();
 
@@ -513,6 +536,7 @@ async function loadChainToEditor(id: number | string) {
   chainName.value = data.chainName;
   logLevel.value = data.logLevel ?? 'BASIC';
   remark.value = data.remark ?? '';
+  inputParams.value = data.inputParams ? JSON.parse(JSON.stringify(data.inputParams)) : [];
 
   treeModel.loadFromCmpProperty(cmpProperty);
   const { nodes, edges } = treeModel.project();
@@ -553,6 +577,7 @@ async function saveChain() {
       cmpProperty,
       canvasData,
       logLevel: logLevel.value,
+      inputParams: inputParams.value,
       remark: remark.value
     });
     ElMessage.success('链路已保存');
@@ -592,7 +617,8 @@ function openPreview() {
   if (!ensureCanvasHasNodes()) return;
   if (!ensureDataSpacesValid()) return;
   previewResult.value = null;
-  previewRequest.value = '{}';
+  // 每次打开按登记表默认值重新生成（重开重置）；无登记条目时为 {}
+  previewRequest.value = JSON.stringify(buildDefaultsJson(inputParams.value), null, 2);
   previewVisible.value = true;
 }
 
@@ -607,6 +633,19 @@ async function runPreview() {
   }
   previewRequest.value = JSON.stringify(parsed, null, 2);
 
+  // 必填即时拦截：在最终入参上按必填路径取值，取不到/空字符串不发请求（后端另有复核）
+  const missing = inputParams.value
+    .filter(p => p.required && p.path)
+    .find(p => {
+      const value = getPathValue(parsed, p.path!);
+      return value === undefined || value === null
+        || (typeof value === 'string' && value.length === 0);
+    });
+  if (missing) {
+    ElMessage.error(`缺少必填入参：${missing.path}`);
+    return;
+  }
+
   if (!ensureDataSpacesValid()) {
     previewVisible.value = false;
     return;
@@ -618,7 +657,11 @@ async function runPreview() {
   }
   previewRunning.value = true;
   try {
-    const { data } = await previewRun({ jsonEl: cmpProperty, requestJson: previewRequest.value });
+    const { data } = await previewRun({
+      jsonEl: cmpProperty,
+      requestJson: previewRequest.value,
+      inputParams: inputParams.value
+    });
     previewResult.value = data;
     previewVisible.value = false;
     previewResultVisible.value = true;

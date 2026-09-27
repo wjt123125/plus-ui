@@ -40,6 +40,8 @@ export interface PreviewRunBo {
   jsonEl: CmpProperty;
   /** 链路入参 JSON 字符串，解析后作为上下文文档根；默认 "{}" */
   requestJson?: string;
+  /** 入参登记表（后端执行前按必填路径复核；默认值不注入） */
+  inputParams?: import('@/api/databus/chain/types').ChainInputParam[];
 }
 
 /**

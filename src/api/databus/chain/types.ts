@@ -1,6 +1,25 @@
 import type { CmpProperty } from '@/api/databus/el/types';
 
 /**
+ * 入参类型标记（与后端 ChainInputParam.type 对齐；仅存储标记，不做运行时类型校验）。
+ */
+export type ChainInputType = 'text' | 'number' | 'boolean' | 'object' | 'array';
+
+/**
+ * 链路入参登记表条目，与后端 org.dromara.databus.el.bean.ChainInputParam 对齐。
+ */
+export interface ChainInputParam {
+  /** 入参路径（完整 JsonPath，$. 开头，如 $.request.password） */
+  path?: string;
+  /** 类型标记：text/number/boolean/object/array */
+  type?: ChainInputType;
+  /** 默认值（仅服务人工试运行预填；真实执行不注入） */
+  defaultValue?: unknown;
+  /** 是否必填（执行前取不到/空字符串即拦截） */
+  required?: boolean;
+}
+
+/**
  * 数据总线链路视图对象，与后端 org.dromara.databus.domain.vo.DatabusChainVo 对齐。
  *
  * 三层物料模型第三层（链路实例）：发布后 EL 推 Rule-DB（lf_chain）作为执行期权威源，
@@ -25,6 +44,8 @@ export interface DatabusChainVo {
   cmpProperty?: CmpProperty | null;
   /** 执行记录档位（OFF/BASIC/FULL，默认 BASIC；挂字典 databus_log_level） */
   logLevel?: string;
+  /** 链路入参登记表（试运行预填 + 执行前必填校验） */
+  inputParams?: ChainInputParam[];
   /** 备注 */
   remark?: string;
   /** 创建时间 */
@@ -50,6 +71,8 @@ export interface DatabusChainBo {
   cmpProperty?: CmpProperty | null;
   /** 执行记录档位（OFF/BASIC/FULL） */
   logLevel?: string;
+  /** 链路入参登记表 */
+  inputParams?: ChainInputParam[];
   /** 备注 */
   remark?: string;
 }
