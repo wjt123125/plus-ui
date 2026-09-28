@@ -224,7 +224,7 @@ export const CMP_DEFS: CmpDef[] = [
   {
     type: 'condition',
     label: '条件判断',
-    desc: '布尔条件：按 JSONPath 与比较符求值，供 IF/WHILE 条件槽使用',
+    desc: '布尔条件：按 {{ $.路径 }} 表达式与比较符求值，供 IF/WHILE 条件槽使用',
     color: '#e6a23c',
     icon: 'ph:equals',
     lfNodeType: 'NodeBooleanComponent',
@@ -233,7 +233,7 @@ export const CMP_DEFS: CmpDef[] = [
   {
     type: 'forLoop',
     label: '计数循环组件',
-    desc: 'FOR 算子条件位：count 填循环次数（整数或 $.路径），体内用 $i 引用当前轮下标；indexVar 可自定义下标名',
+    desc: 'FOR 算子条件位：count 填循环次数（整数或 {{ $.路径 }} 表达式），体内用 $i 引用当前轮下标；indexVar 可自定义下标名',
     color: '#67c23a',
     icon: 'ph:number-circle-one',
     lfNodeType: 'NodeForComponent',
@@ -242,7 +242,7 @@ export const CMP_DEFS: CmpDef[] = [
   {
     type: 'iteratorLoop',
     label: '迭代循环组件',
-    desc: 'ITERATOR 算子条件位：source 填数组/集合路径，逐轮迭代；体内用 $i 取当前轮下标（嵌套时内层为 $j）',
+    desc: 'ITERATOR 算子条件位：source 填数组/集合表达式（{{ $.路径 }}），逐轮迭代；体内用 $i 取当前轮下标（嵌套时内层为 $j）',
     color: '#67c23a',
     icon: 'ph:shuffle',
     lfNodeType: 'NodeIteratorComponent',
@@ -251,7 +251,7 @@ export const CMP_DEFS: CmpDef[] = [
   {
     type: 'switchRoute',
     label: '选择路由组件',
-    desc: 'SWITCH 算子条件位：读 source 当前值，按 cases 顺序匹配分支名跳转；全不命中报错（暂不支持 DEFAULT）',
+    desc: 'SWITCH 算子条件位：source 表达式求出当前值，按 cases 顺序匹配分支名跳转；全不命中报错（暂不支持 DEFAULT）',
     color: '#e6a23c',
     icon: 'ph:signpost',
     lfNodeType: 'NodeSwitchComponent',
@@ -260,7 +260,7 @@ export const CMP_DEFS: CmpDef[] = [
   {
     type: 'setValue',
     label: '赋值',
-    desc: '把值（常量或路径取值）写入上下文 $.数据空间.path',
+    desc: '把值（常量或 {{ $.路径 }} 表达式取值）写入上下文 $.数据空间.path',
     color: '#67c23a',
     icon: 'ph:pencil-simple',
     group: 'business'
@@ -268,7 +268,7 @@ export const CMP_DEFS: CmpDef[] = [
   {
     type: 'fieldMap',
     label: '字段映射',
-    desc: '按 mappings 把来源路径逐条搬运到目标路径；from/to 同时含 [*] 触发数组批量搬运，可选 type 字段做类型转换（int/string/boolean/double）',
+    desc: '按 mappings 把 from 表达式（{{ $.路径 }}）取值逐条搬到 to 位置名（裸路径）；from/to 同时含 [*] 触发数组批量搬运，可选 type 做类型转换（int/string/boolean/double）',
     color: '#9c27b0',
     icon: 'ph:arrows-left-right',
     group: 'business'
@@ -276,7 +276,7 @@ export const CMP_DEFS: CmpDef[] = [
   {
     type: 'dataPatch',
     label: '数据补丁',
-    desc: '按 merge 语义把 patch 字段覆盖到 target 命中的每个对象：[*] 全量/[i] 索引/[?(...)] 过滤均可，未声明字段（含 ID）保留、缺失字段新增；典型用于 boQuery 后改字段再交 boUpdate 回写，命中对象数写入 $.数据空间.patchedCount',
+    desc: '按 merge 语义把 patch 覆盖到 target 命中的每个对象（target 写目标裸路径，patch 叶子为常量或 {{ $.路径 }} 表达式）：[*] 全量/[i] 索引/[?(...)] 过滤均可，未声明字段（含 ID）保留、缺失字段新增；典型用于 boQuery 后改字段再交 boUpdate 回写，命中对象数写入 $.数据空间.patchedCount',
     color: '#009688',
     icon: 'ph:git-diff',
     group: 'business'
@@ -307,7 +307,7 @@ export const CMP_DEFS: CmpDef[] = [
     type: 'processStart',
     label: 'BPM 启流程',
     short: '启流程',
-    desc: '启动 BPM 流程实例，title 支持 ${$.xxx} 模板替换，响应平铺到 $.数据空间（含 processInstanceId 供下游 boCreate.bindId 引用）',
+    desc: '启动 BPM 流程实例，title 支持 {{ $.xxx }} 表达式，响应平铺到 $.数据空间（含 processInstanceId 供下游 boCreate.bindId 引用）',
     color: '#e6a23c',
     icon: 'ph:rocket',
     group: 'business'
@@ -379,7 +379,7 @@ export const CMP_DEFS: CmpDef[] = [
     type: 'idCardToUserId',
     label: '身份证换用户',
     short: '证换用户',
-    desc: '按 path 读取逗号分隔的身份证号，查 BPM 用户表换成 userId 原地写回；全部未命中报错，部分未命中告警',
+    desc: '按 path 表达式（{{ $.路径 }}）读取逗号分隔的身份证号，查 BPM 用户表换成 userId 写回解包路径；全部未命中报错，部分未命中告警',
     color: '#0891b2',
     icon: 'ph:identification-card',
     group: 'business'
@@ -388,7 +388,7 @@ export const CMP_DEFS: CmpDef[] = [
     type: 'fileUpload',
     label: 'BPM 上传附件',
     short: '上传附件',
-    desc: '读取数据空间文件数组（base64），本地摘要校验后上传到 BO 记录附件字段，结果存 $.数据空间.files',
+    desc: 'sourcePath 表达式（{{ $.路径 }}）取出文件数组（base64），本地摘要校验后上传到 BO 记录附件字段，结果存 $.数据空间.files',
     color: '#7c3aed',
     icon: 'ph:upload-simple',
     group: 'business'

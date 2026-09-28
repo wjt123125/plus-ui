@@ -158,7 +158,7 @@
           <el-form-item label="循环次数 count">
             <el-input
               v-model="loopForm.count"
-              placeholder="整数（如 3）或次数路径（如 $.request.total）"
+              placeholder="整数（如 3）或次数表达式（如 {{ $.request.total }}）"
               @change="commitLoopForm"
             />
             <div class="cmp-props__hint">循环从 0 计数；0 表示循环体零次执行</div>
@@ -178,10 +178,10 @@
           <el-form-item label="数据源 source">
             <el-input
               v-model="loopForm.source"
-              placeholder="数组/集合路径，如 $.request.items"
+              placeholder="数组/集合表达式，如 {{ $.request.items }}"
               @change="commitLoopForm"
             />
-            <div class="cmp-props__hint">值为 null 按空集合处理（0 轮）；路径中可用外层下标（如 $.groups[$i].users）</div>
+            <div v-pre class="cmp-props__hint">值为 null 按空集合处理（0 轮）；表达式中可用外层下标（如 {{ $.groups[$i].users }}）</div>
           </el-form-item>
           <el-form-item label="下标变量名 indexVar">
             <el-input
@@ -212,7 +212,7 @@
           <el-form-item label="判断值路径 source">
             <el-input
               v-model="loopForm.source"
-              placeholder="如 $.request.type"
+              placeholder="如 {{ $.request.type }}"
               @change="commitLoopForm"
             />
             <div class="cmp-props__hint">读出实际值后按下方顺序逐条匹配，命中第一条即跳转；全不命中执行报错（暂不支持 DEFAULT）</div>
@@ -223,7 +223,7 @@
                 <el-input
                   v-model="row.value"
                   size="small"
-                  placeholder="值：常量或 $.路径"
+                  placeholder="值：常量或 {{ $.路径 }}"
                   @change="commitLoopForm"
                 />
                 <el-select
@@ -437,24 +437,24 @@ const conditionSlotHint = computed(
 
 /** 各物料配置 JSON 的示例占位文案 */
 const DATA_HINTS: Record<string, string> = {
-  httpRequest: '{"method":"POST","url":"http://localhost:8080/api/login","headers":{"X-Tenant":"default"},"query":{"ids":["$.id1","$.id2"]},"bodyType":"json","body":{"username":"admin","password":"$.pwd"},"rawContentType":"text/plain","auth":{"type":"bearer","token":"$.login.token"},"timeoutMs":10000,"failOnHttpError":true,"responseCharset":"UTF-8","responseHeaders":["X-Total-Count"],"mappings":[{"field":"bizCode","path":"$.code","required":true}]}',
-  condition: '{"path":"$.httpRequest1.response.code","op":"eq","value":200}',
-  setValue: '{"path":"$.setValue1.demo","value":"常量 或 $.入参路径"}',
-  fieldMap: '{"mappings":[{"from":"$.httpRequest1.response.code","to":"$.fieldMap1.code","type":"int"},{"from":"$.httpRequest1.response.data[*].NAME","to":"$.fieldMap1.items[*].name","type":"string"}]}',
-  dataPatch: '{"target":"$.boQuery1.records[*]","patch":{"BO_FIELD_USER":"$.request.newUser","BO_FIELD_NUM":99}}',
-  response: '{"result":true,"msg":"成功","dataPath":"$.fieldMap1"}',
-  sessionCreate: '{"connectionId":"bpm-default","userName":"admin","password":"$.request.password"}',
-  boCreate: '{"connectionId":"bpm-default","method":"create","bindId":"$.processStart1.processInstanceId","uid":"admin","boList":[{"boName":"UserBO","sourcePath":"$.request.users","rewrite":{"strategy":"all","path":"$.response.users"}}]}',
-  boQuery: '{"connectionId":"bpm-default","main":{"boName":"BO_EU_API_TEST_MAIN","method":"list","maxRecord":50,"conditionSourcePath":"$.request.conditions"},"sub":["BO_EU_API_TEST_SUB"]}',
-  boUpdate: '{"connectionId":"bpm-default","boList":[{"boName":"BO_EU_API_TEST_MAIN","sourcePath":"$.boQuery1.records"}]}',
-  boDelete: '{"connectionId":"bpm-default","method":"remove","boList":[{"boName":"BO_EU_API_TEST_MAIN","sourcePath":"$.boQuery1.records"}]}',
-  processStart: '{"connectionId":"bpm-default","processDefId":"proc-001","uid":"admin","title":"申请-${$.request.code}"}',
-  processTerminate: '{"connectionId":"bpm-default","instanceId":"$.processStart1.processInstanceId","userId":"admin"}',
-  taskComplete: '{"connectionId":"bpm-default","processInstanceId":"$.processStart1.processInstanceId","uid":"admin","failOnError":false}',
-  rdsExecute: '{"connectionId":"bpm-default","rdsId":"default","method":"getMaps","sql":"select userid,ext1 as idCard from orguser where ext1=?","args":["$.request.idCard"],"maxRows":100}',
-  idCardToUserId: '{"connectionId":"bpm-default","fields":[{"path":"$.request.idCards","separator":","}]}',
-  fileUpload: '{"connectionId":"bpm-default","sourcePath":"$.request.files","boId":"$.boCreate1.boResults[0].records[0].ID","appId":"com.awspaas.user.apps.data.bus","boName":"BO_EU_API_TEST_MAIN","boItemName":"BO_FIELD_FILE","processInstId":"$.processStart1.processInstanceId","validateChecksum":false}',
-  fileDownload: '{"connectionId":"bpm-default","boId":"$.boCreate1.boResults[0].records[0].ID","fieldName":"BO_FIELD_FILE"}'
+  httpRequest: '{"method":"POST","url":"http://localhost:8080/api/login","headers":{"X-Tenant":"default"},"query":{"ids":["{{ $.id1 }}","{{ $.id2 }}"]},"bodyType":"json","body":{"username":"admin","password":"{{ $.pwd }}"},"rawContentType":"text/plain","auth":{"type":"bearer","token":"{{ $.login.token }}"},"timeoutMs":10000,"failOnHttpError":true,"responseCharset":"UTF-8","responseHeaders":["X-Total-Count"],"mappings":[{"field":"bizCode","path":"{{ $.code }}","required":true}]}',
+  condition: '{"path":"{{ $.httpRequest1.response.code }}","op":"eq","value":200}',
+  setValue: '{"path":"$.setValue1.demo","value":"常量 或 {{ $.入参路径 }}"}',
+  fieldMap: '{"mappings":[{"from":"{{ $.httpRequest1.response.code }}","to":"$.fieldMap1.code","type":"int"},{"from":"{{ $.httpRequest1.response.data[*].NAME }}","to":"$.fieldMap1.items[*].name","type":"string"}]}',
+  dataPatch: '{"target":"$.boQuery1.records[*]","patch":{"BO_FIELD_USER":"{{ $.request.newUser }}","BO_FIELD_NUM":99}}',
+  response: '{"result":true,"msg":"成功","dataPath":"{{ $.fieldMap1 }}"}',
+  sessionCreate: '{"connectionId":"bpm-default","userName":"admin","password":"{{ $.request.password }}"}',
+  boCreate: '{"connectionId":"bpm-default","method":"create","bindId":"{{ $.processStart1.processInstanceId }}","uid":"admin","boList":[{"boName":"UserBO","sourcePath":"{{ $.request.users }}","rewrite":{"strategy":"all","path":"$.response.users"}}]}',
+  boQuery: '{"connectionId":"bpm-default","main":{"boName":"BO_EU_API_TEST_MAIN","method":"list","maxRecord":50,"conditionSourcePath":"{{ $.request.conditions }}"},"sub":["BO_EU_API_TEST_SUB"]}',
+  boUpdate: '{"connectionId":"bpm-default","boList":[{"boName":"BO_EU_API_TEST_MAIN","sourcePath":"{{ $.boQuery1.records }}"}]}',
+  boDelete: '{"connectionId":"bpm-default","method":"remove","boList":[{"boName":"BO_EU_API_TEST_MAIN","sourcePath":"{{ $.boQuery1.records }}"}]}',
+  processStart: '{"connectionId":"bpm-default","processDefId":"proc-001","uid":"admin","title":"申请-{{ $.request.code }}"}',
+  processTerminate: '{"connectionId":"bpm-default","instanceId":"{{ $.processStart1.processInstanceId }}","userId":"admin"}',
+  taskComplete: '{"connectionId":"bpm-default","processInstanceId":"{{ $.processStart1.processInstanceId }}","uid":"admin","failOnError":false}',
+  rdsExecute: '{"connectionId":"bpm-default","rdsId":"default","method":"getMaps","sql":"select userid,ext1 as idCard from orguser where ext1=?","args":["{{ $.request.idCard }}"],"maxRows":100}',
+  idCardToUserId: '{"connectionId":"bpm-default","fields":[{"path":"{{ $.request.idCards }}","separator":","}]}',
+  fileUpload: '{"connectionId":"bpm-default","sourcePath":"{{ $.request.files }}","boId":"{{ $.boCreate1.boResults[0].records[0].ID }}","appId":"com.awspaas.user.apps.data.bus","boName":"BO_EU_API_TEST_MAIN","boItemName":"BO_FIELD_FILE","processInstId":"{{ $.processStart1.processInstanceId }}","validateChecksum":false}',
+  fileDownload: '{"connectionId":"bpm-default","boId":"{{ $.boCreate1.boResults[0].records[0].ID }}","fieldName":"BO_FIELD_FILE"}'
 };
 
 const SPACE_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
