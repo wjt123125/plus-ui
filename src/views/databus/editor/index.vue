@@ -1,70 +1,35 @@
 <template>
-  <div ref="rootRef" class="databus-editor">
-    <!-- 顶部工具栏 -->
-    <div class="databus-editor__toolbar">
-      <!-- 左段固定 248px，与下方物料区等宽，竖分隔线对齐物料区右边框 -->
-      <div class="databus-editor__toolbar-left">
-        <el-button
-          v-if="editingId"
-          size="small"
-          title="返回链路列表"
-          @click="backToList"
-        >
-          <el-icon class="el-icon--left"><ArrowLeft /></el-icon>返回
-        </el-button>
-        <ChainSwitcher
-          :current-id="editingId"
-          :current-name="editingId ? chainName : ''"
-          @select="onChainSelect"
-        />
-      </div>
-      <el-divider direction="vertical" />
-      <span class="databus-editor__field-label">链路编码</span>
-      <el-input
-        v-model="chainId"
-        class="databus-editor__chain-input"
-        size="small"
-        placeholder="databus_chain_1"
-        :readonly="!!editingId"
-      />
-      <div class="databus-editor__toolbar-right">
-        <el-tooltip content="撤销 (Ctrl+Z)" placement="bottom">
-          <el-button size="small" :disabled="!canUndo" @click="undo">
-            <el-icon class="el-icon--left"><RefreshLeft /></el-icon>撤销
-          </el-button>
-        </el-tooltip>
-        <el-tooltip content="重做 (Ctrl+Shift+Z)" placement="bottom">
-          <el-button size="small" :disabled="!canRedo" @click="redo">
-            <el-icon class="el-icon--left"><RefreshRight /></el-icon>重做
-          </el-button>
-        </el-tooltip>
-        <el-button size="small" @click="resetCanvas">
-          <el-icon class="el-icon--left"><Delete /></el-icon>清空
-        </el-button>
-        <el-button size="small" @click="inputParamsVisible = true">
-          <el-icon class="el-icon--left"><Operation /></el-icon>入参登记
-        </el-button>
-        <el-button size="small" type="success" @click="openPreview">
-          <el-icon class="el-icon--left"><VideoPlay /></el-icon>试运行
-        </el-button>
-        <el-button
-          v-if="editingId"
-          size="small"
-          type="primary"
-          :loading="chainSaving"
-          @click="saveChain"
-        >
-          <el-icon class="el-icon--left"><Select /></el-icon>保存链路
-        </el-button>
-        <el-button size="small" :type="editingId ? 'info' : 'primary'" plain :loading="saving" @click="saveAsEl">
-          <el-icon class="el-icon--left"><Check /></el-icon>生成 EL
-        </el-button>
-      </div>
-    </div>
+  <div
+    ref="rootRef"
+    class="databus-editor"
+    :class="{
+      'is-palette-collapsed': paletteCollapsed,
+      'is-props-collapsed': propsCollapsed
+    }"
+  >
+    <!-- 顶部工具栏（display:contents 三段直接落网格列轨道） -->
+    <EditorToolbar
+      v-model:chain-id="chainId"
+      :editing-id="editingId"
+      :chain-name="chainName"
+      :can-undo="canUndo"
+      :can-redo="canRedo"
+      :chain-saving="chainSaving"
+      :saving="saving"
+      @back="backToList"
+      @undo="undo"
+      @redo="redo"
+      @reset="resetCanvas"
+      @open-input-params="inputParamsVisible = true"
+      @open-preview="openPreview"
+      @save-chain="saveChain"
+      @save-as-el="saveAsEl"
+      @select="onChainSelect"
+    />
 
     <!-- 三栏：组件面板 / 画布 / 参数表单 -->
     <div class="databus-editor__body">
-      <div class="databus-editor__palette" :class="{ 'is-collapsed': paletteCollapsed }">
+      <div class="databus-editor__palette">
         <CmpPalette @collapse="setPaletteCollapsed(true)" />
       </div>
       <div class="databus-editor__canvas-wrap">
@@ -93,197 +58,38 @@
           <el-icon><Expand /></el-icon>
         </button>
       </div>
-      <div class="databus-editor__props" :class="{ 'is-collapsed': propsCollapsed }">
-        <div class="databus-editor__props-header">
-          <button
-            type="button"
-            class="databus-editor__props-fold"
-            title="收起属性面板"
-            @click="setPropsCollapsed(true)"
-          >
-            <el-icon><Fold /></el-icon>
-          </button>
-        </div>
-        <el-tabs v-model="activeTab" class="databus-editor__tabs">
-          <el-tab-pane label="属性" name="props">
-            <CmpProps
-              v-if="selectedNode"
-              :node="selectedNode"
-              @delete="ctrl.requestDeleteNode($event)"
-              @data-change="onPropsChange"
-            />
-            <EdgeProps v-else :edge="selectedEdge" />
-          </el-tab-pane>
-          <el-tab-pane label="EL 预览" name="el">
-            <FlowElPreview />
-          </el-tab-pane>
-          <el-tab-pane label="大纲" name="outline">
-            <FlowOutline />
-          </el-tab-pane>
-        </el-tabs>
-      </div>
+      <EditorPropsPanel
+        :node="selectedNode"
+        :edge="selectedEdge"
+        :collapsed="propsCollapsed"
+        @fold="setPropsCollapsed(true)"
+        @delete="ctrl.requestDeleteNode($event)"
+        @data-change="onPropsChange"
+      />
     </div>
 
     <!-- EL 生成结果 -->
-    <el-dialog v-model="resultVisible" title="画布已转换为 LiteFlow EL" width="640px" append-to-body>
-      <el-descriptions :column="1" border size="small">
-        <el-descriptions-item label="链路 ID">{{ chainId || '(未填写)' }}</el-descriptions-item>
-        <el-descriptions-item label="EL 表达式">
-          <el-input v-model="elResult" type="textarea" :rows="5" readonly />
-        </el-descriptions-item>
-      </el-descriptions>
-      <template #footer>
-        <span class="databus-editor__dialog-hint">当前仅生成 EL 表达式，链路尚未落库；可点「试运行」按 EL 真跑一次。</span>
-        <el-button type="primary" @click="resultVisible = false">知道了</el-button>
-      </template>
-    </el-dialog>
+    <ElResultDialog v-model:visible="resultVisible" :chain-id="chainId" :el-result="elResult" />
 
     <!-- 试运行：入参 JSON -->
-    <el-dialog v-model="previewVisible" title="试运行" width="620px" append-to-body>
-      <el-alert
-        title="按当前画布生成 EL 并直接真执行（不落库）。下方 JSON 即链路入参，作为上下文文档根。"
-        type="info"
-        :closable="false"
-        show-icon
-        style="margin-bottom: 10px"
-      />
-      <JsonCodeEditor
-        v-model="previewRequest"
-        placeholder='链路入参 JSON，如 {"flag":true}'
-        height="280px"
-      />
-      <template #footer>
-        <el-button @click="previewVisible = false">取消</el-button>
-        <el-button type="success" :loading="previewRunning" @click="runPreview">执行</el-button>
-      </template>
-    </el-dialog>
+    <PreviewInputDialog
+      v-model:visible="previewVisible"
+      v-model:request="previewRequest"
+      :loading="previewRunning"
+      @execute="runPreview"
+    />
 
-    <!-- 试运行：执行结果 -->
-    <el-dialog v-model="previewResultVisible" title="试运行结果" width="860px" append-to-body :close-on-click-modal="false">
-      <template v-if="previewResult">
-        <el-alert
-          :title="resultBanner"
-          :type="previewResult.executed ? (previewResult.success ? 'success' : 'error') : 'warning'"
-          :closable="false"
-          show-icon
-          style="margin-bottom: 10px"
-        />
-        <el-alert
-          v-if="previewResult.errorMessage"
-          :title="previewResult.errorMessage"
-          type="error"
-          :closable="false"
-          show-icon
-          style="margin-bottom: 10px"
-        />
-        <el-alert
-          v-if="previewResult.valid === false && previewResult.message"
-          :title="previewResult.message"
-          type="warning"
-          :closable="false"
-          show-icon
-          style="margin-bottom: 10px"
-        />
+    <!-- 试运行：执行结果（banner/步骤表/上下文快照在组件内，步骤标题推断由 composable 注入） -->
+    <PreviewResultDialog
+      v-model:visible="previewResultVisible"
+      :result="previewResult"
+      :resolve-step-title="stepTitle"
+      @reopen="reopenPreview"
+      @open-step="openStepDetail"
+    />
 
-        <el-descriptions :column="1" border size="small" style="margin-bottom: 10px">
-          <el-descriptions-item label="EL 表达式">
-            <el-input :model-value="previewResult.elStr" type="textarea" :rows="3" readonly />
-          </el-descriptions-item>
-        </el-descriptions>
-
-        <template v-if="previewResult.executed">
-          <!-- response 组件产出 $.response 置顶高亮 -->
-          <template v-if="responsePart !== null">
-            <div class="databus-editor__response-title">$.response（流程响应）</div>
-            <el-input
-              :model-value="JSON.stringify(responsePart, null, 2)"
-              type="textarea"
-              :rows="4"
-              readonly
-              class="databus-editor__response-box"
-            />
-          </template>
-
-          <div class="databus-editor__section-title">
-            执行步骤（{{ previewResult.steps?.length ?? 0 }}）
-          </div>
-          <el-table :data="previewResult.steps ?? []" size="small" border style="margin-bottom: 10px">
-            <el-table-column type="index" label="#" width="42" />
-            <el-table-column label="数据空间" prop="tag" min-width="120" show-overflow-tooltip />
-            <el-table-column label="节点标题" min-width="130">
-              <template #default="{ row }">
-                <div class="databus-editor__step-nodeid">{{ row.nodeId }}</div>
-                <div class="databus-editor__step-title">{{ stepTitle(row) }}</div>
-              </template>
-            </el-table-column>
-            <el-table-column label="结果" width="70">
-              <template #default="{ row }">
-                <el-tag size="small" :type="row.success ? 'success' : 'danger'">
-                  {{ row.success ? '成功' : '失败' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="耗时(ms)" prop="timeSpent" width="84" />
-            <el-table-column label="执行结果" min-width="180">
-              <template #default="{ row }">
-                <span
-                  class="databus-editor__step-result"
-                  :class="{ 'is-error': !row.success }"
-                  @click="openStepDetail(row)"
-                >{{ stepResultText(row) }}</span>
-              </template>
-            </el-table-column>
-          </el-table>
-
-          <div class="databus-editor__section-title">执行后上下文（JSON 快照）</div>
-          <JsonCodeEditor
-            :model-value="prettyContext"
-            readonly
-            height="280px"
-          />
-        </template>
-      </template>
-      <template #footer>
-        <el-button @click="previewResultVisible = false">关闭</el-button>
-        <el-button type="success" @click="reopenPreview">再跑一次</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 步骤明细抽屉：点击步骤表「执行结果」文本滑出，展示元信息 + $.<tag> 当场 JSON 快照 -->
-    <el-drawer v-model="stepDetailVisible" title="步骤明细" size="42%" append-to-body close-on-click-modal>
-      <template v-if="currentStep">
-        <el-descriptions :column="1" border size="small" style="margin-bottom: 12px">
-          <el-descriptions-item label="数据空间">{{ currentStep.tag || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="组件">{{ currentStep.nodeName || currentStep.nodeId || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="结果">
-            <el-tag size="small" :type="currentStep.success ? 'success' : 'danger'">
-              {{ currentStep.success ? '成功' : '失败' }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="耗时">{{ currentStep.timeSpent ?? '-' }} ms</el-descriptions-item>
-          <el-descriptions-item label="开始时间">{{ currentStep.startTime || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="结束时间">{{ currentStep.endTime || '-' }}</el-descriptions-item>
-        </el-descriptions>
-
-        <el-alert
-          v-if="!currentStep.success && currentStep.errorMessage"
-          :title="currentStep.errorMessage"
-          type="error"
-          :closable="false"
-          show-icon
-          style="margin-bottom: 12px"
-        />
-
-        <div class="databus-editor__section-title">数据明细（{{ currentStep.tag ? '$.' + currentStep.tag : '本步' }} 快照）</div>
-        <JsonCodeEditor
-          v-if="prettyStepDetail"
-          :model-value="prettyStepDetail"
-          readonly
-          height="320px"
-        />
-        <el-empty v-else description="本步未产出数据明细" :image-size="60" />
-      </template>
-    </el-drawer>
+    <!-- 步骤明细抽屉：点击步骤表「执行结果」文本滑出 -->
+    <StepDetailDrawer v-model:visible="stepDetailVisible" :step="currentStep" />
 
     <!-- 入参登记：左右双栏联动，保存后随链路持久化 -->
     <InputParamsDialog
@@ -295,81 +101,47 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { useVueFlow, type Node, type Edge } from '@vue-flow/core';
-import { useRoute, useRouter } from 'vue-router';
-import { ArrowLeft, Check, Delete, Expand, Fold, Operation, RefreshLeft, RefreshRight, Select, VideoPlay } from '@element-plus/icons-vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
-import { generateEl, previewRun } from '@/api/databus/el';
-import type { CmpProperty, NodeStep, PreviewRunVo } from '@/api/databus/el/types';
-import { getChain, updateChain } from '@/api/databus/chain';
-import type { ChainInputParam, DatabusChainVo } from '@/api/databus/chain/types';
-import CmpPalette from './components/CmpPalette.vue';
-import FlowCanvas from './components/FlowCanvas.vue';
-import CmpProps from './components/CmpProps.vue';
-import EdgeProps from './components/EdgeProps.vue';
-import FlowElPreview from './components/FlowElPreview.vue';
-import FlowOutline from './components/FlowOutline.vue';
-import JsonCodeEditor from './components/JsonCodeEditor.vue';
-import ChainSwitcher from './components/ChainSwitcher.vue';
-import InputParamsDialog from './components/InputParamsDialog.vue';
-import { buildDefaultsJson, getPathValue } from './input-params';
-import { type CmpNodeData, type ElNode } from './composables/useElTreeModel';
-import { getDef } from './cmp-defs';
+import { Expand } from '@element-plus/icons-vue';
+import { ElMessage } from 'element-plus';
+import { generateEl } from '@/api/databus/el';
+import CmpPalette from './components/palette/CmpPalette.vue';
+import FlowCanvas from './components/canvas/FlowCanvas.vue';
+import EditorToolbar from './components/shell/EditorToolbar.vue';
+import EditorPropsPanel from './components/panels/EditorPropsPanel.vue';
+import ElResultDialog from './components/dialogs/ElResultDialog.vue';
+import InputParamsDialog from './components/dialogs/InputParamsDialog.vue';
+import PreviewInputDialog from './components/dialogs/PreviewInputDialog.vue';
+import PreviewResultDialog from './components/dialogs/PreviewResultDialog.vue';
+import StepDetailDrawer from './components/dialogs/StepDetailDrawer.vue';
+import { type CmpNodeData } from './composables/useElTreeModel';
 import { useFlowHistory } from './composables/useFlowHistory';
 import { provideCanvasController } from './composables/useCanvasController';
 import { provideEditorFullscreen } from './composables/useEditorFullscreen';
 import { provideElPreview } from './composables/useElPreview';
 import { provideElTreeModel } from './composables/useElTreeModel';
 import { useAutoLayout } from './composables/useAutoLayout';
+import { useCanvasGuards } from './composables/useCanvasGuards';
+import { useChainDocument } from './composables/useChainDocument';
+import { useEditorHotkeys } from './composables/useEditorHotkeys';
+import { usePanelCollapse } from './composables/usePanelCollapse';
+import { usePreviewRun } from './composables/usePreviewRun';
 
 defineOptions({ name: 'DatabusEditor' });
 
 // ElNode 模型树是唯一数据源，画布是它的投影
 const treeModel = provideElTreeModel();
 
-/**
- * 链路标识：从链路列表「编排」进入时由路由 query.id 指定已保存链路（编辑态），
- * 工具栏展示其 chainCode（只读）；无 query.id 时为独立实验模式（不落库）。
- */
-const route = useRoute();
-const router = useRouter();
-const editingId = ref<number | string | null>(null);
-const chainId = ref('databus_chain_1');
-/** 当前编辑链路的业务元数据（标题展示 + 保存时原样回传，避免丢档位/备注） */
-const chainName = ref('');
-const logLevel = ref('BASIC');
-const remark = ref('');
-const chainSaving = ref(false);
-
-/**
- * 链路入参登记表（跟链路走；试运行按默认值预填，执行前按必填校验）。
- */
-const inputParams = ref<ChainInputParam[]>([]);
-const inputParamsVisible = ref(false);
-
-/** 入参登记保存：深拷贝落到编辑器状态（保存链路时随链持久化） */
-function onInputParamsSave(params: ChainInputParam[]) {
-  inputParams.value = JSON.parse(JSON.stringify(params));
-}
+// 链路文档状态（editingId/元数据/inputParams + load/save/back）见下方 useChainDocument 装配
 // 初始画布：project 空树 → 仅 start 虚拟节点
 const initial = treeModel.project();
 
-// 物料区收起态：持久化到 localStorage，下次进入保持
-const PALETTE_COLLAPSED_KEY = 'databus.palette.collapsed';
-const paletteCollapsed = ref(localStorage.getItem(PALETTE_COLLAPSED_KEY) === '1');
-function setPaletteCollapsed(collapsed: boolean) {
-  paletteCollapsed.value = collapsed;
-  localStorage.setItem(PALETTE_COLLAPSED_KEY, collapsed ? '1' : '0');
-}
-
-// 属性面板收起态：与物料区同款逻辑（图标触发、画布浮动展开钮、localStorage 记忆）
-const PROPS_COLLAPSED_KEY = 'databus.props.collapsed';
-const propsCollapsed = ref(localStorage.getItem(PROPS_COLLAPSED_KEY) === '1');
-function setPropsCollapsed(collapsed: boolean) {
-  propsCollapsed.value = collapsed;
-  localStorage.setItem(PROPS_COLLAPSED_KEY, collapsed ? '1' : '0');
-}
+// 物料区 / 属性面板收起态：图标触发、画布浮动展开钮、localStorage 记忆（逻辑下沉 composable）
+const { collapsed: paletteCollapsed, setCollapsed: setPaletteCollapsed } =
+  usePanelCollapse('databus.palette.collapsed');
+const { collapsed: propsCollapsed, setCollapsed: setPropsCollapsed } =
+  usePanelCollapse('databus.props.collapsed');
 
 // 编辑器整体全屏（工具栏/物料/画布/属性区一同进入），供画布控制条按钮 inject 调用
 const rootRef = ref<HTMLElement | null>(null);
@@ -428,26 +200,6 @@ const selectedEdge = computed<Edge | null>(() => {
   return (getEdges.value.find((e) => e.id === ctrl.selectedId.value) as Edge | undefined) ?? null;
 });
 
-// 右侧栏三 Tab：属性 / EL 预览 / 大纲。选中/取消选中自动切换仅在 props↔el 之间，
-// 大纲 Tab 手动切，不被覆盖。EL 预览刷新仅在 el Tab 可见时触发省请求。
-const activeTab = ref<'props' | 'el' | 'outline'>('el');
-watch(
-  () => !!ctrl.selectedId.value,
-  (hasSel) => {
-    if (hasSel && activeTab.value === 'el') activeTab.value = 'props';
-    else if (!hasSel && activeTab.value === 'props') activeTab.value = 'el';
-  },
-  { immediate: true }
-);
-watch(
-  activeTab,
-  (tab) => {
-    elPreview.active.value = tab === 'el';
-    if (tab === 'el') elPreview.refresh();
-  },
-  { immediate: true }
-);
-
 /** CmpProps 改参：重投影 + 入栈 + EL 预览刷新 */
 function onPropsChange() {
   ctrl.commit();
@@ -457,45 +209,40 @@ function onDropNode(payload: { type: string; x: number; y: number }) {
   ctrl.insertNodeAt(payload.type, payload.x, payload.y);
 }
 
-async function resetCanvas() {
-  try {
-    await ElMessageBox.confirm('清空将撤销当前画布上的全部组件与连线，确定继续？', '清空画布', {
-      type: 'warning'
-    });
-  } catch {
-    return;
-  }
-  treeModel.loadFromCmpProperty(null);
-  const { nodes, edges } = treeModel.project();
-  setNodes(nodes);
-  setEdges(edges);
-  ctrl.select(null);
-}
+// 保存链路 / 生成 EL / 试运行共用的画布前置校验与清空（逻辑下沉 composable）
+const { resetCanvas, ensureCanvasHasNodes, ensureDataSpacesValid } = useCanvasGuards({
+  treeModel,
+  getNodes,
+  setNodes,
+  setEdges,
+  select: (id) => ctrl.select(id)
+});
 
-/** 画布上至少有一个真实（非虚拟）节点 */
-function ensureCanvasHasNodes(): boolean {
-  const realNodes = getNodes.value.filter((n) => !(n.data as CmpNodeData).virtual);
-  if (realNodes.length === 0) {
-    ElMessage.warning('画布上还没有真实组件，先从左侧拖入组件');
-    return false;
-  }
-  return true;
-}
-
-/** 业务叶子数据空间名非空且唯一；有问题则选中并提示 */
-function ensureDataSpacesValid(): boolean {
-  const result = treeModel.validateDataSpaces();
-  if (result.ok === false) {
-    ctrl.select(result.nodeId);
-    if (result.reason === 'empty') {
-      ElMessage.error(`「${result.label}」的数据空间名不能为空`);
-    } else {
-      ElMessage.error(`数据空间名「${result.name}」重复，画布内必须唯一`);
-    }
-    return false;
-  }
-  return true;
-}
+// 链路文档：编辑态标识/业务元数据/入参登记表 + 加载/保存/返回/路由初始化
+const {
+  editingId,
+  chainId,
+  chainName,
+  chainSaving,
+  inputParams,
+  inputParamsVisible,
+  onInputParamsSave,
+  saveChain,
+  onChainSelect,
+  backToList,
+  initFromRoute
+} = useChainDocument({
+  treeModel,
+  getNodes,
+  getEdges,
+  setNodes,
+  setEdges,
+  select: (id) => ctrl.select(id),
+  autoLayout: () => ctrl.autoLayout(),
+  resetHistory: reset,
+  ensureCanvasHasNodes,
+  ensureDataSpacesValid
+});
 
 async function saveAsEl() {
   if (!ensureCanvasHasNodes()) return;
@@ -518,348 +265,84 @@ async function saveAsEl() {
   }
 }
 
-// ── 已保存链路的加载/保存（与链路管理页的跳转契约） ──
-
-/**
- * 按链路主键加载已保存链路到画布：
- * 取 Vo 的 cmpProperty 对象（后端 TypeHandler 已反序列化）→ 载入模型树 →
- * 重投影 → 重建历史基线 → dagre 重排。
- */
-async function loadChainToEditor(id: number | string) {
-  const { data } = await getChain(id);
-  const cmpProperty: CmpProperty | null = data.cmpProperty ?? null;
-  if (!cmpProperty) {
-    ElMessage.warning('该链路尚未编排内容，画布为空');
-  }
-  editingId.value = data.id ?? id;
-  chainId.value = data.chainCode;
-  chainName.value = data.chainName;
-  logLevel.value = data.logLevel ?? 'BASIC';
-  remark.value = data.remark ?? '';
-  inputParams.value = data.inputParams ? JSON.parse(JSON.stringify(data.inputParams)) : [];
-
-  treeModel.loadFromCmpProperty(cmpProperty);
-  const { nodes, edges } = treeModel.project();
-  setNodes(nodes);
-  setEdges(edges);
-  ctrl.select(null);
-  nextTick(() => {
-    reset();
-    // 载入已保存链路同样需要 dagre 重排（投影默认坐标顺序摆放，分支会绕圈）
-    ctrl.autoLayout();
-  });
-}
-
-/**
- * 保存当前画布到链路（不落 EL 到 Rule-DB——发布动作才推规则）。
- * 校验同 saveAsEl：有真实组件 + 数据空间名非空唯一。
- * canvasData 存画布 nodes/edges 快照（编辑器还原坐标用），cmpProperty 存逻辑树。
- * 保存成功不跳走，用户可继续编排；点左上「返回」回列表。
- */
-async function saveChain() {
-  if (!editingId.value) return;
-  if (!ensureCanvasHasNodes()) return;
-  if (!ensureDataSpacesValid()) return;
-
-  const cmpProperty = treeModel.toCmpProperty();
-  if (!cmpProperty) {
-    ElMessage.warning('画布上还没有真实组件');
-    return;
-  }
-  const canvasData = JSON.stringify({ nodes: getNodes.value, edges: getEdges.value });
-
-  chainSaving.value = true;
-  try {
-    await updateChain({
-      id: editingId.value,
-      chainCode: chainId.value,
-      chainName: chainName.value,
-      cmpProperty,
-      canvasData,
-      logLevel: logLevel.value,
-      inputParams: inputParams.value,
-      remark: remark.value
-    });
-    ElMessage.success('链路已保存');
-  } finally {
-    chainSaving.value = false;
-  }
-}
-
-/** 从切换器选中链路：直接加载到画布（复用 loadChainToEditor） */
-async function onChainSelect(row: DatabusChainVo) {
-  if (!row.id) return;
-  await loadChainToEditor(row.id);
-}
-
-/** 返回链路列表（动态解析列表路由，与编排跳转同款，不硬编码父级路径） */
-function backToList() {
-  const target = router.getRoutes().find(
-    r => r.path.endsWith('/chain') && r.path.includes('databus')
-  );
-  if (target) {
-    router.push(target.path);
-  } else {
-    router.back();
-  }
-}
-
-// ── 试运行（1C：生成 EL → 校验 → 真执行，不落库） ──
-
-const previewVisible = ref(false);
-const previewRunning = ref(false);
-const previewRequest = ref('{}');
-const previewResultVisible = ref(false);
-const previewResult = ref<PreviewRunVo | null>(null);
-
-/** 打开试运行入参弹窗：画布非空且数据空间名合法 */
-function openPreview() {
-  if (!ensureCanvasHasNodes()) return;
-  if (!ensureDataSpacesValid()) return;
-  previewResult.value = null;
-  // 每次打开按登记表默认值重新生成（重开重置）；无登记条目时为 {}
-  previewRequest.value = JSON.stringify(buildDefaultsJson(inputParams.value), null, 2);
-  previewVisible.value = true;
-}
-
-async function runPreview() {
-  // 入参必须是合法 JSON（空文本按 {} 处理），顺手格式化回写
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(previewRequest.value.trim() || '{}');
-  } catch {
-    ElMessage.error('入参不是合法 JSON，请检查后再执行');
-    return;
-  }
-  previewRequest.value = JSON.stringify(parsed, null, 2);
-
-  // 必填即时拦截：在最终入参上按必填路径取值，取不到/空字符串不发请求（后端另有复核）
-  const missing = inputParams.value
-    .filter(p => p.required && p.path)
-    .find(p => {
-      const value = getPathValue(parsed, p.path!);
-      return value === undefined || value === null
-        || (typeof value === 'string' && value.length === 0);
-    });
-  if (missing) {
-    ElMessage.error(`缺少必填入参：${missing.path}`);
-    return;
-  }
-
-  if (!ensureDataSpacesValid()) {
-    previewVisible.value = false;
-    return;
-  }
-  const cmpProperty = treeModel.toCmpProperty();
-  if (!cmpProperty) {
-    ElMessage.warning('画布上还没有真实组件');
-    return;
-  }
-  previewRunning.value = true;
-  try {
-    const { data } = await previewRun({
-      jsonEl: cmpProperty,
-      requestJson: previewRequest.value,
-      inputParams: inputParams.value
-    });
-    previewResult.value = data;
-    previewVisible.value = false;
-    previewResultVisible.value = true;
-  } finally {
-    previewRunning.value = false;
-  }
-}
-
-function reopenPreview() {
-  previewResultVisible.value = false;
-  previewVisible.value = true;
-}
-
-const resultBanner = computed(() => {
-  const r = previewResult.value;
-  if (!r) return '';
-  if (r.executed) return r.success ? '执行成功' : '执行失败（见步骤表与错误信息）';
-  return r.valid === false ? 'EL 校验未通过，未执行' : '未执行';
+// 试运行：入参/结果/步骤抽屉三态 + 必填拦截 + 步骤标题推断（逻辑下沉 composable）
+const {
+  previewVisible,
+  previewRunning,
+  previewRequest,
+  previewResultVisible,
+  previewResult,
+  openPreview,
+  runPreview,
+  reopenPreview,
+  stepDetailVisible,
+  currentStep,
+  openStepDetail,
+  stepTitle
+} = usePreviewRun({
+  treeModel,
+  inputParams,
+  ensureCanvasHasNodes,
+  ensureDataSpacesValid
 });
 
-/** 上下文快照解析为对象（后端给的是 JSON 字符串） */
-const contextObj = computed<unknown>(() => {
-  const raw = previewResult.value?.contextJson;
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+// 键盘快捷键：动作注入，window 绑定/解绑在 composable 内自理
+useEditorHotkeys({
+  deselect: () => ctrl.deselect(),
+  requestDeleteNode: () => ctrl.requestDeleteNode(),
+  undo,
+  redo,
+  selectAll: () => ctrl.selectAll(),
+  copy: () => ctrl.copy(),
+  paste: () => ctrl.paste(),
+  saveAsEl
 });
-
-/** $.response 片段（response 组件固定写这里），置顶单独展示 */
-const responsePart = computed<unknown>(() => {
-  const obj = contextObj.value;
-  if (obj && typeof obj === 'object' && 'response' in obj) {
-    return (obj as Record<string, unknown>).response;
-  }
-  return null;
-});
-
-const prettyContext = computed(() => {
-  const obj = contextObj.value;
-  if (obj === null) return previewResult.value?.contextJson ?? '';
-  return JSON.stringify(obj, null, 2);
-});
-
-/** 步骤明细抽屉状态：当前选中步骤及其 $.<tag> 子树快照（详情文本） */
-const stepDetailVisible = ref(false);
-const currentStep = ref<NodeStep | null>(null);
-
-/** 步骤表「执行结果」列文本：成功用组件自报摘要，未报兜底「完成」；失败显示错误信息 */
-function stepResultText(row: NodeStep): string {
-  if (!row.success) {
-    return row.errorMessage || '执行失败';
-  }
-  return row.summary || '完成';
-}
-
-/**
- * 画布业务叶子按数据空间名（tag）索引：tag → {组件注册名, 解析后的 cfg}。
- * 后端 NodeStep.title 只透传用户正本（未填为 null），步骤表再用当前画布 cfg 推断默认。
- */
-const leafCfgByTag = computed(() => {
-  const map = new Map<string, { code: string; cfg: unknown }>();
-  const walk = (n: ElNode | null | undefined) => {
-    if (!n) return;
-    if (n.componentCode) {
-      let cfg: unknown = {};
-      if (n.data) {
-        try {
-          cfg = JSON.parse(n.data);
-        } catch {
-          cfg = {};
-        }
-      }
-      if (n.cmpId) map.set(n.cmpId, { code: n.componentCode, cfg });
-    }
-    walk(n.condition);
-    n.children?.forEach(walk);
-  };
-  walk(treeModel.root.value);
-  return map;
-});
-
-/** 步骤表「节点标题」列：用户正本（后端透传）优先，未填退组件 label */
-function stepTitle(row: NodeStep): string {
-  if (row.title?.trim()) {
-    return row.title;
-  }
-  const leaf = row.tag ? leafCfgByTag.value.get(row.tag) : undefined;
-  const def = getDef(leaf?.code ?? row.nodeId ?? '');
-  return def?.label ?? '';
-}
-
-function openStepDetail(row: NodeStep) {
-  currentStep.value = row;
-  stepDetailVisible.value = true;
-}
-
-/** 抽屉中数据明细的 2 空格缩进 JSON（后端给的是当场序列化的 JSON 字符串，非法时原样展示） */
-const prettyStepDetail = computed(() => {
-  const raw = currentStep.value?.detailJson;
-  if (!raw) return '';
-  try {
-    return JSON.stringify(JSON.parse(raw), null, 2);
-  } catch {
-    return raw;
-  }
-});
-
-// 键盘快捷键组
-function isEditableTarget(el: EventTarget | null): boolean {
-  if (!(el instanceof HTMLElement)) {
-    return false;
-  }
-  const tag = el.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
-}
-
-function onKeyDown(e: KeyboardEvent) {
-  const key = e.key.toLowerCase();
-  const mod = e.ctrlKey || e.metaKey;
-
-  if (key === 'escape' && !isEditableTarget(e.target)) {
-    e.preventDefault();
-    ctrl.deselect();
-    return;
-  }
-
-  // Delete/Backspace：删除选中节点（走控制器，改树+入栈）
-  if ((key === 'delete' || key === 'backspace') && !isEditableTarget(e.target)) {
-    e.preventDefault();
-    void ctrl.requestDeleteNode();
-    return;
-  }
-
-  if (!mod || e.altKey) {
-    return;
-  }
-
-  switch (key) {
-    case 'z':
-      if (isEditableTarget(e.target)) return;
-      e.preventDefault();
-      if (e.shiftKey) {
-        redo();
-      } else {
-        undo();
-      }
-      break;
-    case 'y':
-      if (isEditableTarget(e.target)) return;
-      e.preventDefault();
-      redo();
-      break;
-    case 'a':
-      if (isEditableTarget(e.target)) return;
-      e.preventDefault();
-      ctrl.selectAll();
-      break;
-    case 'c':
-      if (isEditableTarget(e.target)) return;
-      e.preventDefault();
-      ctrl.copy();
-      break;
-    case 'v':
-      if (isEditableTarget(e.target)) return;
-      e.preventDefault();
-      ctrl.paste();
-      break;
-    case 's':
-      e.preventDefault();
-      saveAsEl();
-      break;
-  }
-}
 
 onMounted(() => {
   // 建立历史基线，保证撤销按钮初始禁用且首次编辑可撤销
   nextTick(reset);
-  window.addEventListener('keydown', onKeyDown);
   // 从链路列表「编排」跳入：query.id 指定已保存链路，异步加载替换空画布
-  // 保持字符串原样传递：19 位雪花 id 超出 Number 安全整数，转数字会精度丢失查不到链
-  const idParam = route.query.id;
-  if (idParam !== undefined && idParam !== null && idParam !== '') {
-    loadChainToEditor(String(idParam));
-  }
+  initFromRoute();
 });
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown));
 </script>
 
 <style scoped>
+/* 尺寸只定义一次：--palette-size/--props-size 是常量；
+   --palette-w/--props-w 是网格实际列宽，折叠时置 0。
+   工具栏与主体共用同一组列轨道，竖分隔线即列分界，天然不错开。 */
 .databus-editor {
-  display: flex;
-  flex-direction: column;
+  --palette-size: 248px;
+  --props-size: 300px;
+  --palette-w: var(--palette-size);
+  --props-w: var(--props-size);
+  /* 工具栏中段两侧预留位：展开时仅 12px 呼吸间隙；折叠时原位悬浮的左段
+     （链路编码 248）/右段（链路切换器 300）仍占着画布上方空间，内边距等量
+     让出，防止中段按钮随 1fr 列加宽滑入悬浮区遮住它们 */
+  --toolbar-pl: 12px;
+  --toolbar-pr: 12px;
+
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-columns: var(--palette-w) minmax(0, 1fr) var(--props-w);
+
   /* 跟随 plus-ui 满高页面惯例（workflow 设计器/AI 聊天页同值） */
   height: calc(100vh - 123px);
   background-color: var(--el-bg-color);
+
+  transition: grid-template-columns 0.2s ease;
+}
+
+/* 折叠只改列宽变量；轨道收缩，画布自然外扩。
+   同步加大中段工具栏同侧预留（常量宽 + 12px 呼吸间隙），
+   与 grid-template-columns 的 0.2s 过渡等速，按钮绝对位置钉住不动 */
+.databus-editor.is-palette-collapsed {
+  --palette-w: 0px;
+  --toolbar-pl: calc(var(--palette-size) + 12px);
+}
+
+.databus-editor.is-props-collapsed {
+  --props-w: 0px;
+  --toolbar-pr: calc(var(--props-size) + 12px);
 }
 
 /* 全屏态脱离 RuoYi 外壳后需撑满整个屏幕（否则底部露出 123px 空带）；
@@ -869,97 +352,39 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown));
   background-color: var(--el-bg-color);
 }
 
-.databus-editor__toolbar {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  height: 48px;
-  padding: 0 16px 0 0;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
+/* 工具栏三段由 EditorToolbar 以 display:contents 直接落入第一行网格轨道 */
 
-/* 左段：返回 + 链路标题，固定 248px 与下方物料区等宽，竖分隔线对齐物料区右边框 */
-.databus-editor__toolbar-left {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  width: 240px;
-  flex-shrink: 0;
-  padding-left: 16px;
-}
-
-.databus-editor__title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-
-.databus-editor__field-label {
-  margin-right: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--el-text-color-regular);
-}
-
-/* 链路编码只读展示框：与左侧 ChainSwitcher 触发器同款（24px 高、圆角、细边） */
-.databus-editor__chain-input {
-  width: 200px;
-
-  :deep(.el-input__wrapper) {
-    height: 24px;
-    padding: 0 8px;
-    border-radius: 4px;
-    box-shadow: 0 0 0 1px var(--el-border-color, #e8eaec) inset;
-    background: transparent;
-    transition: box-shadow 0.2s ease;
-  }
-
-  :deep(.el-input__inner) {
-    font-size: 13px;
-    font-family: 'JetBrains Mono', Consolas, monospace;
-    color: var(--el-text-color-primary);
-  }
-
-  &:hover :deep(.el-input__wrapper) {
-    box-shadow: 0 0 0 1px var(--el-color-primary) inset;
-  }
-}
-
-.databus-editor__toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
+/* body 容器让位：物料 / 画布 / 属性直接成为第二行网格条目 */
 .databus-editor__body {
-  display: flex;
-  flex: 1;
-  min-height: 0;
+  display: contents;
 }
 
 .databus-editor__palette {
-  flex-shrink: 0;
-  width: 248px;
+  grid-row: 2;
+  grid-column: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden auto;
   border-right: 1px solid var(--el-border-color-lighter);
-  transition: width 0.2s ease, border-right-width 0.2s ease;
+  transition: border-right-color 0.2s ease;
 }
 
-/* 收起：宽度过渡到 0 还画布全宽；内容固定 248px 不参与挤压回流 */
-.databus-editor__palette.is-collapsed {
-  width: 0;
-  border-right-width: 0;
+/* 轨道收 0 时隐掉竖边，避免画布左缘残留一根线 */
+.databus-editor.is-palette-collapsed .databus-editor__palette {
+  border-right-color: transparent;
 }
 
+/* 内容固定 248px 不参与挤压回流（折叠动画期间不重排） */
 .databus-editor__palette :deep(.cmp-palette) {
-  width: 248px;
+  width: var(--palette-size);
 }
 
 .databus-editor__canvas-wrap {
   position: relative;
-  flex: 1;
+  grid-row: 2;
+  grid-column: 2;
   min-width: 0;
+  min-height: 0;
 }
 
 /* 收起后画布左上角的展开按钮：与画布浮层控件同语言（26×26、白底卡片） */
@@ -987,55 +412,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown));
   border-color: var(--el-color-primary-light-5);
 }
 
-.databus-editor__props {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  width: 300px;
-  overflow: hidden;
-  border-left: 1px solid var(--el-border-color-lighter);
-  transition: width 0.2s ease, border-left-width 0.2s ease;
-}
-
-/* 收起：宽度过渡到 0 还画布全宽；内容固定 300px 不参与挤压回流 */
-.databus-editor__props.is-collapsed {
-  width: 0;
-  border-left-width: 0;
-}
-
-.databus-editor__props :deep(.databus-editor__tabs) {
-  width: 300px;
-}
-
-/* 面板顶部工具行：收起钮右对齐独占一行（不与页签标题同行，与左面板结构对称） */
-.databus-editor__props-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-shrink: 0;
-  padding: 8px 8px 0;
-}
-
-/* 收起钮：24×24 描边小钮，与物料区折叠钮同款 */
-.databus-editor__props-fold {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  color: var(--el-text-color-secondary);
-  cursor: pointer;
-  background-color: transparent;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 4px;
-  transition: color 0.15s, border-color 0.15s;
-}
-
-.databus-editor__props-fold:hover {
-  color: var(--el-color-primary);
-  border-color: var(--el-color-primary-light-5);
-}
+/* 属性面板容器/折叠竖边/页签样式整体迁入 EditorPropsPanel */
 
 /* 收起后画布右上角展开钮：与物料区展开钮同款（26×26 白底卡片）。
    位于最右缘（right:12），自动排列圆钮在其左侧（FlowSidePanel margin-right:46 让位），
@@ -1062,113 +439,5 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown));
 .databus-editor__props-expand:hover {
   color: var(--el-color-primary);
   border-color: var(--el-color-primary-light-5);
-}
-
-.databus-editor__tabs {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
-.databus-editor__tabs :deep(.el-tabs__header) {
-  margin: 0;
-  padding: 0 8px;
-}
-
-/* 页签样式与左侧物料区保持一致（12px 字号、30px 高、1px 细底线） */
-.databus-editor__tabs :deep(.el-tabs__nav-wrap::after) {
-  height: 1px;
-}
-
-.databus-editor__tabs :deep(.el-tabs__item) {
-  height: 30px;
-  padding: 0 10px;
-  font-size: 12px;
-  line-height: 30px;
-}
-
-.databus-editor__tabs :deep(.el-tabs__content) {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
-
-.databus-editor__tabs :deep(.el-tab-pane) {
-  height: 100%;
-}
-
-.databus-editor__dialog-hint {
-  float: left;
-  padding-top: 6px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.databus-editor__preview-input :deep(textarea) {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: 12px;
-}
-
-.databus-editor__step-result {
-  display: inline-block;
-  max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--el-color-primary);
-  cursor: pointer;
-}
-
-.databus-editor__step-result:hover {
-  text-decoration: underline;
-}
-
-.databus-editor__step-result.is-error {
-  color: var(--el-color-danger);
-}
-
-.databus-editor__step-nodeid {
-  overflow: hidden;
-  font-size: 11px;
-  line-height: 1.3;
-  color: var(--el-text-color-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.databus-editor__step-title {
-  overflow: hidden;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.35;
-  color: var(--el-text-color-primary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.databus-editor__section-title {
-  margin: 4px 0 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-
-.databus-editor__response-title {
-  margin: 4px 0 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--el-color-success);
-}
-
-.databus-editor__response-box {
-  margin-bottom: 10px;
-}
-
-.databus-editor__response-box :deep(textarea) {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: 12px;
-  background-color: var(--el-color-success-light-9);
 }
 </style>

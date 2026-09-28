@@ -14,9 +14,10 @@
       </div>
 
       <div class="input-params-dialog__panes">
-        <section class="pane">
-          <div class="pane__title">条目登记</div>
-          <div class="pane__body">
+        <div class="pane__title">条目登记</div>
+        <div class="pane__title">JSON（与左侧实时联动）</div>
+
+        <div class="pane__body">
             <el-table :data="rows" size="small" border height="100%">
               <el-table-column label="路径" min-width="190">
                 <template #default="{ row }">
@@ -75,27 +76,26 @@
                 </template>
               </el-table-column>
             </el-table>
-          </div>
-          <p v-if="leftError" class="pane__error">{{ leftError }}（右侧 JSON 保留上次合法内容）</p>
+        </div>
+
+        <div class="pane__body">
+          <JsonCodeEditor
+            v-model="jsonText"
+            class="pane__json"
+            placeholder='{"request":{"password":"xxx"}}'
+          />
+        </div>
+
+        <div class="pane__foot">
           <el-button size="small" class="pane__add" @click="addRow">
             <el-icon class="el-icon--left"><Plus /></el-icon>新增一行
           </el-button>
-        </section>
-
-        <section class="pane">
-          <div class="pane__title">JSON（与左侧实时联动）</div>
-          <div class="pane__body">
-            <el-input
-              v-model="jsonText"
-              class="pane__json"
-              type="textarea"
-              spellcheck="false"
-              placeholder='{"request":{"password":"xxx"}}'
-            />
-          </div>
+          <p v-if="leftError" class="pane__error">{{ leftError }}（右侧 JSON 保留上次合法内容）</p>
+        </div>
+        <div class="pane__foot">
           <p v-if="jsonError" class="pane__error">{{ jsonError }}（左侧条目保留）</p>
           <p v-else class="pane__hint">JSON 合法时按叶子自动拆回左侧条目；必填勾按路径保留</p>
-        </section>
+        </div>
       </div>
     </div>
 
@@ -111,7 +111,8 @@ import { ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Plus } from '@element-plus/icons-vue';
 import type { ChainInputParam, ChainInputType } from '@/api/databus/chain/types';
-import { buildDefaultsJson, flattenToParams, validateParams } from '../input-params';
+import { buildDefaultsJson, flattenToParams, validateParams } from '../../input-params';
+import JsonCodeEditor from '../common/JsonCodeEditor.vue';
 
 defineOptions({ name: 'InputParamsDialog' });
 
@@ -337,55 +338,79 @@ watch(
     color: var(--el-text-color-secondary);
   }
 
+  // 三行 Grid：标题 / 编辑区 / 底部各占共享行轨道，左右两栏底边永远对齐
   &__panes {
-    display: flex;
-    gap: 14px;
+    display: grid;
+    grid-template-columns: 6fr 4fr;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    column-gap: 14px;
+    row-gap: 8px;
     height: 470px;
   }
 }
 
 .pane {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-
   &__title {
-    margin-bottom: 6px;
     font-size: 13px;
     font-weight: 600;
   }
 
   &__body {
-    flex: 1;
+    min-width: 0;
     min-height: 0;
+    overflow: hidden;
+
+    // EP 表格的底边/右边不是真 border，而是绝对定位的 1px 伪元素色块（inner-wrapper::before
+    // 画底边、.el-table--border::after 画右边）；grid 中宽高为小数（410.8×583.4px），
+    // 叠加 Windows 缩放时色块贴在 overflow:hidden 裁切边上光栅化发虚/隐形。统一改为画在
+    // 裁切区外的真 border（像素吸附），颜色取表格自身变量，与顶/左两边无色差。规则必须
+    // 挂在真实存在的 .pane__body（el-table 直接父节点）下，挂 .pane 会因 class 已不存在而失效
+    :deep(.el-table.el-table--border) {
+      border-right: 1px solid var(--el-table-border-color);
+      border-bottom: 1px solid var(--el-table-border-color);
+    }
+
+    :deep(.el-table__inner-wrapper::before),
+    :deep(.el-table--border::after) {
+      display: none;
+    }
+  }
+
+  &__foot {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
 
   &__number {
     width: 100%;
   }
 
+  // JsonCodeEditor 根节点填满格；工具栏占自然高，核心区 flex 吃掉剩余高度
+  // （核心区自带 inline height，flex:1 的 flex-basis:0 优先于 height，无需传固定 px）
   &__json {
     height: 100%;
 
-    :deep(.el-textarea__inner) {
-      height: 100%;
-      font-family: Consolas, Monaco, monospace;
+    :deep(.json-code-editor__core) {
+      flex: 1;
+      min-height: 0;
     }
   }
 
   &__add {
-    margin-top: 10px;
+    flex: none;
   }
 
   &__error {
-    margin: 6px 2px 0;
+    margin: 0;
+    min-width: 0;
     font-size: 12px;
     color: var(--el-color-danger);
   }
 
   &__hint {
-    margin: 6px 2px 0;
+    margin: 0;
     font-size: 12px;
     color: var(--el-text-color-secondary);
   }

@@ -22,9 +22,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useVueFlow } from '@vue-flow/core';
-import { useElTreeModelInject, type ElNode } from '../composables/useElTreeModel';
-import { useCanvasController } from '../composables/useCanvasController';
-import { getDef } from '../cmp-defs';
+import { useElTreeModelInject, type ElNode } from '../../composables/useElTreeModel';
+import { useCanvasController } from '../../composables/useCanvasController';
+import { getDef } from '../../cmp-defs';
 
 defineOptions({ name: 'FlowOutline' });
 

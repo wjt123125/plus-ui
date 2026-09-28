@@ -9,10 +9,10 @@
     >
       <template v-if="ctrl.menu.scene === 'node'">
         <li class="cmp-ctx-menu__item" @click="openPickerAt('prepend')">
-          <el-icon><InsertNodeIcon dir="top" /></el-icon><span>上方插入节点</span>
+          <el-icon><ArrowLeftBold /></el-icon><span>在左边插入节点</span>
         </li>
         <li class="cmp-ctx-menu__item" @click="openPickerAt('append')">
-          <el-icon><InsertNodeIcon dir="bottom" /></el-icon><span>下方插入节点</span>
+          <el-icon><ArrowRightBold /></el-icon><span>在右边插入节点</span>
         </li>
         <li class="cmp-ctx-menu__item" @click="openPickerAt('replace')">
           <el-icon><Switch /></el-icon><span>替换节点</span>
@@ -48,6 +48,8 @@
 import { onBeforeUnmount } from 'vue';
 import { useVueFlow } from '@vue-flow/core';
 import {
+  ArrowLeftBold,
+  ArrowRightBold,
   CopyDocument,
   Delete,
   DocumentCopy,
@@ -55,10 +57,9 @@ import {
   Select,
   Switch
 } from '@element-plus/icons-vue';
-import InsertNodeIcon from './InsertNodeIcon.vue';
-import type { CmpNodeData } from '../composables/useElTreeModel';
-import type { PickerMode } from '../composables/useCanvasController';
-import { useCanvasController } from '../composables/useCanvasController';
+import type { CmpNodeData } from '../../composables/useElTreeModel';
+import type { PickerMode } from '../../composables/useCanvasController';
+import { useCanvasController } from '../../composables/useCanvasController';
 
 defineOptions({ name: 'CmpContextMenu' });
 

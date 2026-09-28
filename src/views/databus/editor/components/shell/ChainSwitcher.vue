@@ -1,5 +1,5 @@
 <!--
-  链路切换器 — 编辑器工具栏标题位置，点击展开面板切换链路。
+  链路切换器 — 编辑器工具栏右缘，点击展开面板向左展开切换链路。
   面板功能：
     - 顶部搜索框（按 chainName/chainCode 模糊匹配）+ 搜索历史（localStorage 持久化）
     - Tab：最近使用 / 全部 / 草稿 / 已发布 / 已下线
@@ -11,7 +11,7 @@
 <template>
   <el-popover
     v-model:visible="popoverVisible"
-    placement="bottom-start"
+    placement="bottom-end"
     :width="420"
     trigger="click"
     popper-class="chain-switcher__popper"
@@ -248,6 +248,7 @@ function formatTime(t?: string) {
   transition: all 0.2s ease;
   flex: 1;
   min-width: 0;
+  text-align: left;
 
   &:hover {
     border-color: var(--el-border-color, #e8eaec);

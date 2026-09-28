@@ -44,18 +44,18 @@ import { MiniMap } from '@vue-flow/minimap';
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
 import '@vue-flow/minimap/dist/style.css';
-import CmpNode from './CmpNode.vue';
-import CmpBezierEdge from './edges/CmpBezierEdge.vue';
+import CmpNode from '../nodes/CmpNode.vue';
+import CmpBezierEdge from '../nodes/edges/CmpBezierEdge.vue';
 import FlowViewportControls from './FlowViewportControls.vue';
 import FlowSidePanel from './FlowSidePanel.vue';
 import CmpPickerPopover from './CmpPickerPopover.vue';
 import CmpContextMenu from './CmpContextMenu.vue';
-import GatewayNode from './GatewayNode.vue';
-import JunctionNode from './JunctionNode.vue';
-import PlaceholderNode from './PlaceholderNode.vue';
-import { DND_MIME } from '../cmp-defs';
-import { useCanvasController } from '../composables/useCanvasController';
-import { NODE_H, NODE_W, type CmpNodeData } from '../composables/useElTreeModel';
+import GatewayNode from '../nodes/GatewayNode.vue';
+import JunctionNode from '../nodes/JunctionNode.vue';
+import PlaceholderNode from '../nodes/PlaceholderNode.vue';
+import { DND_MIME } from '../../cmp-defs';
+import { useCanvasController } from '../../composables/useCanvasController';
+import { NODE_H, NODE_W, type CmpNodeData } from '../../composables/useElTreeModel';
 
 defineOptions({ name: 'FlowCanvas' });
 

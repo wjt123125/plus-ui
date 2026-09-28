@@ -63,7 +63,7 @@
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@vue-flow/core';
 import { Plus } from '@element-plus/icons-vue';
-import { useCanvasController } from '../../composables/useCanvasController';
+import { useCanvasController } from '../../../composables/useCanvasController';
 
 defineOptions({ name: 'CmpBezierEdge' });
 

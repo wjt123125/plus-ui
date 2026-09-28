@@ -9,7 +9,7 @@
 
 <script setup lang="ts">
 import { MagicStick } from '@element-plus/icons-vue';
-import { useCanvasController } from '../composables/useCanvasController';
+import { useCanvasController } from '../../composables/useCanvasController';
 
 defineOptions({ name: 'FlowLayoutButton' });
 

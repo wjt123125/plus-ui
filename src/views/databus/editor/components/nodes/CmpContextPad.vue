@@ -1,25 +1,23 @@
 <template>
   <NodeToolbar
     :is-visible="isVisible"
-    :position="Position.Right"
+    :position="Position.Bottom"
     :offset="10"
     class="cmp-ctx-pad"
     @mouseenter="hoverPad = true"
     @mouseleave="hoverPad = false"
   >
-  <!-- 触发一次 HMR 全量重编译：模板与 import 已在同一版本 -->
-
-    <el-tooltip content="上方插入节点" placement="right" :show-after="300">
+    <el-tooltip content="在左边插入节点" placement="bottom" :show-after="300">
       <button type="button" class="cmp-ctx-pad__btn" @click.stop="open('prepend', $event)">
-        <el-icon><InsertNodeIcon dir="top" /></el-icon>
+        <el-icon><ArrowLeftBold /></el-icon>
       </button>
     </el-tooltip>
-    <el-tooltip content="下方插入节点" placement="right" :show-after="300">
+    <el-tooltip content="在右边插入节点" placement="bottom" :show-after="300">
       <button type="button" class="cmp-ctx-pad__btn" @click.stop="open('append', $event)">
-        <el-icon><InsertNodeIcon dir="bottom" /></el-icon>
+        <el-icon><ArrowRightBold /></el-icon>
       </button>
     </el-tooltip>
-    <el-tooltip content="删除节点" placement="right" :show-after="300">
+    <el-tooltip content="删除节点" placement="bottom" :show-after="300">
       <button type="button" class="cmp-ctx-pad__btn is-danger" @click.stop="ctrl.requestDeleteNode(nodeId)">
         <el-icon><Delete /></el-icon>
       </button>
@@ -31,10 +29,9 @@
 import { computed, ref } from 'vue';
 import { NodeToolbar } from '@vue-flow/node-toolbar';
 import { Position } from '@vue-flow/core';
-import { Delete } from '@element-plus/icons-vue';
-import InsertNodeIcon from './InsertNodeIcon.vue';
-import type { PickerMode } from '../composables/useCanvasController';
-import { useCanvasController } from '../composables/useCanvasController';
+import { ArrowLeftBold, ArrowRightBold, Delete } from '@element-plus/icons-vue';
+import type { PickerMode } from '../../composables/useCanvasController';
+import { useCanvasController } from '../../composables/useCanvasController';
 
 defineOptions({ name: 'CmpContextPad' });
 
@@ -58,6 +55,7 @@ function open(mode: PickerMode, event: MouseEvent) {
 </script>
 
 <style scoped>
+/* ghost 图标按钮：常态无框无底无阴影，仅 hover 浮现圆形底色；24px 命中区保持不变 */
 .cmp-ctx-pad__btn {
   display: flex;
   align-items: center;
@@ -67,21 +65,24 @@ function open(mode: PickerMode, event: MouseEvent) {
   padding: 0;
   color: var(--el-text-color-regular);
   cursor: pointer;
-  background-color: var(--el-bg-color);
-  border: 1px solid var(--el-border-color);
+  background-color: transparent;
+  border: none;
   border-radius: 50%;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 12%);
-  transition: color 0.15s, border-color 0.15s;
+  transition: color 0.15s, background-color 0.15s;
 }
 
 .cmp-ctx-pad__btn:hover {
-  color: var(--el-color-primary);
-  border-color: var(--el-color-primary);
+  color: var(--el-text-color-primary);
+  background-color: var(--el-fill-color-light);
+}
+
+.cmp-ctx-pad__btn.is-danger {
+  color: var(--el-color-danger);
 }
 
 .cmp-ctx-pad__btn.is-danger:hover {
   color: var(--el-color-danger);
-  border-color: var(--el-color-danger);
+  background-color: var(--el-color-danger-light-9);
 }
 </style>
 
@@ -89,10 +90,10 @@ function open(mode: PickerMode, event: MouseEvent) {
 <style>
 .cmp-ctx-pad.vue-flow__node-toolbar {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 4px;
-  /* 向右抵消 position=right 的 10px offset，用 padding 保住按钮视觉位置并填满间隙 */
-  margin-left: -10px;
-  padding: 2px 0 2px 10px;
+  /* 向上抵消 position=bottom 的 10px offset，用 padding 保住按钮视觉位置并填满间隙 */
+  margin-top: -10px;
+  padding: 10px 2px 2px;
 }
 </style>

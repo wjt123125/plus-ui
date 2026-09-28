@@ -14,8 +14,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { Handle, Position, type NodeProps } from '@vue-flow/core';
-import type { CmpNodeData } from '../composables/useElTreeModel';
-import { useCanvasController } from '../composables/useCanvasController';
+import type { CmpNodeData } from '../../composables/useElTreeModel';
+import { useCanvasController } from '../../composables/useCanvasController';
 
 const props = defineProps<NodeProps<CmpNodeData>>();
 

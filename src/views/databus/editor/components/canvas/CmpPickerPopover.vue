@@ -61,9 +61,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount } from 'vue';
 import { Close } from '@element-plus/icons-vue';
-import { getRecommendations } from '../cmp-recommend';
-import { useCanvasController } from '../composables/useCanvasController';
-import type { PickerMode } from '../composables/useCanvasController';
+import { getRecommendations } from '../../cmp-recommend';
+import { useCanvasController } from '../../composables/useCanvasController';
+import type { PickerMode } from '../../composables/useCanvasController';
 
 defineOptions({ name: 'CmpPickerPopover' });
 

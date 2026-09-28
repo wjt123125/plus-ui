@@ -55,7 +55,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { FullScreen, Pointer, ScaleToOriginal } from '@element-plus/icons-vue';
 import { Panel, useVueFlow } from '@vue-flow/core';
-import { useEditorFullscreen } from '../composables/useEditorFullscreen';
+import { useEditorFullscreen } from '../../composables/useEditorFullscreen';
 
 defineOptions({ name: 'FlowViewportControls' });
 

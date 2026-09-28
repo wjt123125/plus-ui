@@ -102,7 +102,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { Fold, Search } from '@element-plus/icons-vue';
-import { CMP_DEFS, DND_MIME, PALETTE_GROUPS } from '../cmp-defs';
+import { CMP_DEFS, DND_MIME, PALETTE_GROUPS } from '../../cmp-defs';
 
 const emit = defineEmits<{
   (e: 'collapse'): void;

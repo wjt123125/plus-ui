@@ -39,7 +39,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import type { Edge } from '@vue-flow/core';
-import { useCanvasController } from '../composables/useCanvasController';
+import { useCanvasController } from '../../composables/useCanvasController';
 
 defineOptions({ name: 'EdgeProps' });
 

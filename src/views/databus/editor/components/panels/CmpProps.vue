@@ -383,14 +383,14 @@ import {
   ElTag
 } from 'element-plus';
 import { listScriptEngines } from '@/api/databus/script';
-import { CMP_DEFS, getDef, type CmpDef } from '../cmp-defs';
+import { CMP_DEFS, getDef, type CmpDef } from '../../cmp-defs';
 import {
   useElTreeModelInject,
   type CmpNodeData,
   type ElNode
-} from '../composables/useElTreeModel';
-import { useCanvasController } from '../composables/useCanvasController';
-import JsonCodeEditor from './JsonCodeEditor.vue';
+} from '../../composables/useElTreeModel';
+import { useCanvasController } from '../../composables/useCanvasController';
+import JsonCodeEditor from '../common/JsonCodeEditor.vue';
 
 const props = defineProps<{
   node: Node<CmpNodeData> | null;

@@ -16,7 +16,7 @@
 <script setup lang="ts">
 import { CopyDocument } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
-import { useElPreviewController } from '../composables/useElPreview';
+import { useElPreviewController } from '../../composables/useElPreview';
 
 defineOptions({ name: 'FlowElPreview' });
 
