@@ -4,7 +4,7 @@
     title="试运行结果"
     width="860px"
     append-to-body
-    :close-on-click-modal="false"
+    :close-on-click-modal="true"
     @update:model-value="emit('update:visible', $event)"
   >
     <template v-if="result">
