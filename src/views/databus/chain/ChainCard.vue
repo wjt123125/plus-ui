@@ -55,6 +55,16 @@
     <!-- 底部操作（link 按钮，全程可见） -->
     <div class="card-actions" @click.stop>
       <el-button
+        v-if="row.status === STATUS_PUBLISHED"
+        v-hasPermi="['databus:execution:execute']"
+        link
+        type="primary"
+        size="small"
+        @click="$emit('execute', row)"
+      >
+        <el-icon><VideoPlay /></el-icon>执行
+      </el-button>
+      <el-button
         v-if="row.status !== STATUS_PUBLISHED"
         v-hasPermi="['databus:editor:publish']"
         link
@@ -106,7 +116,7 @@
 </template>
 
 <script setup lang="ts">
-import { Coin, Connection, CopyDocument, DataLine, Delete, Document, Edit, Folder, MagicStick, Promotion, Refresh, Switch, TurnOff, Upload } from '@element-plus/icons-vue';
+import { Coin, Connection, CopyDocument, DataLine, Delete, Document, Edit, Folder, MagicStick, Promotion, Refresh, Switch, TurnOff, Upload, VideoPlay } from '@element-plus/icons-vue';
 import type { Component } from 'vue';
 import type { CmpProperty } from '@/api/databus/el/types';
 import type { DatabusChainVo } from '@/api/databus/chain/types';
@@ -133,6 +143,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'arrange', row: DatabusChainVo): void;
+  (e: 'execute', row: DatabusChainVo): void;
   (e: 'edit', row: DatabusChainVo): void;
   (e: 'copy-chain', row: DatabusChainVo): void;
   (e: 'publish', row: DatabusChainVo): void;

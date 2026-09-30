@@ -54,6 +54,7 @@
           :key="row.id"
           :row="row"
           @arrange="handleArrange"
+          @execute="handleExecute"
           @edit="handleUpdate"
           @copy-chain="handleCopyChain"
           @publish="handlePublish"
@@ -74,6 +75,11 @@
     </div>
 
     <ChainForm ref="chainFormRef" @success="getList" />
+    <ManualExecuteDialog
+      v-model:visible="executeDialogVisible"
+      :locked-chain-id="executeChainId"
+      @executed="handleExecuted"
+    />
   </div>
 </template>
 
@@ -81,12 +87,14 @@
 import { Plus, Search } from '@element-plus/icons-vue';
 import { copyChain, delChain, listChain, offlineChain, publishChain } from '@/api/databus/chain';
 import type { DatabusChainQuery, DatabusChainVo } from '@/api/databus/chain/types';
-import { ElMessage } from 'element-plus';
+import type { DatabusExecutionResult } from '@/api/databus/execution/types';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { useLoading } from '@/hooks/async/useLoading';
 import modal from '@/plugins/modal';
 import { useRouter } from 'vue-router';
 import ChainCard from './ChainCard.vue';
 import ChainForm from './ChainForm.vue';
+import ManualExecuteDialog from '@/views/databus/execution/ManualExecuteDialog.vue';
 
 /**
  * 链路管理页（连接管理范式：单列居中 + 顶部标题/搜索/筛选 + 卡片列表）。
@@ -120,6 +128,10 @@ const total = ref(0);
 
 const chainFormRef = ref<InstanceType<typeof ChainForm>>();
 const router = useRouter();
+
+/** 手动执行弹窗（卡片「执行」入口，预选具体链路） */
+const executeDialogVisible = ref(false);
+const executeChainId = ref<number | string | undefined>(undefined);
 
 const queryParams = ref<DatabusChainQuery>({
   pageNum: 1,
@@ -177,6 +189,40 @@ const handleArrange = async (row: DatabusChainVo) => {
     return;
   }
   router.push({ path: target.path, query: { id: String(row.id) } });
+};
+
+/** 卡片「执行」：打开手动执行弹窗并预选该链路（仅已发布卡片出此按钮） */
+const handleExecute = (row: DatabusChainVo) => {
+  if (!row.id) return;
+  executeChainId.value = row.id;
+  executeDialogVisible.value = true;
+};
+
+/** 执行完成：提示成败；产生记录时询问是否跳转执行记录页查看新记录详情 */
+const handleExecuted = async (result: DatabusExecutionResult) => {
+  if (result.success) {
+    ElMessage.success(`执行成功，耗时 ${result.costTime} ms`);
+  } else {
+    ElMessage.error(`执行失败：${result.message || '未知错误'}`);
+  }
+  executeChainId.value = undefined;
+  if (!result.recordId) {
+    // OFF 档不留记录
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      result.success ? '执行完成，是否立即查看执行记录详情？' : '执行失败，是否查看失败记录详情？',
+      '执行结果',
+      { confirmButtonText: '查看记录', cancelButtonText: '留在本页', type: result.success ? 'success' : 'error' }
+    );
+    const target = router.getRoutes().find(r => r.path.endsWith('/execution') && r.path.includes('databus'));
+    if (target) {
+      router.push({ path: target.path, query: { recordId: String(result.recordId) } });
+    }
+  } catch {
+    // 用户选择留在本页
+  }
 };
 
 /** 发布链路 */
