@@ -1,6 +1,7 @@
 <!--
-  链路管理页 — 连接管理范式（单列居中 + 顶部标题/副标题/新增按钮 + 独立搜索框 + 水平胶囊筛选 + 卡片列表）。
-  砍掉 sidebar 侧边栏 / featured 最近编辑横滑区 / 双视图切换；统一用分页查询，status 字段做筛选。
+  链路管理页 — 连接管理范式（单列居中 + 顶部标题/副标题/新增按钮 + 双 tab + 独立搜索框 + 水平胶囊筛选 + 卡片列表）。
+  砍掉 sidebar 侧边栏 / featured 最近编辑横滑区；统一用分页查询。
+  双 tab（is_template 过滤）：我的链路（status 胶囊筛选/发布/复制）与精选模板（说明卡/使用模板复制跳编辑器）。
   page-inner 收敛到 1000px 居中，搜索框/筛选条/卡片列表同宽，每行一个，卡片压扁变矮。
 -->
 <template>
@@ -10,11 +11,28 @@
       <div class="page-header">
         <div class="page-title-wrap">
           <h2 class="page-title">链路管理</h2>
-          <p class="page-subtitle">共 {{ total }} 个链路，组件通过链路编码引用此处维护的链路。</p>
+          <p class="page-subtitle">{{
+            isTemplateTab
+              ? '复制一个会跑的样板开始，改造成你的链路。'
+              : `共 ${total} 个链路，组件通过链路编码引用此处维护的链路。`
+          }}</p>
         </div>
-        <button v-hasPermi="['databus:editor:add']" class="add-btn" @click="handleAdd">
+        <button v-if="!isTemplateTab" v-hasPermi="['databus:editor:add']" class="add-btn" @click="handleAdd">
           <el-icon><Plus /></el-icon>
           <span>新增链路</span>
+        </button>
+      </div>
+
+      <!-- 视图大 tab：我的链路 / 精选模板 -->
+      <div class="status-bar">
+        <button
+          v-for="t in VIEW_TABS"
+          :key="t.value"
+          class="filter-tab"
+          :class="{ active: viewMode === t.value }"
+          @click="changeView(t.value)"
+        >
+          {{ t.label }}
         </button>
       </div>
 
@@ -34,8 +52,8 @@
         </div>
       </div>
 
-      <!-- 状态筛选（水平胶囊，对齐连接管理范式） -->
-      <div class="status-bar">
+      <!-- 状态筛选（仅我的链路；模板恒草稿，无状态可筛） -->
+      <div v-if="!isTemplateTab" class="status-bar">
         <button
           v-for="s in STATUS_OPTIONS"
           :key="s.value"
@@ -53,6 +71,7 @@
           v-for="row in chainList"
           :key="row.id"
           :row="row"
+          :variant="isTemplateTab ? 'template' : 'chain'"
           @arrange="handleArrange"
           @execute="handleExecute"
           @edit="handleUpdate"
@@ -61,8 +80,9 @@
           @offline="handleOffline"
           @delete="handleDelete"
           @copy-code="copyChainCode"
+          @use-template="handleUseTemplate"
         />
-        <el-empty v-if="!loading && chainList.length === 0" description="暂无链路" />
+        <el-empty v-if="!loading && chainList.length === 0" :description="isTemplateTab ? '暂无精选模板' : '暂无链路'" />
       </div>
 
       <pagination
@@ -75,6 +95,7 @@
     </div>
 
     <ChainForm ref="chainFormRef" @success="getList" />
+    <ChainCopyDialog ref="copyDialogRef" @created="handleCopyCreated" />
     <ManualExecuteDialog
       v-model:visible="executeDialogVisible"
       :locked-chain-id="executeChainId"
@@ -85,7 +106,7 @@
 
 <script setup name="DatabusChain" lang="ts">
 import { Plus, Search } from '@element-plus/icons-vue';
-import { copyChain, delChain, listChain, offlineChain, publishChain } from '@/api/databus/chain';
+import { delChain, listChain, offlineChain, publishChain } from '@/api/databus/chain';
 import type { DatabusChainQuery, DatabusChainVo } from '@/api/databus/chain/types';
 import type { DatabusExecutionResult } from '@/api/databus/execution/types';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -93,6 +114,7 @@ import { useLoading } from '@/hooks/async/useLoading';
 import modal from '@/plugins/modal';
 import { useRouter } from 'vue-router';
 import ChainCard from './ChainCard.vue';
+import ChainCopyDialog from './ChainCopyDialog.vue';
 import ChainForm from './ChainForm.vue';
 import ManualExecuteDialog from '@/views/databus/execution/ManualExecuteDialog.vue';
 
@@ -121,12 +143,25 @@ const STATUS_OPTIONS: StatusOption[] = [
   { value: STATUS_OFFLINE, label: '已下线' }
 ];
 
+type ViewMode = 'mine' | 'template';
+
+const VIEW_TABS: { value: ViewMode; label: string }[] = [
+  { value: 'mine', label: '我的链路' },
+  { value: 'template', label: '精选模板' }
+];
+
+const viewMode = ref<ViewMode>('mine');
+const isTemplateTab = computed(() => viewMode.value === 'template');
+
 const { loading, withLoading } = useLoading(true);
 
 const chainList = ref<DatabusChainVo[]>([]);
 const total = ref(0);
 
 const chainFormRef = ref<InstanceType<typeof ChainForm>>();
+/** 复制/使用模板共用命名弹窗；打开时区分来源，created 回调决定留列表还是跳编辑器 */
+const copyDialogRef = ref<InstanceType<typeof ChainCopyDialog>>();
+const copyDialogMode = ref<'copy' | 'template'>('copy');
 const router = useRouter();
 
 /** 手动执行弹窗（卡片「执行」入口，预选具体链路） */
@@ -137,8 +172,19 @@ const queryParams = ref<DatabusChainQuery>({
   pageNum: 1,
   pageSize: 10,
   chainName: '',
-  status: ''
+  status: '',
+  isTemplate: '0'
 });
+
+/** 切换我的链路/精选模板：重置分页与状态筛选（模板恒草稿，状态胶囊仅我的链路可见） */
+const changeView = (value: ViewMode) => {
+  if (viewMode.value === value) return;
+  viewMode.value = value;
+  queryParams.value.isTemplate = value === 'template' ? '1' : '0';
+  queryParams.value.status = '';
+  queryParams.value.pageNum = 1;
+  getList();
+};
 
 /** 分页查询链路列表 */
 const getList = async () => {
@@ -172,23 +218,43 @@ const handleUpdate = (row: DatabusChainVo) => {
   chainFormRef.value?.openDialog(row.id);
 };
 
-/** 复制链路：生成一条全新草稿，成功后留在列表查看副本 */
-const handleCopyChain = async (row: DatabusChainVo) => {
-  if (!row.id) return;
-  await copyChain(row.id);
-  modal.msgSuccess('复制成功');
-  getList();
+/** 复制链路：弹窗确认副本名称/编码，成功后留在列表查看副本 */
+const handleCopyChain = (row: DatabusChainVo) => {
+  copyDialogMode.value = 'copy';
+  copyDialogRef.value?.open(row, 'copy');
 };
 
-/** 编排：跳转链路编辑器（隐藏菜单，路由 path 以 /databus/editor 结尾） */
-const handleArrange = async (row: DatabusChainVo) => {
-  if (!row.id) return;
+/** 复制弹窗确认成功：普通复制留列表刷新；使用模板直接进编辑器编排副本 */
+const handleCopyCreated = (newId: number | string, newName: string) => {
+  if (copyDialogMode.value === 'template') {
+    ElMessage.success(`已创建副本「${newName}」，开始编排吧`);
+    gotoEditor(newId);
+    return;
+  }
+  modal.msgSuccess(`已复制为「${newName}」`);
+  handleQuery();
+};
+
+/** 跳转链路编辑器（隐藏菜单，路由 path 以 /databus/editor 结尾） */
+const gotoEditor = (id: number | string) => {
   const target = router.getRoutes().find(r => r.path.endsWith('/editor') && r.path.includes('databus'));
   if (!target) {
     ElMessage.error('未找到编辑器路由，请确认编辑器隐藏菜单已加载（重新登录后重试）');
     return;
   }
-  router.push({ path: target.path, query: { id: String(row.id) } });
+  router.push({ path: target.path, query: { id: String(id) } });
+};
+
+/** 编排：跳转链路编辑器 */
+const handleArrange = (row: DatabusChainVo) => {
+  if (!row.id) return;
+  gotoEditor(row.id);
+};
+
+/** 使用模板：先弹窗确认副本名称/编码，创建成功后由 handleCopyCreated 跳编辑器 */
+const handleUseTemplate = (row: DatabusChainVo) => {
+  copyDialogMode.value = 'template';
+  copyDialogRef.value?.open(row, 'template');
 };
 
 /** 卡片「执行」：打开手动执行弹窗并预选该链路（仅已发布卡片出此按钮） */

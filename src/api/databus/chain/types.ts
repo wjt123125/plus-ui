@@ -46,12 +46,50 @@ export interface DatabusChainVo {
   logLevel?: string;
   /** 链路入参登记表（试运行预填 + 执行前必填校验） */
   inputParams?: ChainInputParam[];
+  /** 是否精选模板（0否 1是；模板恒为草稿，不可发布） */
+  isTemplate?: string;
+  /** 模板说明（模板库卡片展示：适用场景/前置条件） */
+  templateDesc?: string;
+  /** 模板排序（升序，值小在前） */
+  templateSort?: number;
   /** 备注 */
   remark?: string;
   /** 创建时间 */
   createTime?: string;
   /** 更新时间 */
   updateTime?: string;
+}
+
+/**
+ * 复制链路入参：副本名称与编码在创建那一刻确认（编码为副本终身身份，之后不可改）。
+ * 与后端 org.dromara.databus.domain.bo.ChainCopyBo 对齐。
+ */
+export interface ChainCopyBo {
+  /** 副本链路名称（必填，≤100 字） */
+  chainName: string;
+  /** 副本链路编码（必填，字母/数字/中划线/下划线，全局唯一） */
+  chainCode: string;
+}
+
+/**
+ * 复制建议值（复制弹窗预填，可改写），与后端 CopySuggestionVo 对齐。
+ */
+export interface CopySuggestionVo {
+  /** 建议名称：源名称 + 「副本」 */
+  chainName: string;
+  /** 建议编码：源编码 _2/_3 递增查重的首个未占用值 */
+  chainCode: string;
+}
+
+/**
+ * 「设为精选模板」入参，与后端 org.dromara.databus.domain.bo.TemplateMarkBo 对齐。
+ * 仅服务模板标记端点，与通用链路保存隔离。
+ */
+export interface TemplateMarkBo {
+  /** 模板说明（必填，≤500 字；适用场景/前置条件/能学到什么） */
+  templateDesc: string;
+  /** 模板排序（升序，值小在前；空值后端按 0 落库） */
+  templateSort?: number;
 }
 
 /**
@@ -87,6 +125,8 @@ export interface DatabusChainQuery extends PageQuery {
   chainName?: string;
   /** 状态（0草稿 1已发布 2已下线，精确匹配） */
   status?: string;
+  /** 是否精选模板（0我的链路 1精选模板，双 tab 必传其一；不传则不过滤） */
+  isTemplate?: string;
 }
 
 /**

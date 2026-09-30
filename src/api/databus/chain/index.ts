@@ -1,7 +1,15 @@
 import type { PageResult } from '@/api/types';
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
-import type { ChainStatsVo, DatabusChainBo, DatabusChainQuery, DatabusChainVo } from './types';
+import type {
+  ChainCopyBo,
+  ChainStatsVo,
+  CopySuggestionVo,
+  DatabusChainBo,
+  DatabusChainQuery,
+  DatabusChainVo,
+  TemplateMarkBo
+} from './types';
 
 /**
  * 查询链路分页列表
@@ -96,13 +104,48 @@ export function offlineChain(id: number | string) {
 }
 
 /**
- * 复制链路：以源链路的画布与配置生成一条全新草稿（状态=草稿、编码重新生成、名称加“副本”）；
- * 草稿不推 Rule-DB、不影响源链路。
+ * 复制建议值：名称「源名称+副本」、编码源编码 _2/_3 递增查重，供复制弹窗预填。
+ * GET /databus/chain/copy-suggestion/{id}（权限 databus:editor:add）
+ */
+export function getCopySuggestion(id: number | string): AxiosPromise<CopySuggestionVo> {
+  return request({
+    url: '/databus/chain/copy-suggestion/' + id,
+    method: 'get'
+  });
+}
+
+/**
+ * 复制链路：弹窗确认副本名称/编码后生成全新草稿（不推 Rule-DB、不影响源链路）；
+ * 源链路为模板时副本剥离模板身份。返回新链路主键，供「使用模板」复制后直跳编辑器。
  * POST /databus/chain/copy/{id}（权限 databus:editor:add）
  */
-export function copyChain(id: number | string) {
+export function copyChain(id: number | string, data: ChainCopyBo): AxiosPromise<number | string> {
   return request({
     url: '/databus/chain/copy/' + id,
-    method: 'post'
+    method: 'post',
+    data
+  });
+}
+
+/**
+ * 设为精选模板（运营动作）：写模板标记 + 说明 + 排序；已发布链路须先下线。
+ * POST /databus/chain/template/{id}（权限 databus:editor:template）
+ */
+export function markTemplate(id: number | string, data: TemplateMarkBo) {
+  return request({
+    url: '/databus/chain/template/' + id,
+    method: 'post',
+    data
+  });
+}
+
+/**
+ * 取消精选模板：清除标记/说明/排序，链路回到普通草稿，历史副本不受影响。
+ * DELETE /databus/chain/template/{id}（权限 databus:editor:template）
+ */
+export function unmarkTemplate(id: number | string) {
+  return request({
+    url: '/databus/chain/template/' + id,
+    method: 'delete'
   });
 }

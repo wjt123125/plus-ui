@@ -1,8 +1,8 @@
 <!--
   链路新增/编辑抽屉 — 右侧滑出，同项目极简留白范式(见 ConnectionForm)
   链路基础字段少(编码/名称/记录档位/备注),单列 label-top 堆叠。
-  chainCode 编辑态只读:它是 Rule-DB lf_chain.chain_id,发布后变更会造成
-  旧规则残留(后端 update 不迁移 lf_chain 主键),要换编码请新建链路。
+  chainCode 编辑态只读:它是链路终身身份(lf_chain.chain_id、执行通道/CHAIN 引用寻址依据),
+  任何状态创建后均不可改;要换编码走「复制指定新编码 → 发布副本 → 删除原链路」(删除自动清规则)。
 -->
 <template>
   <el-drawer
@@ -35,6 +35,9 @@
           placeholder="全局唯一，建议小写字母/数字/中划线，如 order-sync"
           :disabled="!!form.id"
         />
+        <div v-if="form.id" class="chain-form__code-hint">
+          编码是链路的终身身份，创建后不可修改；如需更换，请复制本链路并指定新编码，发布副本后删除原链路。
+        </div>
       </el-form-item>
       <el-form-item label="链路名称" prop="chainName">
         <el-input v-model="form.chainName" maxlength="100" placeholder="请输入链路名称" />
@@ -55,20 +58,50 @@
       <el-form-item label="备注" prop="remark">
         <el-input v-model="form.remark" type="textarea" maxlength="500" :rows="3" placeholder="选填" />
       </el-form-item>
+
+      <!-- 精选模板运营区（仅编辑态；模板标记权限独立：能改链路不等于能把链路推给全员当样板） -->
+      <div
+        v-if="form.id"
+        v-hasPermi="['databus:editor:template']"
+        class="chain-form__template"
+      >
+        <div class="template-head">
+          <span class="template-title">精选模板</span>
+          <el-tag v-if="templateMeta.isTemplate" type="warning" size="small" disable-transitions>
+            当前为精选模板
+          </el-tag>
+        </div>
+        <p v-if="templateMeta.isTemplate" class="template-desc-preview">{{ templateMeta.templateDesc }}</p>
+        <div v-if="templateMeta.isTemplate" class="template-actions">
+          <el-button size="small" @click="openTemplateDialog">保存模板设置</el-button>
+          <el-button size="small" type="danger" plain @click="handleUnmark">取消模板</el-button>
+        </div>
+        <template v-else>
+          <el-button size="small" :disabled="templateMeta.status === STATUS_PUBLISHED" @click="openTemplateDialog">
+            设为精选模板
+          </el-button>
+          <p v-if="templateMeta.status === STATUS_PUBLISHED" class="template-tip">
+            已发布链路需先下线后再设为模板；模板恒为草稿，不进执行入口。
+          </p>
+        </template>
+      </div>
     </el-form>
 
     <div class="chain-form__footer">
       <el-button @click="visible = false">取消</el-button>
       <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
     </div>
+
+    <TemplateMarkDialog ref="templateDialogRef" @success="handleTemplateChanged" />
   </el-drawer>
 </template>
 
 <script setup lang="ts">
-import type { DatabusChainBo } from '@/api/databus/chain/types';
+import type { DatabusChainBo, DatabusChainVo } from '@/api/databus/chain/types';
 import { Close } from '@element-plus/icons-vue';
-import { addChain, getChain, updateChain } from '@/api/databus/chain';
+import { addChain, getChain, unmarkTemplate, updateChain } from '@/api/databus/chain';
 import modal from '@/plugins/modal';
+import TemplateMarkDialog from './TemplateMarkDialog.vue';
 
 /**
  * 链路新增/编辑弹窗。
@@ -102,6 +135,59 @@ const buildInitFormData = (): DatabusChainBo => ({
 
 const form = ref<DatabusChainBo>(buildInitFormData());
 
+/** 模板运营区所需状态（通用保存表单不含这些字段，单独从详情同步） */
+const STATUS_PUBLISHED = '1';
+
+interface TemplateMetaState {
+  isTemplate: boolean;
+  status?: string;
+  templateDesc?: string;
+  templateSort?: number;
+}
+
+const buildInitTemplateMeta = (): TemplateMetaState => ({ isTemplate: false });
+const templateMeta = ref<TemplateMetaState>(buildInitTemplateMeta());
+const templateDialogRef = ref<InstanceType<typeof TemplateMarkDialog>>();
+
+const syncTemplateMeta = (data: DatabusChainVo) => {
+  templateMeta.value = {
+    isTemplate: data.isTemplate === '1',
+    status: data.status,
+    templateDesc: data.templateDesc ?? undefined,
+    templateSort: data.templateSort
+  };
+};
+
+const openTemplateDialog = () => {
+  if (!form.value.id) return;
+  templateDialogRef.value?.open({
+    id: form.value.id,
+    isTemplate: templateMeta.value.isTemplate,
+    templateDesc: templateMeta.value.templateDesc,
+    templateSort: templateMeta.value.templateSort
+  });
+};
+
+const handleUnmark = async () => {
+  if (!form.value.id) return;
+  await modal.confirm('取消后该链路回到普通草稿，历史副本不受影响。确认取消精选模板？');
+  await unmarkTemplate(form.value.id);
+  modal.msgSuccess('已取消精选模板');
+  await handleTemplateChanged();
+};
+
+/** 模板设置变更：通知父级刷新列表（卡片可能在两个 tab 间迁移），并重拉详情同步本抽屉 */
+const handleTemplateChanged = async () => {
+  emit('success');
+  if (!form.value.id) return;
+  try {
+    const { data } = await getChain(form.value.id);
+    syncTemplateMeta(data);
+  } catch {
+    // 列表已刷新，抽屉内同步失败不额外打扰
+  }
+};
+
 const rules = {
   chainCode: [
     { required: true, message: '链路编码不能为空', trigger: 'blur' },
@@ -122,6 +208,7 @@ const rules = {
 /** 新增:openDialog();编辑:openDialog(id)(按主键拉详情回显) */
 async function openDialog(id?: number | string) {
   form.value = buildInitFormData();
+  templateMeta.value = buildInitTemplateMeta();
   const isEdit = id !== undefined && id !== null && id !== '';
   visible.value = true;
   if (!isEdit) {
@@ -131,6 +218,7 @@ async function openDialog(id?: number | string) {
   try {
     const { data } = await getChain(id);
     form.value = { ...buildInitFormData(), ...data };
+    syncTemplateMeta(data);
   } catch {
     visible.value = false;
   } finally {
@@ -209,6 +297,13 @@ defineExpose({ openDialog });
   width: 100%;
 }
 
+.chain-form__code-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+}
+
 .chain-form__option-label {
   font-weight: 500;
 }
@@ -217,6 +312,51 @@ defineExpose({ openDialog });
   margin-left: 12px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+/* 精选模板运营区 */
+.chain-form__template {
+  margin: 8px 24px 0;
+  padding: 14px 16px;
+  border: 1px dashed var(--el-color-warning-light-5, #f3d19e);
+  border-radius: 10px;
+  background: var(--el-color-warning-light-9, #fdf6ec);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.template-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.template-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.template-desc-preview {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--el-text-color-regular);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.template-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.template-tip {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-color-warning);
 }
 
 .chain-form__footer {

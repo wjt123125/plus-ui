@@ -28,7 +28,11 @@
         </div>
       </div>
       <div class="card-status-wrap">
+        <span v-if="isTemplate" class="featured-badge">
+          <el-icon><Star /></el-icon>精选
+        </span>
         <span
+          v-else
           class="status-dot"
           :class="statusDotClass"
           :title="statusLabel"
@@ -36,8 +40,21 @@
       </div>
     </div>
 
-    <!-- 元信息：logLevel 胶囊 + 迷你拓扑预览 + 时间 -->
-    <div class="card-meta">
+    <!-- 模板卡元信息：说明文案（两行截断）+ 迷你拓扑；普通卡：logLevel 胶囊 + 拓扑 + 时间 -->
+    <div v-if="isTemplate" class="card-meta card-meta--template">
+      <div class="tpl-desc">{{ row.templateDesc || '暂无模板说明' }}</div>
+      <div class="topology">
+        <template v-if="previewLeaves.length > 0">
+          <template v-for="(leaf, idx) in previewLeaves" :key="idx">
+            <span class="topo-dot" :class="dotClass(leaf)" />
+            <span v-if="idx < previewLeaves.length - 1" class="topo-line" />
+          </template>
+          <span v-if="extraCount > 0" class="topo-more">+{{ extraCount }}</span>
+        </template>
+        <span v-else class="topo-empty">未编排</span>
+      </div>
+    </div>
+    <div v-else class="card-meta">
       <span class="mt-badge">{{ logLevelLabel }}</span>
       <div class="topology">
         <template v-if="previewLeaves.length > 0">
@@ -52,71 +69,110 @@
       <span class="card-time">{{ formatTime }}</span>
     </div>
 
-    <!-- 底部操作（link 按钮，全程可见） -->
+    <!-- 底部操作（link 按钮，全程可见）；模板卡主行动为「使用模板」 -->
     <div class="card-actions" @click.stop>
-      <el-button
-        v-if="row.status === STATUS_PUBLISHED"
-        v-hasPermi="['databus:execution:execute']"
-        link
-        type="primary"
-        size="small"
-        @click="$emit('execute', row)"
-      >
-        <el-icon><VideoPlay /></el-icon>执行
-      </el-button>
-      <el-button
-        v-if="row.status !== STATUS_PUBLISHED"
-        v-hasPermi="['databus:editor:publish']"
-        link
-        type="success"
-        size="small"
-        @click="$emit('publish', row)"
-      >
-        <el-icon><Promotion /></el-icon>发布
-      </el-button>
-      <el-button
-        v-else
-        v-hasPermi="['databus:editor:offline']"
-        link
-        type="warning"
-        size="small"
-        @click="$emit('offline', row)"
-      >
-        <el-icon><TurnOff /></el-icon>下线
-      </el-button>
-      <el-button
-        v-hasPermi="['databus:editor:edit']"
-        link
-        type="primary"
-        size="small"
-        @click="$emit('edit', row)"
-      >
-        <el-icon><Edit /></el-icon>编辑
-      </el-button>
-      <el-button
-        v-hasPermi="['databus:editor:add']"
-        link
-        type="info"
-        size="small"
-        @click="$emit('copy-chain', row)"
-      >
-        <el-icon><CopyDocument /></el-icon>复制
-      </el-button>
-      <el-button
-        v-hasPermi="['databus:editor:remove']"
-        link
-        type="danger"
-        size="small"
-        @click="$emit('delete', row)"
-      >
-        <el-icon><Delete /></el-icon>删除
-      </el-button>
+      <template v-if="isTemplate">
+        <el-button
+          v-hasPermi="['databus:editor:add']"
+          type="primary"
+          size="small"
+          @click="$emit('use-template', row)"
+        >
+          <el-icon><MagicStick /></el-icon>使用模板
+        </el-button>
+        <el-button
+          v-hasPermi="['databus:editor:edit']"
+          link
+          type="primary"
+          size="small"
+          @click="$emit('arrange', row)"
+        >
+          <el-icon><Edit /></el-icon>编排
+        </el-button>
+        <el-button
+          v-hasPermi="['databus:editor:edit']"
+          link
+          type="primary"
+          size="small"
+          @click="$emit('edit', row)"
+        >
+          <el-icon><EditPen /></el-icon>编辑
+        </el-button>
+        <el-button
+          v-hasPermi="['databus:editor:remove']"
+          link
+          type="danger"
+          size="small"
+          @click="$emit('delete', row)"
+        >
+          <el-icon><Delete /></el-icon>删除
+        </el-button>
+      </template>
+      <template v-else>
+        <el-button
+          v-if="row.status === STATUS_PUBLISHED"
+          v-hasPermi="['databus:execution:execute']"
+          link
+          type="primary"
+          size="small"
+          @click="$emit('execute', row)"
+        >
+          <el-icon><VideoPlay /></el-icon>执行
+        </el-button>
+        <el-button
+          v-if="row.status !== STATUS_PUBLISHED"
+          v-hasPermi="['databus:editor:publish']"
+          link
+          type="success"
+          size="small"
+          @click="$emit('publish', row)"
+        >
+          <el-icon><Promotion /></el-icon>发布
+        </el-button>
+        <el-button
+          v-else
+          v-hasPermi="['databus:editor:offline']"
+          link
+          type="warning"
+          size="small"
+          @click="$emit('offline', row)"
+        >
+          <el-icon><TurnOff /></el-icon>下线
+        </el-button>
+        <el-button
+          v-hasPermi="['databus:editor:edit']"
+          link
+          type="primary"
+          size="small"
+          @click="$emit('edit', row)"
+        >
+          <el-icon><Edit /></el-icon>编辑
+        </el-button>
+        <el-button
+          v-hasPermi="['databus:editor:add']"
+          link
+          type="info"
+          size="small"
+          @click="$emit('copy-chain', row)"
+        >
+          <el-icon><CopyDocument /></el-icon>复制
+        </el-button>
+        <el-button
+          v-hasPermi="['databus:editor:remove']"
+          link
+          type="danger"
+          size="small"
+          @click="$emit('delete', row)"
+        >
+          <el-icon><Delete /></el-icon>删除
+        </el-button>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { Coin, Connection, CopyDocument, DataLine, Delete, Document, Edit, Folder, MagicStick, Promotion, Refresh, Switch, TurnOff, Upload, VideoPlay } from '@element-plus/icons-vue';
+import { Coin, Connection, CopyDocument, DataLine, Delete, Document, Edit, EditPen, Folder, MagicStick, Promotion, Refresh, Star, Switch, TurnOff, Upload, VideoPlay } from '@element-plus/icons-vue';
 import type { Component } from 'vue';
 import type { CmpProperty } from '@/api/databus/el/types';
 import type { DatabusChainVo } from '@/api/databus/chain/types';
@@ -137,9 +193,16 @@ const LOG_LEVEL_LABELS: Record<string, string> = {
   FULL: '完整记录'
 };
 
-const props = defineProps<{
-  row: DatabusChainVo;
-}>();
+const props = withDefaults(
+  defineProps<{
+    row: DatabusChainVo;
+    /** chain=我的链路卡（状态/发布/复制）；template=精选模板卡（说明/使用模板） */
+    variant?: 'chain' | 'template';
+  }>(),
+  {
+    variant: 'chain'
+  }
+);
 
 const emit = defineEmits<{
   (e: 'arrange', row: DatabusChainVo): void;
@@ -150,9 +213,13 @@ const emit = defineEmits<{
   (e: 'offline', row: DatabusChainVo): void;
   (e: 'delete', row: DatabusChainVo): void;
   (e: 'copy-code', row: DatabusChainVo): void;
+  (e: 'use-template', row: DatabusChainVo): void;
 }>();
 
 const { row } = toRefs(props);
+
+/** 模板卡形态由父级 tab 决定（双 tab 查询已按 is_template 隔离数据） */
+const isTemplate = computed(() => props.variant === 'template');
 
 const collectLeaves = (node: CmpProperty | null | undefined, out: CmpProperty[]) => {
   if (!node) return;
@@ -269,8 +336,12 @@ const formatTime = computed(() => {
   return t ? t.replace('T', ' ').slice(0, 16) : '未保存过';
 });
 
-/** 点击卡片主体 = 编排（项目内"预览"映射）；actions 区 @click.stop 阻断冒泡 */
+/** 点击卡片主体：普通卡=编排，模板卡=使用模板（复制副本）；actions 区 @click.stop 阻断冒泡 */
 const handleCardClick = () => {
+  if (isTemplate.value) {
+    emit('use-template', row.value);
+    return;
+  }
   emit('arrange', row.value);
 };
 </script>
@@ -432,6 +503,42 @@ const handleCardClick = () => {
   flex-wrap: wrap;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+/* 模板卡：说明 + 拓扑上下两行 */
+.card-meta--template {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.tpl-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--el-text-color-regular, #4b5563);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 精选角标（替代状态圆点） */
+.featured-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-color-warning, #f59e0b);
+  background: rgba(245, 158, 11, 0.12);
+  flex-shrink: 0;
+
+  .el-icon {
+    font-size: 13px;
+  }
 }
 
 .mt-badge {
