@@ -5,6 +5,7 @@ import type {
   DatabusExecutionQuery,
   DatabusExecutionResult,
   DatabusExecutionVo,
+  ExecutionCleanupResult,
   ExecutionDetailVo,
   ManualExecuteBo
 } from './types';
@@ -55,5 +56,21 @@ export function rerunExecution(id: number | string): AxiosPromise<DatabusExecuti
   return request({
     url: '/databus/execution/rerun/' + id,
     method: 'post'
+  });
+}
+
+/**
+ * 手动触发保留期清理（定时任务每天凌晨按配置自动执行，此入口供即时清理）
+ * POST /databus/execution/cleanup（权限 databus:execution:remove）
+ *
+ * @param retentionDays 保留天数覆盖；不传由后端取配置（默认 30 天）
+ */
+export function cleanupExecution(
+  retentionDays?: number
+): AxiosPromise<ExecutionCleanupResult> {
+  return request({
+    url: '/databus/execution/cleanup',
+    method: 'post',
+    params: retentionDays != null ? { retentionDays } : undefined
   });
 }

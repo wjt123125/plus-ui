@@ -129,3 +129,17 @@ export interface DatabusExecutionResult {
     endTime?: string;
   }>;
 }
+
+/**
+ * 保留期清理结果，与后端 ExecutionCleanupVo 对齐。
+ */
+export interface ExecutionCleanupResult {
+  /** 本次实际生效的保留天数（手动覆盖优先，否则取后端配置） */
+  retentionDays: number;
+  /** 删除的总账条数（databus_execution） */
+  executionDeleted: number;
+  /** 删除的节点明细行数（databus_execution_node） */
+  nodeDeleted: number;
+  /** 是否因达到单轮上限被截断（true＝仍有过期记录，下轮继续） */
+  truncated: boolean;
+}

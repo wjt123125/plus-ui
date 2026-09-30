@@ -13,14 +13,25 @@
           <h2 class="page-title">执行记录</h2>
           <p class="page-subtitle">链路正式执行的审计台账，只增不改；OFF 档不留记录，BASIC 记总账，FULL 另记每步明细。</p>
         </div>
-        <button
-          v-hasPermi="['databus:execution:execute']"
-          class="add-btn"
-          @click="handleManualExecute"
-        >
-          <el-icon><VideoPlay /></el-icon>
-          <span>手动执行</span>
-        </button>
+        <div class="header-actions">
+          <button
+            v-hasPermi="['databus:execution:remove']"
+            class="cleanup-btn"
+            :disabled="cleaning"
+            @click="handleCleanup"
+          >
+            <el-icon><Delete /></el-icon>
+            <span>{{ cleaning ? '清理中…' : '清理过期记录' }}</span>
+          </button>
+          <button
+            v-hasPermi="['databus:execution:execute']"
+            class="add-btn"
+            @click="handleManualExecute"
+          >
+            <el-icon><VideoPlay /></el-icon>
+            <span>手动执行</span>
+          </button>
+        </div>
       </div>
 
       <!-- 筛选行 -->
@@ -150,15 +161,16 @@
 </template>
 
 <script setup name="DatabusExecution" lang="ts">
-import { VideoPlay } from '@element-plus/icons-vue';
+import { Delete, VideoPlay } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { listChain } from '@/api/databus/chain';
 import type { DatabusChainVo } from '@/api/databus/chain/types';
-import { listExecution, rerunExecution } from '@/api/databus/execution';
+import { cleanupExecution, listExecution, rerunExecution } from '@/api/databus/execution';
 import type {
   DatabusExecutionQuery,
   DatabusExecutionResult,
-  DatabusExecutionVo
+  DatabusExecutionVo,
+  ExecutionCleanupResult
 } from '@/api/databus/execution/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useRoute } from 'vue-router';
@@ -286,6 +298,29 @@ const handleManualExecute = () => {
   executeDialogVisible.value = true;
 };
 
+/** 保留期清理：二次确认后调手动端点（与凌晨定时任务同入口），报删除行数并刷新 */
+const cleaning = ref(false);
+
+const handleCleanup = async () => {
+  await ElMessageBox.confirm(
+    '将物理清理保留期（默认 30 天，以后端配置为准）之前的执行记录及节点明细，删除后不可恢复。是否继续？',
+    '清理过期记录',
+    { type: 'warning', confirmButtonText: '确定清理', cancelButtonText: '取消' }
+  );
+  cleaning.value = true;
+  try {
+    const res = await cleanupExecution();
+    const data: ExecutionCleanupResult = res.data;
+    ElMessage.success(
+      `清理完成：删除执行记录 ${data.executionDeleted} 条、节点明细 ${data.nodeDeleted} 行`
+      + (data.truncated ? '（达到单轮上限，剩余下次继续）' : '')
+    );
+    await getList();
+  } finally {
+    cleaning.value = false;
+  }
+};
+
 /** 手动执行完成：提示成败 + 刷新列表；有 recordId 直接打开新记录详情 */
 const handleExecuted = async (result: DatabusExecutionResult) => {
   if (result.success) {
@@ -410,6 +445,37 @@ onMounted(() => {
   margin: 0;
   font-size: 13px;
   color: var(--el-text-color-secondary);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cleanup-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border-radius: 9999px;
+  border: 1px solid var(--el-color-danger-light-5, #fde2e2);
+  background: var(--el-bg-color, #fff);
+  color: var(--el-color-danger);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.25s ease;
+
+  &:hover:not(:disabled) {
+    border-color: var(--el-color-danger);
+    background: var(--el-color-danger-light-9, #fef0f0);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
 }
 
 .add-btn {
