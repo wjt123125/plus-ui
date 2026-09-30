@@ -23,8 +23,9 @@ import { ElMessage } from 'element-plus';
  * - 接收当前表单值（无需落库），POST /databus/connection/test 直传后端实测
  * - 成功：后端 R.data 为网关自检说明文本，弹 success 提示
  * - 失败：request 拦截器已统一弹出 R.msg 错误提示，这里 catch 静默避免重复弹窗
- * - 前置校验网关实测必需项（connectorType/endpoint/accessKey），
- *   编辑场景 secret 已回显；必填项的完整校验仍由 ConnectionForm 表单 rules 负责
+ * - 前置校验网关实测必需项（connectorType/endpoint/accessKey）；
+ *   Secret 仅新增场景必填，编辑场景留空放行，由后端从库中取原密钥；
+ *   必填项的完整校验仍由 ConnectionForm 表单 rules 负责
  */
 const props = defineProps<{
   formData: SysDatabusConnectionBo;

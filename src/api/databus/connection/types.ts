@@ -17,7 +17,10 @@ export interface SysDatabusConnectionVo {
   endpoint?: string;
   /** OpenAPI access_key（CC 身份策略访问凭证） */
   accessKey?: string;
-  /** OpenAPI secret（CC 身份策略私钥，敏感字段；编辑留空不修改） */
+  /**
+   * OpenAPI secret（CC 身份策略私钥）。
+   * 安全口径：列表/详情接口不回填此字段，恒为空；编辑时留空表示沿用原密钥，填写新值才替换。
+   */
   apiSecret?: string;
   /** HTTP 超时（毫秒，后端兜底默认 30000） */
   timeout?: number;
