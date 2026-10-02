@@ -1,7 +1,12 @@
 import type { PageResult } from '@/api/types';
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
-import type { SysDatabusConnectionBo, SysDatabusConnectionQuery, SysDatabusConnectionVo } from './types';
+import type {
+  ConnectionOption,
+  SysDatabusConnectionBo,
+  SysDatabusConnectionQuery,
+  SysDatabusConnectionVo
+} from './types';
 
 /**
  * 连接器类型选项（后端 ConnectorRegistry 已注册类型的前端镜像）。
@@ -20,6 +25,17 @@ export function listConnection(
     url: '/databus/connection/list',
     method: 'get',
     params: query
+  });
+}
+
+/**
+ * 查询启用连接的轻量选项（编辑器 ConnectionSelect 控件用，不分页、不回密钥）
+ * GET /databus/connection/options（权限 databus:editor:list）
+ */
+export function listConnectionOptions(): AxiosPromise<ConnectionOption[]> {
+  return request({
+    url: '/databus/connection/options',
+    method: 'get'
   });
 }
 

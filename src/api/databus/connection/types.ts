@@ -43,6 +43,18 @@ export interface SysDatabusConnectionVo {
 export type SysDatabusConnectionBo = Omit<SysDatabusConnectionVo, 'createTime' | 'updateTime'>;
 
 /**
+ * 连接轻量选项（GET /databus/connection/options），与后端 ConnectionOptionVo 对齐：
+ * 只含 id/connectionId/connectionName/connectorType，不含 endpoint/密钥。
+ */
+export interface ConnectionOption {
+  id: number;
+  /** 连接业务键（组件 Cfg.connectionId 存此值，如 bpm-default） */
+  connectionId: string;
+  connectionName: string;
+  connectorType: string;
+}
+
+/**
  * 连接列表分页查询参数，与后端 list 端点支持的过滤字段对齐。
  */
 export interface SysDatabusConnectionQuery extends PageQuery {

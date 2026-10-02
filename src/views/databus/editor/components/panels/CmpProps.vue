@@ -135,8 +135,9 @@
         </el-form-item>
       </el-form>
 
-      <!-- forLoop / iteratorLoop / switchRoute：结构化小表单 + 数据空间 -->
-      <el-form v-else-if="structuredCode" label-position="top" size="small" class="cmp-props__form">
+      <!-- switchRoute 保持手写小表单（cases.target 吃画布 case 名，schema 表单无法表达）；
+           forLoop/iteratorLoop/condition 已并入 schema 驱动表单，走下方「其他业务组件」分支 -->
+      <el-form v-else-if="isSwitchRouteLeaf" label-position="top" size="small" class="cmp-props__form">
         <el-form-item v-if="isConditionLeaf" :label="`${opNode?.type ?? ''} 条件组件`.trim()">
           <el-tag size="small" type="warning">{{ leafDef?.label ?? elNode?.componentCode }}</el-tag>
           <el-button size="small" text type="primary" @click="openReplaceCondition">更换条件组件</el-button>
@@ -144,7 +145,7 @@
         <el-form-item label="数据空间" required :error="spaceError || undefined">
           <el-input
             v-model="dataSpace"
-            placeholder="如 forLoop1（字母开头，字母数字下划线）"
+            placeholder="如 switchRoute1（字母开头，字母数字下划线）"
             clearable
             @change="onDataSpaceChange"
           />
@@ -153,103 +154,61 @@
           </div>
         </el-form-item>
 
-        <!-- forLoop：循环次数 + 自定义下标名 -->
-        <template v-if="structuredCode === 'forLoop'">
-          <el-form-item label="循环次数 count">
-            <el-input
-              v-model="loopForm.count"
-              placeholder="整数（如 3）或次数表达式（如 {{ $.request.total }}）"
-              @change="commitLoopForm"
-            />
-            <div class="cmp-props__hint">循环从 0 计数；0 表示循环体零次执行</div>
-          </el-form-item>
-          <el-form-item label="下标变量名 indexVar">
-            <el-input
-              v-model="loopForm.indexVar"
-              placeholder="留空默认 $i；嵌套循环第二层默认 $j、第三层 $k"
-              @change="commitLoopForm"
-            />
-            <div class="cmp-props__hint">字母开头，仅含字母数字下划线；体内用 ${'$'}{{ loopForm.indexVar.trim() || 'i' }} 引用当前轮下标</div>
-          </el-form-item>
-        </template>
-
-        <!-- iteratorLoop：数据源路径 + 自定义下标名 -->
-        <template v-else-if="structuredCode === 'iteratorLoop'">
-          <el-form-item label="数据源 source">
-            <el-input
-              v-model="loopForm.source"
-              placeholder="数组/集合表达式，如 {{ $.request.items }}"
-              @change="commitLoopForm"
-            />
-            <div v-pre class="cmp-props__hint">值为 null 按空集合处理（0 轮）；表达式中可用外层下标（如 {{ $.groups[$i].users }}）</div>
-          </el-form-item>
-          <el-form-item label="下标变量名 indexVar">
-            <el-input
-              v-model="loopForm.indexVar"
-              placeholder="留空默认 $i；嵌套循环第二层默认 $j、第三层 $k"
-              @change="commitLoopForm"
-            />
-            <div class="cmp-props__hint">字母开头，仅含字母数字下划线；体内用 ${'$'}{{ loopForm.indexVar.trim() || 'i' }} 引用当前轮下标</div>
-          </el-form-item>
-        </template>
-
         <!-- switchRoute：判断值路径 + 值→分支映射 -->
-        <template v-else-if="structuredCode === 'switchRoute'">
-          <el-form-item v-if="needsCasesEdit" label="分支 (case)">
-            <div class="cmp-props__cases">
-              <div v-for="(name, i) in caseNames" :key="i" class="cmp-props__case-row">
-                <el-input
-                  :model-value="name"
-                  size="small"
-                  placeholder="case 名（路由按此名命中）"
-                  @change="(v: string) => onCaseNameChange(i, v)"
-                />
-                <el-button :icon="Delete" size="small" text :disabled="caseNames.length <= 1" @click="removeCase(i)" />
-              </div>
-              <el-button size="small" :icon="Plus" @click="addCase">添加分支</el-button>
+        <el-form-item v-if="needsCasesEdit" label="分支 (case)">
+          <div class="cmp-props__cases">
+            <div v-for="(name, i) in caseNames" :key="i" class="cmp-props__case-row">
+              <el-input
+                :model-value="name"
+                size="small"
+                placeholder="case 名（路由按此名命中）"
+                @change="(v: string) => onCaseNameChange(i, v)"
+              />
+              <el-button :icon="Delete" size="small" text :disabled="caseNames.length <= 1" @click="removeCase(i)" />
             </div>
-          </el-form-item>
-          <el-form-item label="判断值路径 source">
-            <el-input
-              v-model="loopForm.source"
-              placeholder="如 {{ $.request.type }}"
-              @change="commitLoopForm"
-            />
-            <div class="cmp-props__hint">读出实际值后按下方顺序逐条匹配，命中第一条即跳转；全不命中执行报错（暂不支持 DEFAULT）</div>
-          </el-form-item>
-          <el-form-item label="值 → 分支 cases">
-            <div class="cmp-props__cases">
-              <div v-for="(row, i) in loopForm.cases" :key="i" class="cmp-props__case-mapping-row">
-                <el-input
-                  v-model="row.value"
-                  size="small"
-                  placeholder="值：常量或 {{ $.路径 }}"
-                  @change="commitLoopForm"
-                />
-                <el-select
-                  v-model="row.target"
-                  size="small"
-                  filterable
-                  allow-create
-                  default-first-option
-                  placeholder="目标 case 名"
-                  @change="commitLoopForm"
-                >
-                  <el-option v-for="name in caseNames" :key="name" :label="name" :value="name" />
-                </el-select>
-                <el-button
-                  :icon="Delete"
-                  size="small"
-                  text
-                  :disabled="loopForm.cases.length <= 1"
-                  @click="removeRouteCase(i)"
-                />
-              </div>
-              <el-button size="small" :icon="Plus" @click="addRouteCase">添加映射</el-button>
+            <el-button size="small" :icon="Plus" @click="addCase">添加分支</el-button>
+          </div>
+        </el-form-item>
+        <el-form-item label="判断值路径 source">
+          <el-input
+            v-model="switchForm.source"
+            placeholder="如 {{ $.request.type }}"
+            @change="commitSwitchForm"
+          />
+          <div class="cmp-props__hint">读出实际值后按下方顺序逐条匹配，命中第一条即跳转；全不命中执行报错（暂不支持 DEFAULT）</div>
+        </el-form-item>
+        <el-form-item label="值 → 分支 cases">
+          <div class="cmp-props__cases">
+            <div v-for="(row, i) in switchForm.cases" :key="i" class="cmp-props__case-mapping-row">
+              <el-input
+                v-model="row.value"
+                size="small"
+                placeholder="值：常量或 {{ $.路径 }}"
+                @change="commitSwitchForm"
+              />
+              <el-select
+                v-model="row.target"
+                size="small"
+                filterable
+                allow-create
+                default-first-option
+                placeholder="目标 case 名"
+                @change="commitSwitchForm"
+              >
+                <el-option v-for="name in caseNames" :key="name" :label="name" :value="name" />
+              </el-select>
+              <el-button
+                :icon="Delete"
+                size="small"
+                text
+                :disabled="switchForm.cases.length <= 1"
+                @click="removeRouteCase(i)"
+              />
             </div>
-            <div class="cmp-props__hint">数字按数值匹配（200 与 "200" 相等）；target 必须与上方某个 case 名一致</div>
-          </el-form-item>
-        </template>
+            <el-button size="small" :icon="Plus" @click="addRouteCase">添加映射</el-button>
+          </div>
+          <div class="cmp-props__hint">数字按数值匹配（200 与 "200" 相等）；target 必须与上方某个 case 名一致</div>
+        </el-form-item>
       </el-form>
 
       <!-- 其他业务组件 / 已挂载的条件件：数据空间 + 配置 JSON -->
@@ -269,13 +228,29 @@
             组件产出挂在 $.{{ dataSpace || '数据空间名' }} 下；画布内唯一，改名会联动更新引用
           </div>
         </el-form-item>
-        <el-form-item label="组件配置 data（JSON）">
+        <!-- schema 物料：表单模式 / JSON 高级模式双栏；无 schema 的物料维持单一 JSON 编辑器 -->
+        <el-form-item v-if="schemaFormAvailable" label="配置方式">
+          <el-radio-group v-model="editMode" size="small" @change="onModeChange">
+            <el-radio value="form">表单模式</el-radio>
+            <el-radio value="json">JSON 高级模式</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <SchemaForm
+          v-if="schemaFormAvailable && editMode === 'form'"
+          :fields="schemaFields"
+          :model-value="formModel"
+          @change="onFormChange"
+        />
+        <el-form-item v-if="!schemaFormAvailable || editMode === 'json'" label="组件配置 data（JSON）">
           <JsonCodeEditor
             v-model="dataStr"
             :placeholder="dataHint"
             height="280px"
             @blur="onDataChange"
           />
+          <div v-if="schemaFormAvailable && jsonInvalid" class="cmp-props__hint cmp-props__hint--danger">
+            JSON 不合法，切回表单模式将显示上次有效内容（不会用坏 JSON 覆盖表单）
+          </div>
         </el-form-item>
       </el-form>
 
@@ -383,6 +358,7 @@ import {
   ElTag
 } from 'element-plus';
 import { listScriptEngines } from '@/api/databus/script';
+import type { PropSchema } from '@/api/databus/component/types';
 import { CMP_DEFS, getDef, type CmpDef } from '../../cmp-defs';
 import {
   useElTreeModelInject,
@@ -390,7 +366,9 @@ import {
   type ElNode
 } from '../../composables/useElTreeModel';
 import { useCanvasController } from '../../composables/useCanvasController';
+import { useComponentOptions } from '../../composables/useComponentOptions';
 import JsonCodeEditor from '../common/JsonCodeEditor.vue';
+import SchemaForm from '../schema-form/SchemaForm.vue';
 
 const props = defineProps<{
   node: Node<CmpNodeData> | null;
@@ -534,25 +512,17 @@ const caseNames = computed<string[]>(() => {
   return Array.from({ length: count }, (_, i) => sw?.outletLabels?.[i] ?? `case${i + 1}`);
 });
 
-/** forLoop/iteratorLoop/switchRoute 走结构化小表单（其余叶子走 JSON 编辑器） */
-const STRUCTURED_CODES = ['forLoop', 'iteratorLoop', 'switchRoute'] as const;
-const structuredCode = computed<(typeof STRUCTURED_CODES)[number] | ''>(() => {
-  const code = elNode.value?.componentCode ?? '';
-  return (STRUCTURED_CODES as readonly string[]).includes(code)
-    ? (code as (typeof STRUCTURED_CODES)[number])
-    : '';
-});
+/** switchRoute 保持手写小表单（cases.target 吃画布 case 名）；其余叶子走 schema 表单/JSON */
+const isSwitchRouteLeaf = computed(() => elNode.value?.componentCode === 'switchRoute');
 
-/** 结构化表单本地状态（node 切换时从 data JSON 同步） */
-const loopForm = reactive({
-  count: '',
-  indexVar: '',
+/** switchRoute 手写表单本地状态（node 切换时从 data JSON 同步） */
+const switchForm = reactive({
   source: '',
   cases: [] as { value: string; target: string }[]
 });
 
-/** 从叶子 data JSON 同步结构化表单；非法 JSON 按空配置处理 */
-function syncLoopForm(data?: string) {
+/** 从叶子 data JSON 同步 switchRoute 表单；非法 JSON 按空配置处理 */
+function syncSwitchForm(data?: string) {
   let cfg: any = {};
   if (data) {
     try {
@@ -561,10 +531,8 @@ function syncLoopForm(data?: string) {
       cfg = {};
     }
   }
-  loopForm.count = cfg?.count == null ? '' : String(cfg.count);
-  loopForm.indexVar = typeof cfg?.indexVar === 'string' ? cfg.indexVar : '';
-  loopForm.source = typeof cfg?.source === 'string' ? cfg.source : '';
-  loopForm.cases = Array.isArray(cfg?.cases)
+  switchForm.source = typeof cfg?.source === 'string' ? cfg.source : '';
+  switchForm.cases = Array.isArray(cfg?.cases)
     ? cfg.cases.map((c: any) => ({
         value: c?.value == null ? '' : String(c.value),
         target: c?.target == null ? '' : String(c.target)
@@ -573,29 +541,17 @@ function syncLoopForm(data?: string) {
 }
 
 /** 表单值序列化回叶子 data（纯数字串转 number，与后端数字比较口径配套） */
-function commitLoopForm() {
-  if (!elNode.value || !structuredCode.value) return;
+function commitSwitchForm() {
+  if (!elNode.value || !isSwitchRouteLeaf.value) return;
   const cfg: Record<string, unknown> = {};
-  const indexVar = loopForm.indexVar.trim();
-  const source = loopForm.source.trim();
-  if (structuredCode.value === 'forLoop') {
-    const count = loopForm.count.trim();
-    if (count) {
-      cfg.count = /^-?\d+$/.test(count) ? Number(count) : count;
-    }
-    if (indexVar) cfg.indexVar = indexVar;
-  } else if (structuredCode.value === 'iteratorLoop') {
-    if (source) cfg.source = source;
-    if (indexVar) cfg.indexVar = indexVar;
-  } else {
-    if (source) cfg.source = source;
-    cfg.cases = loopForm.cases
-      .filter((row) => row.value.trim() !== '' || row.target.trim() !== '')
-      .map((row) => ({
-        value: coerceCaseValue(row.value.trim()),
-        target: row.target.trim()
-      }));
-  }
+  const source = switchForm.source.trim();
+  if (source) cfg.source = source;
+  cfg.cases = switchForm.cases
+    .filter((row) => row.value.trim() !== '' || row.target.trim() !== '')
+    .map((row) => ({
+      value: coerceCaseValue(row.value.trim()),
+      target: row.target.trim()
+    }));
   const json = JSON.stringify(cfg);
   treeModel.updateLeafData(elNode.value.id, { data: json });
   dataStr.value = json;
@@ -608,14 +564,14 @@ function coerceCaseValue(raw: string): string | number {
 }
 
 function addRouteCase() {
-  loopForm.cases.push({ value: '', target: '' });
-  commitLoopForm();
+  switchForm.cases.push({ value: '', target: '' });
+  commitSwitchForm();
 }
 
 function removeRouteCase(index: number) {
-  if (loopForm.cases.length <= 1) return;
-  loopForm.cases.splice(index, 1);
-  commitLoopForm();
+  if (switchForm.cases.length <= 1) return;
+  switchForm.cases.splice(index, 1);
+  commitSwitchForm();
 }
 
 // 本地输入框状态：node 切换时从 ElNode 树同步
@@ -625,12 +581,125 @@ const dataStr = ref('');
 const titleInput = ref('');
 const spaceError = ref('');
 
+// ── schema 驱动表单：后端 optionMap 返回 editor=form + schema.fields 即启用（switchRoute 手写表单除外） ──
+
+const { optionMap, ensureOptions } = useComponentOptions();
+
+const activeOption = computed(() => {
+  const code = elNode.value?.componentCode;
+  return code ? optionMap.value.get(code) : undefined;
+});
+
+const schemaFormAvailable = computed(
+  () =>
+    !isSwitchRouteLeaf.value &&
+    activeOption.value?.editor === 'form' &&
+    (activeOption.value?.schema?.fields?.length ?? 0) > 0
+);
+
+const schemaFields = computed<PropSchema[]>(() => activeOption.value?.schema?.fields ?? []);
+
+/** 表单模式配置对象；坏 JSON 节点不覆盖它（切回表单显示上次有效内容） */
+const formModel = ref<Record<string, unknown>>({});
+const editMode = ref<'form' | 'json'>('form');
+const jsonInvalid = ref(false);
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** 按 schema 预建 OBJECT 子对象（空对象等价子字段全缺省，Jackson 反序列化无差异）；
+ *  避免在渲染 computed 里写模型，也保证嵌套表单始终拿到可写对象 */
+function ensureNestedObjects(model: Record<string, unknown>, fields: PropSchema[]) {
+  for (const field of fields) {
+    if (field.widget === 'OBJECT' && field.fields?.length) {
+      if (!isPlainObject(model[field.name])) {
+        model[field.name] = {};
+      }
+      ensureNestedObjects(model[field.name] as Record<string, unknown>, field.fields);
+    }
+  }
+}
+
+/** 灌入新表单模型：先按 schema 预建 OBJECT 子对象 */
+function applyFormModel(obj: Record<string, unknown>) {
+  ensureNestedObjects(obj, schemaFields.value);
+  formModel.value = obj;
+  jsonInvalid.value = false;
+}
+
+/** 用叶子 data 同步表单模型：合法 JSON 对象进表单模式；坏/非对象进 JSON 模式且不覆盖表单模型 */
+function syncSchemaForm(data?: string) {
+  if (!schemaFormAvailable.value) return;
+  if (!data || !data.trim()) {
+    applyFormModel({});
+    editMode.value = 'form';
+    return;
+  }
+  try {
+    const obj = JSON.parse(data);
+    if (isPlainObject(obj)) {
+      applyFormModel(obj);
+      editMode.value = 'form';
+      return;
+    }
+  } catch {
+    // 坏 JSON：保留旧 formModel，落到 JSON 模式修
+  }
+  editMode.value = 'json';
+  jsonInvalid.value = true;
+}
+
+/** JSON 模式改动（blur）：解析成功才覆盖表单模型；失败保留并标记，不阻断写回 ElNode */
+function syncModelFromJsonText() {
+  const text = dataStr.value;
+  if (!text.trim()) {
+    applyFormModel({});
+    return;
+  }
+  try {
+    const obj = JSON.parse(text);
+    if (isPlainObject(obj)) {
+      applyFormModel(obj);
+      return;
+    }
+  } catch {
+    // 坏 JSON 不覆盖 formModel
+  }
+  jsonInvalid.value = true;
+}
+
+/** 表单改动：对象序列化为 JSON 串，写回 ElNode.data 单一通道 */
+function onFormChange() {
+  if (!elNode.value) return;
+  const json = JSON.stringify(formModel.value);
+  dataStr.value = json;
+  jsonInvalid.value = false;
+  treeModel.updateLeafData(elNode.value.id, { data: json });
+  emit('data-change');
+}
+
+function onModeChange(next: string | number | boolean) {
+  if (next === 'form' && jsonInvalid.value) {
+    ElMessage.warning('JSON 有语法错误，表单显示上次有效内容');
+  }
+}
+
+// 选项异步加载完成后若当前正停在 schema 物料节点，补一次同步
+watch(schemaFormAvailable, (available) => {
+  if (available) {
+    syncSchemaForm(elNode.value?.data);
+  }
+});
+
 // 脚本编辑器状态：language 下拉 + 脚本文本，与 dataStr 同源于 ElNode.data（JSON 字符串）
 const scriptLanguage = ref('');
 const scriptText = ref('');
 const scriptEngines = ref<string[]>([]);
 
 onMounted(async () => {
+  // schema 组件物料选项（带模块级缓存，失败内部静默可重试）
+  void ensureOptions();
   try {
     const res = await listScriptEngines();
     scriptEngines.value = (res.data ?? [])
@@ -651,12 +720,14 @@ watch(
     dataStr.value = n?.data ?? '';
     titleInput.value = n?.title ?? '';
     spaceError.value = '';
+    // schema 物料：同步表单模式模型（合法进表单，坏 JSON 进高级模式且保留旧表单）
+    syncSchemaForm(n?.data);
     // 从 dataStr 解析出 language/script 同步到脚本编辑器；非法 JSON 时给空 defaults
     const parsed = parseScriptCfg(n?.data);
     scriptLanguage.value = parsed.language;
     scriptText.value = parsed.script;
-    // 循环/路由三组件的结构化表单同步
-    syncLoopForm(n?.data);
+    // switchRoute 手写表单同步
+    syncSwitchForm(n?.data);
   },
   { immediate: true }
 );
@@ -725,6 +796,10 @@ function onDataSpaceChange() {
 function onDataChange() {
   if (!props.node || !elNode.value) return;
   treeModel.updateLeafData(elNode.value.id, { data: dataStr.value });
+  // schema 物料：JSON 模式是表单模型的高级入口，合法才回灌表单，坏 JSON 保留旧表单内容
+  if (schemaFormAvailable.value) {
+    syncModelFromJsonText();
+  }
   emit('data-change');
 }
 
@@ -888,6 +963,10 @@ function onCaseNameChange(index: number, raw: string) {
   font-size: 11px;
   color: var(--el-text-color-secondary);
   line-height: 1.4;
+}
+
+.cmp-props__hint--danger {
+  color: var(--el-color-danger);
 }
 
 .cmp-props__hint-box {
