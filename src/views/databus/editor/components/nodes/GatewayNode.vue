@@ -23,6 +23,15 @@
       :position="Position.Right"
       :style="handleStyle(out.handle)"
     />
+    <!-- 布尔语义角标：只认句柄 id（true=绿✓ / false=红✕），与用户自定义别名无关——
+         位置和角标才是语义锚点，连线文案可随便改，分支归属不会被误导 -->
+    <span
+      v-for="out in semanticOutlets"
+      :key="`chip-${out.handle}`"
+      class="cmp-gateway__chip"
+      :class="out.handle === 'true' ? 'is-true' : 'is-false'"
+      :style="chipStyle(out.handle)"
+    >{{ out.handle === 'true' ? '✓' : '✕' }}</span>
   </div>
 </template>
 
@@ -52,13 +61,26 @@ const symbol = computed(() => {
   return '';
 });
 
+/** 布尔出口（仅 IF 的 true/false；循环 do、SWITCH case、AND/OR 序号出口不命中） */
+const semanticOutlets = computed(() =>
+  (props.data.outlets ?? []).filter((o) => o.handle === 'true' || o.handle === 'false')
+);
+
 /** 多 handle 沿右边均匀分布：第 i 个 handle 的 top% */
-function handleStyle(handle: string): Record<string, string> {
+function handleTop(handle: string): number {
   const outlets = props.data.outlets ?? [];
   const idx = outlets.findIndex((o) => o.handle === handle);
   const n = outlets.length || 1;
-  const top = n === 1 ? 50 : (idx / (n - 1)) * 100;
-  return { top: `${top}%` };
+  return n === 1 ? 50 : (idx / (n - 1)) * 100;
+}
+
+function handleStyle(handle: string): Record<string, string> {
+  return { top: `${handleTop(handle)}%` };
+}
+
+/** 角标与对应 handle 同高，向右探出半个圆点，避免压住菱形本身 */
+function chipStyle(handle: string): Record<string, string> {
+  return { top: `${handleTop(handle)}%` };
 }
 </script>
 
@@ -120,5 +142,35 @@ function handleStyle(handle: string): Record<string, string> {
   font-size: 11px;
   color: var(--el-text-color-secondary);
   white-space: nowrap;
+}
+
+/* 布尔语义角标：圆心钉在右边框的出口点上，向右探出半个圆 */
+.cmp-gateway__chip {
+  position: absolute;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  pointer-events: none;
+  background-color: var(--el-color-info);
+  border: 1.5px solid var(--el-bg-color);
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 25%);
+  transform: translate(50%, -50%);
+}
+
+.cmp-gateway__chip.is-true {
+  background-color: var(--el-color-success);
+}
+
+.cmp-gateway__chip.is-false {
+  background-color: var(--el-color-danger);
 }
 </style>

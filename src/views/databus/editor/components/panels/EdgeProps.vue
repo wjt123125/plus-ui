@@ -9,7 +9,7 @@
       </div>
       <el-alert
         v-if="!editable"
-        title="该连线是串行边（THEN 链路），没有分支标签可编辑。只有分支边（真/假/case/并行 等）支持自定义标签。"
+        title="该连线是串行边（THEN 链路），没有分支标签可编辑。只有分支边（真/否则/case/并行 等）支持自定义标签。"
         type="info"
         :closable="false"
         show-icon

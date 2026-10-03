@@ -94,6 +94,8 @@ export interface ComponentOption {
   editor?: EditorKind | null;
   source: ComponentSource;
   sort?: number | null;
+  /** 配置 JSON 示例（JSON 高级模式占位提示，后端物料注解 dataExample 下发） */
+  dataExample?: string | null;
   schema?: ComponentSchemaBody | null;
 }
 

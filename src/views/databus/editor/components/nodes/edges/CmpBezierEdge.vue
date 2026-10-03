@@ -23,11 +23,26 @@
       @dblclick="onDblClick"
     />
     <EdgeLabelRenderer>
-      <span
-        v-if="label && !editing"
-        class="cmp-edge-label"
-        :style="{ transform: `translate(-50%, -50%) translate(${edgePath[1]}px, ${edgePath[2] - 16}px)` }"
-      >{{ label }}</span>
+      <!-- label span 必须 pointer-events:none（点击穿透到热区 path 触发双击改名/悬停），
+           原生 title 在 none 元素上不弹，故全文提示走受控 el-tooltip：由热区 hover 驱动、
+           仅在文本真截断（scrollWidth>clientWidth）时出现 -->
+      <el-tooltip
+        v-if="label && !editing && labelVisible"
+        :visible="hover && labelTruncated"
+        :content="String(label)"
+        placement="top"
+        :show-after="150"
+        teleported
+      >
+        <span
+          ref="labelRef"
+          class="cmp-edge-label"
+          :style="{
+            maxWidth: `${labelMaxWidth}px`,
+            transform: `translate(-50%, -50%) translate(${edgePath[1]}px, ${edgePath[2] - 16}px)`
+          }"
+        >{{ label }}</span>
+      </el-tooltip>
       <input
         v-if="editing"
         ref="inputRef"
@@ -60,8 +75,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@vue-flow/core';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { BaseEdge, EdgeLabelRenderer, getBezierPath, useVueFlow, type EdgeProps } from '@vue-flow/core';
 import { Plus } from '@element-plus/icons-vue';
 import { useCanvasController } from '../../../composables/useCanvasController';
 
@@ -70,7 +85,37 @@ defineOptions({ name: 'CmpBezierEdge' });
 const props = defineProps<EdgeProps>();
 
 const ctrl = useCanvasController();
+const { viewport } = useVueFlow();
 const hover = ref(false);
+
+// 标签随画布同坐标系缩放，缩放 < 0.55 或边过短时藏起（n8n 同款策略），
+// hover 本边临时浮现；双击编辑态强制显示。线长以起止锚点直线距离近似（flow 坐标）。
+const LABEL_ZOOM_MIN = 0.55;
+const LABEL_EDGE_MIN = 56; // 边短于此值标签会贴住两端节点，不显示
+const edgeLen = computed(() =>
+  Math.hypot(props.targetX - props.sourceX, props.targetY - props.sourceY)
+);
+const labelVisible = computed(
+  () =>
+    (viewport.value.zoom >= LABEL_ZOOM_MIN || hover.value) && edgeLen.value >= LABEL_EDGE_MIN
+);
+// 标签宽度随线长收敛：最长 220，最短 40，两端各留 8px 呼吸
+const labelMaxWidth = computed(() =>
+  Math.max(40, Math.min(220, Math.floor(edgeLen.value) - 16))
+);
+
+// 截断检测：span 渲染后比 scrollWidth/clientWidth；显隐切换（v-if）、文案、宽度变化都重测
+const labelRef = ref<HTMLElement | null>(null);
+const labelTruncated = ref(false);
+function measureTruncated() {
+  const el = labelRef.value;
+  labelTruncated.value = !!el && el.scrollWidth - el.clientWidth > 1;
+}
+watch(
+  () => [props.label, labelVisible.value, labelMaxWidth.value],
+  () => nextTick(measureTruncated),
+  { flush: 'post', immediate: true }
+);
 // 双击 inline 编辑 label：进入编辑态时 label span 切换为 input，
 // 回车/失焦确认（空字符串 = 恢复默认 label），ESC 取消
 const editing = ref(false);
@@ -149,10 +194,13 @@ function cancelEdit() {
 .cmp-edge-label {
   position: absolute;
   z-index: 4;
+  /* max-width 由组件按线长/缩放动态内联（40~220px） */
   padding: 1px 6px;
+  overflow: hidden;
   font-size: 11px;
   line-height: 1.4;
   color: var(--el-text-color-regular);
+  text-overflow: ellipsis;
   white-space: nowrap;
   pointer-events: none;
   background-color: var(--el-bg-color);

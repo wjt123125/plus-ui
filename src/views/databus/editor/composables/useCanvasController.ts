@@ -653,11 +653,14 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     const def = getDef(defType);
     if (!def) return;
     const node = def.operator ? treeModel.makeOperator(defType) : treeModel.makeLeaf(defType);
-    if (treeModel.insertBefore(nodeId, node)) {
+    const result = treeModel.insertBefore(nodeId, node);
+    if (result) {
       commit();
       select(node.id);
+      // 分支槽位内包了 THEN，拓扑变化，重排一次避免新链堆叠（不 fitView，保留当前视口）
+      if (result === 'wrapped') runAutoLayout({ fitView: false });
     } else {
-      // 不在 children 中（可能是根/condition）：降级为追加到根
+      // 不可插（condition 位/NOT 唯一布尔位等）：降级为追加到根
       treeModel.appendChildToRoot(node);
       commit();
       select(node.id);
@@ -669,9 +672,11 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     const def = getDef(defType);
     if (!def) return;
     const node = def.operator ? treeModel.makeOperator(defType) : treeModel.makeLeaf(defType);
-    if (treeModel.insertAfter(nodeId, node)) {
+    const result = treeModel.insertAfter(nodeId, node);
+    if (result) {
       commit();
       select(node.id);
+      if (result === 'wrapped') runAutoLayout({ fitView: false });
     } else {
       treeModel.appendChildToRoot(node);
       commit();

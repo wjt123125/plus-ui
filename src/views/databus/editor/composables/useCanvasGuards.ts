@@ -44,12 +44,14 @@ export function useCanvasGuards(store: CanvasGuardsStore) {
     return true;
   }
 
-  /** 业务叶子数据空间名非空且唯一；有问题则选中并提示 */
+  /** CHAIN 子链已引用 + 业务叶子数据空间名非空且唯一；有问题则选中并提示 */
   function ensureDataSpacesValid(): boolean {
     const result = treeModel.validateDataSpaces();
     if (result.ok === false) {
       select(result.nodeId);
-      if (result.reason === 'empty') {
+      if (result.reason === 'chain-empty') {
+        ElMessage.error(`「${result.label}」还没有选择要引用的子流程`);
+      } else if (result.reason === 'empty') {
         ElMessage.error(`「${result.label}」的数据空间名不能为空`);
       } else {
         ElMessage.error(`数据空间名「${result.name}」重复，画布内必须唯一`);

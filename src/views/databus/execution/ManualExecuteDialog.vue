@@ -23,22 +23,17 @@
 
     <el-form label-width="92px" @submit.prevent>
       <el-form-item label="选择链路" required>
-        <el-select
+        <ChainSelect
+          ref="chainSelectRef"
           v-model="chainId"
-          class="chain-select"
-          filterable
+          value-key="id"
+          status="1"
+          :clearable="false"
+          :show-status-tag="false"
           :disabled="lockedChainId !== undefined"
-          :loading="chainLoading"
           placeholder="选择已发布链路"
           @change="handleChainChange"
-        >
-          <el-option
-            v-for="c in publishedChains"
-            :key="String(c.id)"
-            :label="`${c.chainName}（#${c.chainCode}）`"
-            :value="c.id!"
-          />
-        </el-select>
+        />
       </el-form-item>
       <el-form-item label="执行入参">
         <JsonCodeEditor
@@ -62,14 +57,12 @@
 <script setup lang="ts">
 import { VideoPlay } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
-import { getChain, listChain } from '@/api/databus/chain';
-import type { DatabusChainVo } from '@/api/databus/chain/types';
+import { getChain } from '@/api/databus/chain';
 import { executeChain } from '@/api/databus/execution';
 import type { DatabusExecutionResult } from '@/api/databus/execution/types';
 import { buildDefaultsJson } from '@/views/databus/editor/input-params';
+import ChainSelect from '@/views/databus/editor/components/common/ChainSelect.vue';
 import JsonCodeEditor from '@/views/databus/editor/components/common/JsonCodeEditor.vue';
-
-const STATUS_PUBLISHED = '1';
 
 const props = defineProps<{
   visible: boolean;
@@ -83,33 +76,18 @@ const emit = defineEmits<{
   executed: [result: DatabusExecutionResult];
 }>();
 
+const chainSelectRef = ref<InstanceType<typeof ChainSelect>>();
 const chainId = ref<number | string>();
 const requestJson = ref('');
-const publishedChains = ref<DatabusChainVo[]>([]);
-const chainLoading = ref(false);
 const executing = ref(false);
 
-/** 弹窗每次打开：加载已发布链路 + 处理预选 */
+/** 弹窗每次打开：强制刷新已发布链路（防止缓存漏看刚发布的链）+ 处理预选 */
 const handleOpen = async () => {
   requestJson.value = '';
   chainId.value = props.lockedChainId;
-  await loadPublishedChains();
+  await chainSelectRef.value?.refresh();
   if (props.lockedChainId !== undefined) {
     await prefillDefaults(props.lockedChainId);
-  }
-};
-
-const loadPublishedChains = async () => {
-  chainLoading.value = true;
-  try {
-    const res = await listChain({
-      pageNum: 1,
-      pageSize: 500,
-      status: STATUS_PUBLISHED
-    });
-    publishedChains.value = res.data?.rows ?? [];
-  } finally {
-    chainLoading.value = false;
   }
 };
 
@@ -153,9 +131,3 @@ const handleExecute = async () => {
   }
 };
 </script>
-
-<style lang="scss" scoped>
-.chain-select {
-  width: 100%;
-}
-</style>

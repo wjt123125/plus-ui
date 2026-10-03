@@ -71,6 +71,16 @@ export const JUNCTION_H = 16;
 /** 默认起始坐标（start 节点位置；仅投影器内部使用） */
 const START_X = 40;
 const START_Y = 40;
+
+/**
+ * children 为「分支槽位」语义的算子：直接子级是一条独立分支/出口的内容，
+ * 不是串行链。在其直接子级上做前后插入时，必须在槽内包 THEN，
+ * 裸 splice 会挪动槽位归属（如 IF.children[0/1]＝真/假，插入会把真分支内容挤成假分支）。
+ * 不在此列：THEN/CHAIN（串行链，splice 正确）、AND/OR（布尔操作数位，加位＝加操作数）、
+ * NOT（唯一布尔位，禁止前后插）。
+ */
+// WHILE（循环槽）与 WHEN（多分支槽）是两个不同算子，均在集合内
+const SLOT_WRAP_TYPES = new Set(['IF', 'SWITCH', 'FOR', 'WHILE', 'ITERATOR', 'CATCH', 'WHEN']);
 /** 默认节点间距（投影时初始摆放，dagre 会重排）
  *  默认走 LR 方向：cursorX 递增、cursorY 固定，
  *  与 handle Left/Right 方位一致，避免纵向排布导致连线绕圈。 */
@@ -188,6 +198,14 @@ function parseNode(cmp: CmpProperty, parentOperatorId: string | undefined): ElNo
   if (cmp.properties?.title?.trim()) node.title = cmp.properties.title;
 
   if (!isOperator) {
+    // CHAIN 子流程引用：序列化态伪装成 NodeComponent（id=子链 chainCode），
+    // 靠 properties.chainRef 标记还原为 CHAIN 算子，否则会退化成「未知组件」业务卡
+    if (cmp.properties?.chainRef === true) {
+      node.type = 'CHAIN';
+      node.cmpId = cmp.id ?? '';
+      if (cmp.properties?.tag) node.tag = cmp.properties.tag;
+      return node;
+    }
     // 业务组件叶子：CmpProperty.id 是注册名，properties.tag 是数据空间名
     // type 保留 LiteFlow 节点类型（5 种叶子），未知值兜底 NodeComponent
     node.type = LEAF_LF_TYPES.has(cmp.type) ? cmp.type : 'NodeComponent';
@@ -278,20 +296,20 @@ function serializeNode(node: ElNode): CmpProperty | null {
   const isOperator = !!def?.operator;
 
   // CHAIN 特例：后端没有 ChainParser（JSON→EL 方向缺失），
-  // 把 CHAIN 转成普通 NodeComponent + id=chainId，后端 generateEL 输出 chainId，
-  // LiteFlow 引擎自动在 chainMap 里查找同名子链
+  // 把 CHAIN 转成普通 NodeComponent + id=chainCode，后端 generateEL 输出 chainCode，
+  // LiteFlow 引擎自动在 chainMap 里查找同名子链。
+  // chainRef 标记给反向加载用：没有它，重载后这个叶子会被当成「未知组件」业务卡。
   if (node.type === 'CHAIN') {
+    const title = node.title?.trim();
     const leaf: CmpProperty = {
       id: node.cmpId || node.tag || node.id,
-      type: 'NodeComponent'
-    };
-    const title = node.title?.trim();
-    if (node.tag || title) {
-      leaf.properties = {
+      type: 'NodeComponent',
+      properties: {
+        chainRef: true,
         ...(node.tag ? { tag: node.tag } : {}),
         ...(title ? { title } : {})
-      };
-    }
+      }
+    };
     return leaf;
   }
 
@@ -592,13 +610,85 @@ function projectWhen(node: ElNode, ctx: ProjectContext): Port {
 }
 
 // ── IF：condition 充当网关，true/false 两个 sourceHandle ──
+// 真分支标签从条件件自动派生（执行语义只认出口位置，文案是注释不是判据）
+/** condition 十个比较符 → 画布摘要符号（与 ConditionCfg 的 options 对齐） */
+const COND_OP_SYMBOLS: Record<string, string> = {
+  isTrue: '为真',
+  isNull: '为空',
+  notBlank: '非空白',
+  eq: '=',
+  ne: '≠',
+  gt: '>',
+  ge: '≥',
+  lt: '<',
+  le: '≤',
+  contains: '包含'
+};
+
+/** `{{ $.x }}` 简化为 `$.x`；非表达式原文返回 */
+function condExprText(raw: unknown): string {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  const m = s.match(/^\{\{\s*(.+?)\s*\}\}$/);
+  return m ? m[1] : s;
+}
+
+/** 条件右值摘要：表达式取路径，对象/数组压成 JSON，其余原样 */
+function condValueText(v: unknown): string {
+  if (v === undefined || v === null) return '';
+  if (typeof v === 'string') return condExprText(v);
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+}
+
+/**
+ * 真分支条件摘要（分层降级，永远返回非空文案）：
+ * 结构化 condition → `code = 200`；AND/OR/NOT → `全部满足(3)`/`任一满足(2)`/`非`；
+ * booleanScript → 脚本业务名（title），无名退 cmpId；空菱形 → `真`。
+ * 未来 QL 表达式件在 componentCode 分支插一档「表达式原文截断」即可。
+ */
+export function summarizeCondition(cond?: ElNode): string {
+  if (!cond) return '真';
+  // 复合布尔算子（AND/OR/NOT 挂在条件槽，算子无 componentCode）
+  if (!cond.componentCode) {
+    const n = cond.children?.filter((c) => c).length ?? 0;
+    if (cond.type === 'AND') return `全部满足(${n})`;
+    if (cond.type === 'OR') return `任一满足(${n})`;
+    if (cond.type === 'NOT') return '非';
+    return '真';
+  }
+  if (cond.componentCode === 'booleanScript') {
+    return cond.title?.trim() || cond.cmpId || '脚本条件';
+  }
+  if (cond.componentCode === 'condition') {
+    let cfg: { path?: string; op?: string; value?: unknown } = {};
+    try {
+      if (cond.data) cfg = JSON.parse(cond.data);
+    } catch {
+      return '真'; // 坏 JSON 不影响画布，降级兜底
+    }
+    const left = condExprText(cfg.path);
+    if (!left) return '真';
+    const op = COND_OP_SYMBOLS[cfg.op ?? ''] ?? cfg.op ?? '';
+    if (cfg.op === 'isTrue' || cfg.op === 'isNull' || cfg.op === 'notBlank') {
+      return op ? `${left} ${op}` : left;
+    }
+    const right = condValueText(cfg.value);
+    return right ? `${left} ${op} ${right}` : `${left} ${op}`.trim();
+  }
+  // 其他布尔组件（未来的 QL 表达式件等）：业务名优先
+  return cond.title?.trim() || cond.cmpId || '真';
+}
+
 function projectIf(node: ElNode, ctx: ProjectContext): Port {
   // 无 condition：用 IF 自己的 def 产出菱形网关，让用户看到 IF 的视觉形态
   // （而不是走 fallback leaf 把 IF 当业务卡渲染——这就是用户报「IF 灰色长方形」的根因）
   const ifDef = getDef('IF')!;
+  // 真分支：默认标签由条件件实时派生（条件改动自动同步）；假分支恒为「否则」（补集语义）。
+  // outletLabels[i] 非空＝用户自定义别名（双击连线/属性面板写入），清空即恢复默认。
   const outlets = [
-    { handle: 'true', label: node.outletLabels?.[0] ?? '真' },
-    { handle: 'false', label: node.outletLabels?.[1] ?? '假' }
+    { handle: 'true', label: node.outletLabels?.[0] ?? summarizeCondition(node.condition) },
+    { handle: 'false', label: node.outletLabels?.[1] ?? '否则' }
   ];
   // condition 存在则用 condition 的 id + def；否则用 IF 节点自己的 id + IF def
   let condId: string;
@@ -654,9 +744,10 @@ function projectIf(node: ElNode, ctx: ProjectContext): Port {
         );
       }
     } else {
-      // 空分支槽（稀疏数组空洞/未初始化）：补 placeholder
+      // 空分支槽（稀疏数组空洞/未初始化）：补 placeholder。
+      // 文案固定（真分支标签是条件摘要，拼进占位语会变长变怪）
       const phId = `${condId}_ph_${labels[i]}`;
-      buildPlaceholder(ctx, phId, i === 0 ? `空${outlets[0].label}` : `空${outlets[1].label}`, condId, labels[i]);
+      buildPlaceholder(ctx, phId, i === 0 ? '空真分支' : '空否则分支', condId, labels[i]);
       ctx.edges.push(
         buildEdge(
           `e_${condId}_${labels[i]}_ph`, condId, phId, 'jump', labels[i], outlets[i].label,
@@ -917,7 +1008,8 @@ function projectChain(node: ElNode, ctx: ProjectContext): Port {
     tag: node.tag ?? '',
     data: '',
     label: def.label,
-    title: node.title?.trim() || def.label,
+    // 未自定义标题时直接显示子链编码，卡片上一眼看出引用了谁；未选时回退算子 label
+    title: node.title?.trim() || node.cmpId || def.label,
     color: def.color,
     virtual: false,
     operator: true
@@ -1400,31 +1492,73 @@ export function useElTreeModel() {
   }
 
   /**
-   * 在锚点节点前面插入兄弟节点（同 parent 的 children 数组）。
-   * 锚点必须是某 parent 的 children[i]，不能是 condition 或根。
-   * 插入后新节点与锚点平级。
+   * 在锚点节点前面插入兄弟节点。
+   * 返回值：'spliced' 串行链裸插；'wrapped' 分支槽位内包了 THEN（拓扑变化，调用方应重排）；false 不可插。
    */
-  function insertBefore(anchorId: string, newNode: ElNode): boolean {
+  function insertBefore(anchorId: string, newNode: ElNode): 'spliced' | 'wrapped' | false {
     if (!root.value) return false;
     const pos = findParentInSubtree(root.value, anchorId);
     if (!pos || pos.inCondition) return false;
     const siblings = pos.parent.children!;
+    if (SLOT_WRAP_TYPES.has(pos.parent.type) && pos.index >= 0) {
+      wrapSlotSibling(siblings, pos.index, newNode, pos.parent.id, true);
+      return 'wrapped';
+    }
+    if (pos.parent.type === 'NOT') return false; // NOT 仅一个布尔操作数位，前后插入无意义
     newNode.parentOperatorId = pos.parent.id;
     siblings.splice(pos.index, 0, newNode);
-    return true;
+    return 'spliced';
   }
 
   /**
-   * 在锚点节点后面插入兄弟节点。
+   * 在锚点节点后面插入兄弟节点。返回值语义同 insertBefore。
    */
-  function insertAfter(anchorId: string, newNode: ElNode): boolean {
+  function insertAfter(anchorId: string, newNode: ElNode): 'spliced' | 'wrapped' | false {
     if (!root.value) return false;
     const pos = findParentInSubtree(root.value, anchorId);
     if (!pos || pos.inCondition) return false;
     const siblings = pos.parent.children!;
+    if (SLOT_WRAP_TYPES.has(pos.parent.type) && pos.index >= 0) {
+      wrapSlotSibling(siblings, pos.index, newNode, pos.parent.id, false);
+      return 'wrapped';
+    }
+    if (pos.parent.type === 'NOT') return false;
     newNode.parentOperatorId = pos.parent.id;
     siblings.splice(pos.index + 1, 0, newNode);
-    return true;
+    return 'spliced';
+  }
+
+  /**
+   * 在「分支槽位」型算子（IF/SWITCH/循环/CATCH/WHEN）的直接子级上插串行节点：
+   * 槽内已有 THEN 就进链（unshift/push），否则用 THEN 包住原槽内容——
+   * 绝不能裸 splice 槽位数组（新节点会占走别的出口，如 IF 真分支内容被挤成假分支）。
+   */
+  function wrapSlotSibling(
+    siblings: ElNode[],
+    index: number,
+    newNode: ElNode,
+    parentId: string,
+    before: boolean
+  ) {
+    const oldChild = siblings[index];
+    if (oldChild && oldChild.type === 'THEN' && oldChild.children) {
+      newNode.parentOperatorId = oldChild.id;
+      if (before) oldChild.children.unshift(newNode);
+      else oldChild.children.push(newNode);
+      return;
+    }
+    const wrap = makeThen();
+    wrap.parentOperatorId = parentId;
+    newNode.parentOperatorId = wrap.id;
+    if (oldChild) oldChild.parentOperatorId = wrap.id;
+    if (before) {
+      wrap.children = [newNode];
+      if (oldChild) wrap.children.push(oldChild);
+    } else {
+      if (oldChild) wrap.children.push(oldChild);
+      wrap.children.push(newNode);
+    }
+    siblings[index] = wrap;
   }
 
   /**
@@ -1559,6 +1693,17 @@ export function useElTreeModel() {
   }
 
   /**
+   * CHAIN 改挂子链：chainCode 存 cmpId（序列化后即叶子 id，LiteFlow 运行时按它找子链）。
+   * 传空串等于取消引用；非 CHAIN 节点拒绝写入。
+   */
+  function updateChainRef(nodeId: string, chainCode: string): boolean {
+    const node = findNode(nodeId);
+    if (!node || node.type !== 'CHAIN') return false;
+    node.cmpId = chainCode;
+    return true;
+  }
+
+  /**
    * 更新节点标题（属性面板编辑用，叶子与算子通用）。
    * 传入空白串等同「恢复默认」：删除正本字段，展示端重新按 cfg 推断，
    * 序列化时 properties.title 空就不写入画布 JSON 正本。
@@ -1656,12 +1801,36 @@ export function useElTreeModel() {
   }
 
   /**
-   * 校验全部业务叶子（含 condition 布尔件；不含算子/虚拟节点）的数据空间名：
-   * 非空且树内唯一。返回第一个问题的叶子 id/名字/物料标签，供界面选中提示。
+   * 保存前校验：① CHAIN 子流程必须已选子链（全树遍历算子）；
+   * ② 全部业务叶子（含 condition 布尔件；不含算子/虚拟节点）的数据空间名非空且树内唯一。
+   * 返回第一个问题节点的 id/名字/物料标签，供界面选中提示。
    */
   function validateDataSpaces():
     | { ok: true }
-    | { ok: false; reason: 'empty' | 'duplicate'; nodeId: string; name: string; label: string } {
+    | {
+        ok: false;
+        reason: 'empty' | 'duplicate' | 'chain-empty';
+        nodeId: string;
+        name: string;
+        label: string;
+      } {
+    // CHAIN 必须已选择子链：空引用序列化后 id 退化成画布临时 id，EL 必不合法
+    const stack: (ElNode | null | undefined)[] = [root.value];
+    while (stack.length > 0) {
+      const n = stack.pop();
+      if (!n) continue;
+      if (n.type === 'CHAIN' && !(n.cmpId ?? '').trim()) {
+        return {
+          ok: false,
+          reason: 'chain-empty',
+          nodeId: n.id,
+          name: '',
+          label: getDef('CHAIN')?.label ?? '子流程(CHAIN)'
+        };
+      }
+      if (n.condition) stack.push(n.condition);
+      n.children?.forEach((c) => stack.push(c));
+    }
     const seen = new Map<string, ElNode>();
     for (const leaf of collectLeaves(root.value)) {
       if (!leaf.componentCode) continue; // 虚拟 start/end 无注册名，跳过
@@ -1700,6 +1869,7 @@ export function useElTreeModel() {
     isDataSpaceNameTaken,
     renameDataSpace,
     updateOperatorTag,
+    updateChainRef,
     updateNodeTitle,
     updateOutletLabel,
     addCase,

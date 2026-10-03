@@ -20,6 +20,30 @@
       >
         压缩
       </el-button>
+      <el-button
+        v-if="fillPlaceholder"
+        ref="fillBtnRef"
+        size="small"
+        text
+        type="primary"
+        :icon="DocumentCopy"
+        title="把示例填入编辑器"
+        @click="onFillClick"
+      />
+      <el-popover
+        v-if="fillPlaceholder"
+        v-model:visible="confirmVisible"
+        :width="220"
+        placement="top"
+        virtual-triggering
+        :virtual-ref="fillBtnRef"
+      >
+        <div class="json-code-editor__confirm-text">当前内容将被示例覆盖，是否继续？</div>
+        <div class="json-code-editor__confirm-actions">
+          <el-button size="small" @click="confirmVisible = false">取消</el-button>
+          <el-button size="small" type="primary" @click="doFillFromPlaceholder">覆盖</el-button>
+        </div>
+      </el-popover>
       <span class="json-code-editor__status" :class="`is-${status}`">{{ statusText }}</span>
     </div>
     <div class="json-code-editor__core" :style="{ height }">
@@ -48,8 +72,8 @@ import { linter, type Diagnostic } from '@codemirror/lint';
 import { json, jsonParseLinter } from '@codemirror/lang-json';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
-import { MagicStick, Minus } from '@element-plus/icons-vue';
-import { ElButton } from 'element-plus';
+import { DocumentCopy, MagicStick, Minus } from '@element-plus/icons-vue';
+import { ElButton, ElPopover } from 'element-plus';
 
 defineOptions({ name: 'JsonCodeEditor' });
 
@@ -59,11 +83,14 @@ const props = withDefaults(
     placeholder?: string;
     height?: string;
     readonly?: boolean;
+    /** 显示「填入示例」按钮：点击把 placeholder 内容写入编辑器 */
+    fillPlaceholder?: boolean;
   }>(),
   {
     placeholder: '在此输入 JSON',
     height: '240px',
-    readonly: false
+    readonly: false,
+    fillPlaceholder: false
   }
 );
 
@@ -278,6 +305,32 @@ function formatJson() {
   }
 }
 
+/** 「填入示例」按钮引用（el-popover 虚拟触发锚点）与覆盖确认气泡 */
+const fillBtnRef = ref<{ $el: HTMLElement } | null>(null);
+const confirmVisible = ref(false);
+
+/** 点击示例图标：空文档直接填；有内容在图标旁弹气泡确认 */
+function onFillClick() {
+  if (!props.placeholder) return;
+  if (props.modelValue.trim()) {
+    confirmVisible.value = true;
+  } else {
+    doFillFromPlaceholder();
+  }
+}
+
+/** 填入示例即走 commit 通道（update + blur） */
+function doFillFromPlaceholder() {
+  const text = props.placeholder;
+  confirmVisible.value = false;
+  if (!text) return;
+  replaceDoc(text);
+  emit('update:modelValue', text);
+  lastEmittedValue = text;
+  revalidate(text);
+  emit('blur');
+}
+
 /** 压缩：去空白（仍是合法 JSON） */
 function compressJson() {
   const text = props.modelValue;
@@ -340,5 +393,18 @@ function compressJson() {
 
 .json-code-editor__core :deep(.cm-scroller) {
   font-family: Menlo, Monaco, 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+}
+
+.json-code-editor__confirm-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-regular);
+}
+
+.json-code-editor__confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 10px;
 }
 </style>

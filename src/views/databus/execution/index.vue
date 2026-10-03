@@ -163,9 +163,8 @@
 <script setup name="DatabusExecution" lang="ts">
 import { Delete, VideoPlay } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { listChain } from '@/api/databus/chain';
-import type { DatabusChainVo } from '@/api/databus/chain/types';
 import { cleanupExecution, listExecution, rerunExecution } from '@/api/databus/execution';
+import { useChainOptions } from '@/views/databus/editor/composables/useChainOptions';
 import type {
   DatabusExecutionQuery,
   DatabusExecutionResult,
@@ -241,21 +240,14 @@ const detailVisible = ref(false);
 const detailId = ref<number | string | null>(null);
 
 /**
- * 链路建议：复用 listChain（与编辑器 ChainSwitcher 同源），全量拉取供下拉过滤。
- * 不按状态过滤——历史记录里的链路此刻可能已下线/草稿，仍要能选到精确编码。
+ * 链路建议：共享 useChainOptions 数据通道（与编辑器切换器/CHAIN 引用选择器同源缓存）。
+ * 不按状态过滤、含模板——历史记录里的链路此刻可能已下线/草稿/转模板，仍要能选到精确编码。
  */
-const chainOptions = ref<DatabusChainVo[]>([]);
-const chainLoading = ref(false);
-
-const loadChainOptions = async () => {
-  chainLoading.value = true;
-  try {
-    const res = await listChain({ pageNum: 1, pageSize: 1000 });
-    chainOptions.value = res.data?.rows ?? [];
-  } finally {
-    chainLoading.value = false;
-  }
-};
+const {
+  chains: chainOptions,
+  loading: chainLoading,
+  ensure: ensureChainOptions
+} = useChainOptions(() => ({ pageNum: 1, pageSize: 1000 }));
 
 const route = useRoute();
 
@@ -394,8 +386,8 @@ const formatDuration = (ms?: number | null) => {
 };
 
 onMounted(() => {
-  // 链路建议与记录列表并行加载（互不阻塞）
-  loadChainOptions();
+  // 链路建议（共享缓存）与记录列表并行加载（互不阻塞）
+  ensureChainOptions().catch(() => {});
   getList();
   // 从链路卡片执行后跳转携带 recordId：自动打开详情抽屉
   const rid = route.query.recordId;

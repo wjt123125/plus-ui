@@ -129,10 +129,18 @@ export function useChainDocument(store: ChainDocumentStore) {
     }
   }
 
-  /** 从切换器选中链路：直接加载到画布 */
+  /**
+   * 从切换器选中链路：加载到画布，并把新链路 id 同步进地址栏。
+   * URL 同步是父组件层行为（切换器本身只抛 select，不感知路由）：
+   * - 加载成功后才改地址栏，失败不换 id；
+   * - replace 不堆历史（换链不是新页面，避免浏览器返回键在同一编辑器里退链）；
+   * - 基于现有 query 合并，只动 id；
+   * - initFromRoute 仅在进入时执行一次，replace 不会触发二次加载。
+   */
   async function onChainSelect(row: DatabusChainVo) {
     if (!row.id) return;
     await loadChainToEditor(row.id);
+    await router.replace({ query: { ...route.query, id: String(row.id) } });
   }
 
   /** 返回链路列表（动态解析列表路由，与编排跳转同款，不硬编码父级路径） */

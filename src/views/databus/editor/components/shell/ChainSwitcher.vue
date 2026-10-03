@@ -92,8 +92,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { CaretBottom, Search } from '@element-plus/icons-vue';
-import { listChain } from '@/api/databus/chain';
 import type { DatabusChainVo } from '@/api/databus/chain/types';
+import { useChainOptions } from '../../composables/useChainOptions';
 
 const STATUS_DRAFT = '0';
 const STATUS_PUBLISHED = '1';
@@ -114,11 +114,15 @@ const emit = defineEmits<{
 }>();
 
 const popoverVisible = ref(false);
-const loading = ref(false);
 const keyword = ref('');
 const activeTab = ref<'recent' | 'all' | 'draft' | 'published' | 'offline'>('recent');
-const allChains = ref<DatabusChainVo[]>([]);
 const searchHistory = ref<string[]>(loadHistory());
+
+// 全量（含模板，与历史行为一致）；展开时 force 刷新，保证刚发布/改名的链即时可见
+const { chains: allChains, loading, ensure: ensureChains } = useChainOptions(() => ({
+  pageNum: 1,
+  pageSize: 1000
+}));
 
 /** 最近使用 id 列表（localStorage） */
 const recentIds = computed<string[]>(() => {
@@ -197,18 +201,9 @@ function onTabChange() {
   // 切换 tab 不清空搜索词，允许叠加筛选
 }
 
-async function loadChains() {
-  loading.value = true;
-  try {
-    const res = await listChain({ pageNum: 1, pageSize: 1000 });
-    allChains.value = res.data?.rows ?? [];
-  } finally {
-    loading.value = false;
-  }
-}
-
 function onShow() {
-  loadChains();
+  // 每次展开强制重拉并回写共享缓存（失败态由 composable 承载，这里不阻塞面板）
+  ensureChains(true).catch(() => {});
 }
 
 function selectChain(row: DatabusChainVo) {

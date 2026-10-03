@@ -22,6 +22,9 @@ export interface CmpProperties {
   /** 算子出口 label 自定义（按 branchIndex 存）；前端编辑态字段，
    *  序列化时写入算子 properties.outletLabels，后端往返需保留未知字段 */
   outletLabels?: string[];
+  /** CHAIN 子流程引用标记：CHAIN 节点序列化为 NodeComponent（id=子链 chainCode）借 LiteFlow
+   *  运行时解析；靠本标记在反向加载时识别回 CHAIN 节点。纯编辑态，不参与 EL 生成 */
+  chainRef?: boolean;
 }
 
 /**
