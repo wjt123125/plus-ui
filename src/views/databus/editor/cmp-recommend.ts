@@ -37,7 +37,8 @@ type GroupKind =
   | 'logic'     // CATCH / AND / OR / NOT —— 异常与逻辑
   | 'subflow'   // CHAIN
   | 'flow'      // start / end —— 虚拟
-  | 'business'  // 业务组件
+  | 'business'  // 业务组件（普通链路叶子）
+  | 'slot'      // 算子条件槽件（NodeBoolean/For/Iterator/Switch），不是普通后继
   | 'junction'  // 画布投影节点（不应出现在推荐里）
   | 'unknown';
 
@@ -45,17 +46,18 @@ function getGroupKind(def: CmpDef | undefined): GroupKind {
   if (!def) return 'unknown';
   if (def.type === 'junction') return 'junction';
   if (def.virtual) return 'flow';
-  if (def.operator) {
-    switch (def.group) {
-      case 'sequence': return 'seq';
-      case 'branch':   return 'branch';
-      case 'loop':     return 'loop';
-      case 'other':    return 'logic';
-      case 'subflow':  return 'subflow';
-      default:         return 'unknown';
-    }
+  // 条件槽件先于 group 识别：它们 group 也是 business，但只能坐算子的条件位，
+  // 混进普通业务档会在 append/insertEdge 推荐里错误占位（如 BPM 会话后推「条件判断」）
+  if (def.lfNodeType && def.lfNodeType !== 'NodeComponent') return 'slot';
+  switch (def.group) {
+    case 'sequence': return 'seq';
+    case 'branch':   return 'branch';
+    case 'loop':     return 'loop';
+    case 'other':    return 'logic';   // 异常抛出/异常识别等：非算子但属异常逻辑类，不能混进业务档
+    case 'subflow':  return 'subflow';
+    case 'flow':     return 'business';
+    default:         return def.operator ? 'unknown' : 'business';
   }
-  return 'business';
 }
 
 /**
@@ -87,7 +89,9 @@ function score(
 function scoreReplace(kind: GroupKind, anchorKind: GroupKind): number {
   // 虚拟节点不能作为 replace 目标（excludedTypes 已过滤 start/end 自身）
   if (kind === 'flow' || kind === 'junction') return -1;
-  if (kind === anchorKind) return 95;              // 同类互转（THEN↔WHEN、IF↔SWITCH 等）
+  if (kind === anchorKind) return 95;              // 同类互转（THEN↔WHEN、IF↔SWITCH、条件件互转等）
+  // 条件槽件只能坐条件位：跨类互换近乎非法，给最低档（不禁止以防用户确实要改）
+  if (kind === 'slot' || anchorKind === 'slot') return 15;
   // 业务 ↔ 算子之间给低分但不禁止（用户可能确实想换类型）
   if (kind === 'business' || anchorKind === 'business') return 25;
   return 40;                                       // 不同算子大类之间
@@ -96,6 +100,8 @@ function scoreReplace(kind: GroupKind, anchorKind: GroupKind): number {
 /** append / prepend：按锚点上下文加权 */
 function scoreAppendPrepend(kind: GroupKind, anchorKind: GroupKind): number {
   if (kind === 'flow' || kind === 'junction') return -1;
+  // 条件槽件不是普通后继，任何业务链位上都低权（replace 条件位除外，走 scoreReplace）
+  if (kind === 'slot') return 30;
   if (anchorKind === 'flow') {
     // 锚点是 start：链路第一段，业务组件优先
     if (kind === 'business') return 80;
@@ -137,6 +143,12 @@ function scoreAppendPrepend(kind: GroupKind, anchorKind: GroupKind): number {
     if (kind === 'business') return 65;
     return 55;
   }
+  if (anchorKind === 'slot') {
+    // 锚点是条件槽件（罕见：条件位内追加）：普通业务叶子优先于条件件
+    if (kind === 'business') return 75;
+    if (kind === 'seq') return 60;
+    return 35;
+  }
   return 50;
 }
 
@@ -146,6 +158,8 @@ function scoreInsertEdge(kind: GroupKind): number {
   if (kind === 'business') return 75;
   if (kind === 'seq') return 70;
   if (kind === 'branch') return 55;
+  // 普通链位插入条件槽件无意义（它只能坐算子条件位）
+  if (kind === 'slot') return 30;
   return 40;
 }
 

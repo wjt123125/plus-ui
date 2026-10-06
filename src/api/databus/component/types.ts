@@ -35,6 +35,9 @@ export type EditorKind = 'form' | 'script';
  */
 export type ComponentSource = 'SYSTEM' | 'OVERLAY' | 'CUSTOM';
 
+/** 业务叶子业务域：bpm=BPM 平台件，common=通用件 */
+export type ComponentDomain = 'bpm' | 'common';
+
 /** select/multiselect 候选项 */
 export interface PropOption {
   label: string;
@@ -92,6 +95,8 @@ export interface ComponentOption {
   name: string;
   shortName?: string | null;
   group?: string | null;
+  /** 业务叶子业务域（bpm/common；仅 business 组下发，其余为 null） */
+  domain?: ComponentDomain | null;
   icon?: string | null;
   color?: string | null;
   description?: string | null;
@@ -137,6 +142,8 @@ export interface DatabusComponentVo {
   category: string;
   /** 物料面板七组（flow/sequence/branch/loop/other/subflow/business）【治理】 */
   groupName?: string | null;
+  /** 业务叶子业务域（bpm/common；仅 business 组使用）【治理】 */
+  domain?: string | null;
   /** 图标（svg 名或 Iconify 名，如 ph:pencil-simple）【治理】 */
   icon?: string | null;
   /** 面板色值（如 #409eff）【治理】 */

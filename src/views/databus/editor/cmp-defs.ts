@@ -1,11 +1,19 @@
 /**
  * 组件定义注册表。
  *
+ * 唯一数据源原则（2026-10-06）：
+ * - 业务物料唯一来源是后端 /databus/component/options：编辑器挂载即预拉，
+ *   applyComponentOptions 全量替换物料区；接口失败物料区就是空的，
+ *   画布上已存在的未注册件渲染为灰色「未注册组件」（fallbackDef），不做本地数据兜底。
+ * - 本表只定义画布语法结构件（start/end 虚拟节点 + THEN/IF 等 EL 算子），
+ *   它们是前端画布的编排语法，后端不持有 operator/virtual/conditionKind 语义。
+ *
  * icon 为 Iconify 图标名称字符串（如 ph:play，Phosphor 集合）：
  * 与 RuoYi 菜单图标走同一套存储与渲染方式（SvgIcon 组件），字符串可直接入库；
  * 未来物料市场 jar 组件注册时，icon 可存 URL 或内联 SVG，渲染层再扩展分支。
- * 所有名称已通过 api.iconify.design 核实存在（2026-09-14）。
  */
+import { ref } from 'vue';
+import type { ComponentOption, NodeTypeKind } from '@/api/databus/component/types';
 
 /** HTML5 拖拽 MIME：面板 dragstart 写入、画布 drop 时读取桩类型 */
 export const DND_MIME = 'application/x-databus-cmp';
@@ -24,6 +32,9 @@ export type ConditionKind = 'if' | 'switch' | 'for' | 'while' | 'iterator' | 'bo
  * - lfNodeType: 业务组件在 LiteFlow 中的节点类型（缺省 NodeComponent；
  *   布尔条件组件为 NodeBooleanComponent，只能放在 IF/WHILE 等条件槽）
  * - group: 物料面板分组
+ * - bizCategory: 业务叶子的业务域（由 /options 的 domain 映射，仅普通 business 叶子有）：
+ *   bpm=BPM 平台集成件，common=通用数据加工；
+ *   算子条件槽件（带 lfNodeType）不带域，选择器单独归「条件组件」段。
  */
 export interface CmpDef {
   type: string;
@@ -45,9 +56,15 @@ export interface CmpDef {
     | 'NodeIteratorComponent'
     | 'NodeSwitchComponent';
   group?: 'flow' | 'sequence' | 'branch' | 'loop' | 'other' | 'subflow' | 'business';
+  /** 业务域分类（business 叶子的选择器分段依据），来自 /options domain */
+  bizCategory?: 'bpm' | 'common';
 }
 
-export const CMP_DEFS: CmpDef[] = [
+/**
+ * 画布语法结构件：前端编排层独有，不是后端物料。
+ * 虚拟起止节点 + 12 个 EL 算子，静态、唯一、不可被 /options 覆盖。
+ */
+const STRUCTURE_DEFS: CmpDef[] = [
   // ── 虚拟节点 ──
   {
     type: 'start',
@@ -192,7 +209,7 @@ export const CMP_DEFS: CmpDef[] = [
     label: '非(NOT)',
     short: '非',
     desc: '布尔非：对条件结果取反',
-    color: '#9c27b0',
+    color: '#909399',
     icon: 'ph:prohibit',
     operator: true,
     conditionKind: 'boolean',
@@ -210,232 +227,6 @@ export const CMP_DEFS: CmpDef[] = [
     operator: true,
     conditionKind: 'none',
     group: 'subflow'
-  },
-
-  // ── 业务组件（均有后端真实现，注册名与后端 @LiteflowComponent 一致） ──
-  {
-    type: 'httpRequest',
-    label: 'Http 请求',
-    desc: '通用 HTTP：GET/POST/PUT/PATCH/DELETE，JSON/表单/raw 三种请求体，basic/bearer 鉴权；状态码与响应存入 $.数据空间.status/response，mappings 抽取字段',
-    color: '#409eff',
-    icon: 'ph:globe',
-    group: 'business'
-  },
-  {
-    type: 'condition',
-    label: '条件判断',
-    desc: '布尔条件：按 {{ $.路径 }} 表达式与比较符求值，供 IF/WHILE 条件槽使用',
-    color: '#e6a23c',
-    icon: 'ph:equals',
-    lfNodeType: 'NodeBooleanComponent',
-    group: 'business'
-  },
-  {
-    type: 'forLoop',
-    label: '计数循环组件',
-    desc: 'FOR 算子条件位：count 填循环次数（整数或 {{ $.路径 }} 表达式），体内用 $i 引用当前轮下标；indexVar 可自定义下标名',
-    color: '#67c23a',
-    icon: 'ph:number-circle-one',
-    lfNodeType: 'NodeForComponent',
-    group: 'business'
-  },
-  {
-    type: 'iteratorLoop',
-    label: '迭代循环组件',
-    desc: 'ITERATOR 算子条件位：source 填数组/集合表达式（{{ $.路径 }}），逐轮迭代；体内用 $i 取当前轮下标（嵌套时内层为 $j）',
-    color: '#67c23a',
-    icon: 'ph:shuffle',
-    lfNodeType: 'NodeIteratorComponent',
-    group: 'business'
-  },
-  {
-    type: 'switchRoute',
-    label: '选择路由组件',
-    desc: 'SWITCH 算子条件位：source 表达式求出当前值，按 cases 顺序匹配分支名跳转；全不命中报错（暂不支持 DEFAULT）',
-    color: '#e6a23c',
-    icon: 'ph:signpost',
-    lfNodeType: 'NodeSwitchComponent',
-    group: 'business'
-  },
-  {
-    type: 'setValue',
-    label: '赋值',
-    desc: '把值（常量或 {{ $.路径 }} 表达式取值）写入上下文 $.数据空间.path',
-    color: '#67c23a',
-    icon: 'ph:pencil-simple',
-    group: 'business'
-  },
-  {
-    type: 'fieldMap',
-    label: '字段映射',
-    desc: '按 mappings 把 from 表达式（{{ $.路径 }}）取值逐条搬到 to 位置名（裸路径）；from/to 同时含 [*] 触发数组批量搬运，可选 type 做类型转换（int/string/boolean/double）',
-    color: '#9c27b0',
-    icon: 'ph:arrows-left-right',
-    group: 'business'
-  },
-  {
-    type: 'dataPatch',
-    label: '数据补丁',
-    desc: '按 merge 语义把 patch 覆盖到 target 命中的每个对象（target 写目标裸路径，patch 叶子为常量或 {{ $.路径 }} 表达式）：[*] 全量/[i] 索引/[?(...)] 过滤均可，未声明字段（含 ID）保留、缺失字段新增；典型用于 boQuery 后改字段再交 boUpdate 回写，命中对象数写入 $.数据空间.patchedCount',
-    color: '#009688',
-    icon: 'ph:git-diff',
-    group: 'business'
-  },
-  {
-    type: 'response',
-    label: '流程响应',
-    desc: '设置链路返回结果，固定写入 $.response.result/msg/data',
-    color: '#f56c6c',
-    icon: 'ph:flag-checkered',
-    group: 'business'
-  },
-  {
-    type: 'exceptionThrower',
-    label: '异常抛出',
-    desc: '测试用故障制造机：按异常类名（常量或 {{ $.路径 }}）反射抛出异常，配合 CATCH 验证异常兜底链；生产链路勿用',
-    color: '#f56c6c',
-    icon: 'ph:warning',
-    group: 'other'
-  },
-  {
-    type: 'exceptionInspect',
-    label: '异常识别',
-    desc: 'CATCH 异常处理体内使用：按对照表顺序 instanceof 识别异常类型（支持子类、可追查 cause），输出 $.<tag>.type/className/message，再接 SWITCH 分流',
-    color: '#e6a23c',
-    icon: 'ph:bug',
-    group: 'other'
-  },
-
-  // ── BPM 业务组件（均有后端真实现，注册名与后端 @LiteflowComponent 一致；
-  //    顺序按 BPM 主线编排自然递进：会话 → 建/查/改/删 BO → 启流程 → 终止流程 → 完任务
-  //    依据：旧系统 ProcessCreate 先产出 processInstanceId，
-  //          BoCreate 的 method=create 必须 bindId 指向已存在的流程实例 ID） ──
-  {
-    type: 'sessionCreate',
-    label: 'BPM 会话',
-    short: '会话',
-    desc: '创建 BPM 会话（登录获取 sid），响应平铺到 $.数据空间',
-    color: '#409eff',
-    icon: 'ph:sign-in',
-    group: 'business'
-  },
-  {
-    type: 'processStart',
-    label: 'BPM 启流程',
-    short: '启流程',
-    desc: '启动 BPM 流程实例，title 支持 {{ $.xxx }} 表达式，响应平铺到 $.数据空间（含 processInstanceId 供下游 boCreate.bindId 引用）',
-    color: '#e6a23c',
-    icon: 'ph:rocket',
-    group: 'business'
-  },
-  {
-    type: 'boCreate',
-    label: 'BPM 建 BO',
-    short: '建 BO',
-    desc: '创建 BPM 业务对象（BO），method=create 时 bindId 必填且引用上一步 processStart.processInstanceId，支持 6 种回写策略',
-    color: '#9c27b0',
-    icon: 'ph:database',
-    group: 'business'
-  },
-  {
-    type: 'boQuery',
-    label: 'BPM 查 BO',
-    short: '查 BO',
-    desc: '查询 BPM 业务对象（BO）数据，支持 list/listPage/count 三种方法、maxRecord 影响量校验、动态条件与关联表/子表挂载',
-    color: '#409eff',
-    icon: 'ph:magnifying-glass',
-    group: 'business'
-  },
-  {
-    type: 'boUpdate',
-    label: 'BPM 改 BO',
-    short: '改 BO',
-    desc: '按记录 ID 更新 BPM 业务对象（BO）数据，records 必须含 ID 字段（可先 boQuery 查出再整体回写），BPM 端整体事务 all-or-nothing',
-    color: '#e6a23c',
-    icon: 'ph:pencil-line',
-    group: 'business'
-  },
-  {
-    type: 'boDelete',
-    label: 'BPM 删 BO',
-    short: '删 BO',
-    desc: '删除 BPM 业务对象（BO）数据，method=remove 按记录 ID 逐条删 / removeByBindId 按流程实例批量删，BPM 端整体事务 all-or-nothing',
-    color: '#f56c6c',
-    icon: 'ph:trash',
-    group: 'business'
-  },
-  {
-    type: 'processTerminate',
-    label: 'BPM 终止流程',
-    short: '终止流程',
-    desc: '终止 BPM 流程实例（userId 为终止操作人），流程已结束时幂等返回 terminated=false 不报错',
-    color: '#909399',
-    icon: 'ph:prohibit',
-    group: 'business'
-  },
-  {
-    type: 'taskComplete',
-    label: 'BPM 完任务',
-    short: '完任务',
-    desc: '按 processInstanceId 提交 BPM 任务（全部尝试），部分失败按 failOnError 决定是否中断',
-    color: '#67c23a',
-    icon: 'ph:seal-check',
-    group: 'business'
-  },
-  {
-    type: 'rdsExecute',
-    label: 'BPM SQL 执行',
-    short: 'SQL 执行',
-    desc: '在 BPM 后台注册的 RDS 数据源上执行 SQL：标量/单行/多行查询、更新与批量（8 种方法），结果存 $.数据空间.data',
-    color: '#16a34a',
-    icon: 'ph:table',
-    group: 'business'
-  },
-  {
-    type: 'idCardToUserId',
-    label: '身份证换用户',
-    short: '证换用户',
-    desc: '按 path 表达式（{{ $.路径 }}）读取逗号分隔的身份证号，查 BPM 用户表换成 userId 写回解包路径；全部未命中报错，部分未命中告警',
-    color: '#0891b2',
-    icon: 'ph:identification-card',
-    group: 'business'
-  },
-  {
-    type: 'fileUpload',
-    label: 'BPM 上传附件',
-    short: '上传附件',
-    desc: 'sourcePath 表达式（{{ $.路径 }}）取出文件数组（base64），本地摘要校验后上传到 BO 记录附件字段，结果存 $.数据空间.files',
-    color: '#7c3aed',
-    icon: 'ph:upload-simple',
-    group: 'business'
-  },
-  {
-    type: 'fileDownload',
-    label: 'BPM 下载附件',
-    short: '下载附件',
-    desc: '按 boId + 附件字段名读取 BO 记录全部文件转 base64，结果存 $.数据空间.files（可直接接上传组件）',
-    color: '#0369a1',
-    icon: 'ph:download-simple',
-    group: 'business'
-  },
-  {
-    type: 'script',
-    label: '脚本',
-    short: '脚本',
-    desc: 'Groovy 等脚本语言编写的任意代码，可读写数据空间',
-    color: '#9c27b0',
-    icon: 'ph:code',
-    group: 'business'
-  },
-  {
-    type: 'booleanScript',
-    label: '条件脚本',
-    short: '条件脚本',
-    desc: '返回 true/false 的脚本节点，可放入 IF/WHILE 条件槽',
-    color: '#e6a23c',
-    icon: 'ph:terminal-window',
-    lfNodeType: 'NodeBooleanComponent',
-    group: 'business'
   }
 ];
 
@@ -450,7 +241,14 @@ export const PALETTE_GROUPS: { key: NonNullable<CmpDef['group']>; label: string;
   { key: 'business', label: '业务组件', color: '#409eff' }
 ];
 
-const DEF_MAP = new Map(CMP_DEFS.map((d) => [d.type, d]));
+/**
+ * 全部已注册组件：结构件（静态）+ 业务物料（/options 全量下发，原地增删）。
+ * 数组引用保持稳定，消费侧靠 materialTick 追踪物料区变更。
+ */
+export const CMP_DEFS: CmpDef[] = [...STRUCTURE_DEFS];
+
+const STRUCTURE_TYPES = new Set(STRUCTURE_DEFS.map((d) => d.type));
+const DEF_MAP = new Map(STRUCTURE_DEFS.map((d) => [d.type, d]));
 
 export function getDef(type: string): CmpDef | undefined {
   return DEF_MAP.get(type);
@@ -465,6 +263,85 @@ export function isBooleanDef(def: CmpDef | undefined | null): boolean {
 }
 
 /**
+ * 物料合流响应式滴答。模块级数组/Map 的原地变更不可被 Vue 追踪，
+ * 每次 applyComponentOptions 后自增；渲染侧 computed 引用本值即可刷新。
+ */
+export const materialTick = ref(0);
+
+/** 远程 group 白名单：非七组之内的值忽略，避免脏数据把面板分组打穿 */
+const VALID_GROUPS = new Set<CmpDef['group']>([
+  'flow', 'sequence', 'branch', 'loop', 'other', 'subflow', 'business'
+]);
+
+/** 后端 NodeTypeKind → LiteFlow 节点 lfNodeType；NODE/null 为普通叶子（不写该字段） */
+function mapNodeType(nodeType?: NodeTypeKind | null): CmpDef['lfNodeType'] | undefined {
+  switch (nodeType) {
+    case 'BOOLEAN':
+      return 'NodeBooleanComponent';
+    case 'FOR':
+      return 'NodeForComponent';
+    case 'ITERATOR':
+      return 'NodeIteratorComponent';
+    case 'SWITCH':
+      return 'NodeSwitchComponent';
+    default:
+      return undefined;
+  }
+}
+
+/** /options 单项 → 本地 CmpDef（纯展示映射；结构行为字段一律不出现） */
+function toCmpDef(opt: ComponentOption): CmpDef {
+  const lfNodeType = mapNodeType(opt.nodeType);
+  const def: CmpDef = {
+    type: opt.code,
+    label: opt.name || opt.code,
+    desc: opt.description ?? '',
+    color: opt.color ?? '#409eff',
+    icon: opt.icon ?? 'ph:puzzle-piece',
+    group:
+      opt.group && VALID_GROUPS.has(opt.group as CmpDef['group'])
+        ? (opt.group as CmpDef['group'])
+        : 'business'
+  };
+  if (opt.shortName) def.short = opt.shortName;
+  if (lfNodeType) def.lfNodeType = lfNodeType;
+  // 业务域只落普通叶子；槽件（BOOLEAN/FOR/ITERATOR/SWITCH）归「条件组件」段，不带域
+  if (!lfNodeType && (opt.domain === 'bpm' || opt.domain === 'common')) {
+    def.bizCategory = opt.domain;
+  }
+  return def;
+}
+
+/**
+ * 用后端 /options 结果全量替换物料区（业务物料唯一数据源）。
+ *
+ * - 结构件（start/end + EL 算子）永不参与替换；
+ * - 每次调用先清空上一批物料再重建：后端停用/删除的件下一秒就从面板消失；
+ * - 接口失败不调用本函数，物料区保持上一批（会话期仅首拉）或为空，绝不塞本地数据。
+ */
+export function applyComponentOptions(options: ComponentOption[]): void {
+  // 直接遍历 Map.keys()：删除当前游标键在 Map 迭代规范下安全（未访问到的键删除后即跳过）
+  for (const type of DEF_MAP.keys()) {
+    if (!STRUCTURE_TYPES.has(type)) {
+      DEF_MAP.delete(type);
+    }
+  }
+  for (let i = CMP_DEFS.length - 1; i >= 0; i--) {
+    if (!STRUCTURE_TYPES.has(CMP_DEFS[i].type)) {
+      CMP_DEFS.splice(i, 1);
+    }
+  }
+  for (const opt of options) {
+    // 无 code 的脏项跳过；与结构件撞码的远程项不允许覆盖画布语法
+    if (!opt?.code || STRUCTURE_TYPES.has(opt.code)) continue;
+    const def = toCmpDef(opt);
+    CMP_DEFS.push(def);
+    DEF_MAP.set(def.type, def);
+  }
+  materialTick.value++;
+}
+
+/**
  * 标识规则（2026-09-16 修订）：
  * - 组件注册名（CmpProperty.id / EL nodeId）= def.type，如同类组件可重复：httpRequest1/condition1
  *   的区分不放在 nodeId，而放在 tag。
@@ -473,5 +350,3 @@ export function isBooleanDef(def: CmpDef | undefined | null): boolean {
  * - EL 形态：THEN(httpRequest.tag("httpRequest1").data("..."))
  * - 组件产出统一写在 $.数据空间名.xxx 下（response 组件例外，固定写 $.response.*）。
  */
-
-

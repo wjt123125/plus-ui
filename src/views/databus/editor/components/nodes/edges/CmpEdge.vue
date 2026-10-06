@@ -150,7 +150,8 @@ onBeforeUnmount(() => clearTimeout(hoverOffTimer));
 // 全图统一三次贝塞尔（VueFlow getBezierPath，LR：右出左入），
 // 控制点为水平方向中点 (midX, sy)/(midX, ty)，无生硬拐角。
 // 几何与 useCanvasController 命中检测（三次贝塞尔分段采样）同源。
-const edgePath = computed<[string, number, number]>(() => {
+// 返回类型 EdgePathParams（5 元组：path/labelX/labelY/offsetX/offsetY）由 getBezierPath 推断
+const edgePath = computed(() => {
   return getBezierPath({
     sourceX: props.sourceX,
     sourceY: props.sourceY,

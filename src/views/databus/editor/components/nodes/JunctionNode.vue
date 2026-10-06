@@ -52,6 +52,7 @@ function inletStyle(i: number): Record<string, string> {
   height: 10px;
   border-radius: 50%;
   background: #909399;
-  box-shadow: 0 0 0 2px #fff, 0 1px 3px rgb(0 0 0 / 20%);
+  /* 描边用表面色：亮色下白圈断开连线，暗色下跟随深表面不留白晕 */
+  box-shadow: 0 0 0 2px var(--el-bg-color), 0 1px 3px rgb(0 0 0 / 20%);
 }
 </style>

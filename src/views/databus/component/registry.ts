@@ -6,14 +6,13 @@
  *   CUSTOM（库存件：同码启用有 script_body，契约/治理全量取 DB，可覆盖同码内置）；
  *   停用件不进 /options，仅在 /list 里露出。
  * - /list：databus_component 全部 DB 行（含停用）。
- * - cmp-defs：前端物料面板现行事实源，仅给内置件补七组分组/色值（注解 group 当前恒为默认 business，
- *   待 cmp-defs 退役后自然回落到 option.group）。
+ * - 展示元数据（分组/色值/图标/短名）同样取自 /options，物料唯一数据源，无本地静态表。
  *
  * 旧「编码冲突红签」已废除：同码 DB 行启用有脚本即库存件接管，无脚本即治理覆盖，均为合法态。
  */
 import type { ComponentOption, ComponentSource, DatabusComponentVo } from '@/api/databus/component/types';
 
-/** 台账只需要 cmp-defs 的展示字段，结构类型最小化，不依赖编辑器内部类型导出 */
+/** /options 自带的展示字段，结构类型最小化 */
 export interface DefMeta {
   group?: string;
   color?: string;
@@ -33,7 +32,7 @@ export interface ComponentRegistryRow {
   option?: ComponentOption;
   /** databus_component 表行：OVERLAY/CUSTOM 及停用件有 */
   db?: DatabusComponentVo;
-  /** 生效面板分组（DB 治理正本 → cmp-defs → option.group） */
+  /** 生效面板分组（DB 治理正本 → option.group） */
   group: string;
   /** 生效图标（Iconify 名或本地 svg 名） */
   icon?: string;
@@ -84,7 +83,7 @@ export function buildRegistry(
         scripted: false
       });
     } else {
-      // OVERLAY（治理覆盖）与 CUSTOM（库存脚本件）：治理字段一律 DB 正本 → option 同源缓存 → cmp-defs
+      // OVERLAY（治理覆盖）与 CUSTOM（库存脚本件）：治理字段一律 DB 正本 → option 同源缓存
       const db = dbRows.find((r) => r.componentCode === opt.code);
       if (db?.id != null) {
         matchedDbIds.add(db.id);

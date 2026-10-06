@@ -127,6 +127,7 @@ import { useChainDocument } from './composables/useChainDocument';
 import { useEditorHotkeys } from './composables/useEditorHotkeys';
 import { usePanelCollapse } from './composables/usePanelCollapse';
 import { usePreviewRun } from './composables/usePreviewRun';
+import { useComponentOptions } from './composables/useComponentOptions';
 
 defineOptions({ name: 'DatabusEditor' });
 
@@ -299,6 +300,10 @@ useEditorHotkeys({
 });
 
 onMounted(() => {
+  // 预拉物料（唯一数据源）：成功后重投影一次，把加载瞬间渲染为「未注册」的业务卡刷新成真物料
+  void useComponentOptions()
+    .ensureOptions()
+    .then(() => ctrl.reproject());
   // 建立历史基线，保证撤销按钮初始禁用且首次编辑可撤销
   nextTick(reset);
   // 从链路列表「编排」跳入：query.id 指定已保存链路，异步加载替换空画布

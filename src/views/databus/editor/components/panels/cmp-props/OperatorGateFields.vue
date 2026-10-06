@@ -13,6 +13,7 @@
       <ChainSelect
         :model-value="chainRefCode"
         :exclude-id="editingChainId"
+        openable
         placeholder="选择要引用的子流程"
         @update:model-value="onChainRefChange"
       />

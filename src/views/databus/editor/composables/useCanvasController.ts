@@ -104,6 +104,8 @@ export interface CanvasController {
   paste: () => void;
   selectAll: () => void;
   deselect: () => void;
+  /** 重投影：treeModel.project → setNodes/setEdges，保留选中态与坐标缓存 */
+  reproject: () => void;
   /** 属性面板编辑后调：重投影 + 入栈 + EL 预览刷新 */
   commit: () => void;
   /** 双击边/属性面板编辑边 label：通过 edge.data.treeAnchor 定位父算子 → 改 outletLabels[branchIndex] → 重投影 */
@@ -229,15 +231,16 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
   }
 
   /**
-   * 条件算子条件槽准入规则：算子类型 → 条件件的 LiteFlow 节点类型与默认物料。
+   * 条件算子条件槽准入规则：算子类型 → 条件件的 LiteFlow 节点类型与默认物料注册名。
    * IF/WHILE 收布尔条件件；FOR/ITERATOR/SWITCH 各收专属控制组件。
+   * 展示名不静态维护，用时从 getDef 取（物料唯一来源 /options），取不到退回注册名。
    */
-  const CONDITION_SLOT_RULES: Record<string, { nodeType: string; defType: string; label: string }> = {
-    IF: { nodeType: 'NodeBooleanComponent', defType: 'condition', label: '条件判断' },
-    WHILE: { nodeType: 'NodeBooleanComponent', defType: 'condition', label: '条件判断' },
-    FOR: { nodeType: 'NodeForComponent', defType: 'forLoop', label: '计数循环组件' },
-    ITERATOR: { nodeType: 'NodeIteratorComponent', defType: 'iteratorLoop', label: '迭代循环组件' },
-    SWITCH: { nodeType: 'NodeSwitchComponent', defType: 'switchRoute', label: '选择路由组件' }
+  const CONDITION_SLOT_RULES: Record<string, { nodeType: string; defType: string }> = {
+    IF: { nodeType: 'NodeBooleanComponent', defType: 'condition' },
+    WHILE: { nodeType: 'NodeBooleanComponent', defType: 'condition' },
+    FOR: { nodeType: 'NodeForComponent', defType: 'forLoop' },
+    ITERATOR: { nodeType: 'NodeIteratorComponent', defType: 'iteratorLoop' },
+    SWITCH: { nodeType: 'NodeSwitchComponent', defType: 'switchRoute' }
   };
 
   /** 条件件节点类型 → 可投放的算子名（拒绝误拖时的提示文案用） */
@@ -281,7 +284,8 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
       const rule = CONDITION_SLOT_RULES[opType];
       if (rule) {
         if (def.lfNodeType !== rule.nodeType) {
-          ElMessage.warning(`「${opType}」的条件槽只能放入「${rule.label}」组件`);
+          const slotLabel = getDef(rule.defType)?.label ?? rule.defType;
+          ElMessage.warning(`「${opType}」的条件槽只能放入「${slotLabel}」组件`);
           return;
         }
         const condId = attachCondition(opNode!.id, type);
@@ -1012,6 +1016,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     paste,
     selectAll,
     deselect,
+    reproject,
     commit,
     updateEdgeLabel,
     autoLayout,

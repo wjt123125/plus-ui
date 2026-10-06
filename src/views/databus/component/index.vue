@@ -227,7 +227,7 @@ import {
 import type { ComponentSource, NodeTypeKind, ScriptRuntime } from '@/api/databus/component/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import modal from '@/plugins/modal';
-import { CMP_DEFS, PALETTE_GROUPS } from '../editor/cmp-defs';
+import { PALETTE_GROUPS } from '../editor/cmp-defs';
 import ComponentDetailDrawer from './ComponentDetailDrawer.vue';
 import ComponentForm from './ComponentForm.vue';
 import { groupLabel, nodeTypeLabel } from './component-labels';
@@ -236,13 +236,10 @@ import type { ComponentRegistryRow, DefMeta } from './registry';
 
 /**
  * 组件管理台账页（Style-B 小卡片网格，与连接管理同范式）。
- * 列表是 /options（内置+启用自定义富 schema）与 /list（全部 DB 行）的合流，
- * cmp-defs 补面板分组/色值；停用与编码冲突的自定义件只在 /list 里，靠合流露出。
+ * 列表是 /options（内置+启用自定义富 schema）与 /list（全部 DB 行）的合流；
+ * 面板分组/色值等展示元数据同样取自 /options（物料唯一数据源），
+ * 停用件只在 /list 里露出。
  */
-
-const defMap: ReadonlyMap<string, DefMeta> = new Map(
-  CMP_DEFS.map((d) => [d.type, { group: d.group, color: d.color, icon: d.icon, short: d.short }])
-);
 
 const rows = ref<ComponentRegistryRow[]>([]);
 /** 库存脚本件运行时健康（启动期失败件用于页顶红条） */
@@ -345,7 +342,19 @@ const getList = async () => {
     const options = optRes.status === 'fulfilled' ? optRes.value.data?.components ?? [] : [];
     const dbRows = listRes.status === 'fulfilled' ? listRes.value.data?.rows ?? [] : [];
     runtimeHealth.value = runtimeRes.status === 'fulfilled' ? runtimeRes.value.data ?? [] : [];
-    rows.value = buildRegistry(options, dbRows, defMap);
+    // 展示元数据从 /options 自身构建（同一次响应，无第二数据源）
+    const optionMetaMap: ReadonlyMap<string, DefMeta> = new Map(
+      options.map((o) => [
+        o.code,
+        {
+          group: o.group ?? undefined,
+          color: o.color ?? undefined,
+          icon: o.icon ?? undefined,
+          short: o.shortName ?? undefined
+        }
+      ])
+    );
+    rows.value = buildRegistry(options, dbRows, optionMetaMap);
   });
 };
 

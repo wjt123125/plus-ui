@@ -4,9 +4,9 @@
  * 未挂条件件的网关表单、三个叶子表单上的「更换」按钮、更换弹层共用同一份状态。
  */
 import { computed, inject, provide, ref, type ComputedRef, type Ref } from 'vue';
-import { getDef, type CmpDef } from '../../../cmp-defs';
+import { getDef, materialTick, type CmpDef } from '../../../cmp-defs';
 import { useCanvasController } from '../../../composables/useCanvasController';
-import { CONDITION_SLOT_HINTS, CONDITION_SLOT_TYPES } from './constants';
+import { CONDITION_SLOT_HINTS, getConditionSlotTypes } from './constants';
 import type { CmpPropsContext } from './usePropsContext';
 
 const KEY = Symbol('cmp-props-condition-slot');
@@ -30,11 +30,13 @@ export function createConditionSlotActions(
 ): ConditionSlotActions {
   const ctrl = useCanvasController();
 
-  const condPickDefs = computed<CmpDef[]>(() =>
-    (CONDITION_SLOT_TYPES[ctx.opNode.value?.type ?? ''] ?? [])
+  const condPickDefs = computed<CmpDef[]>(() => {
+    // 依赖 materialTick：物料 /options 到达后候选条件件才可用
+    materialTick.value;
+    return getConditionSlotTypes(ctx.opNode.value?.type ?? '')
       .map((t) => getDef(t))
-      .filter((d): d is CmpDef => !!d)
-  );
+      .filter((d): d is CmpDef => !!d);
+  });
 
   const conditionSlotHint = computed(
     () => CONDITION_SLOT_HINTS[ctx.opNode.value?.type ?? ''] ?? ''

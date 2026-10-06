@@ -39,11 +39,15 @@
 import { computed } from 'vue';
 import { Handle, Position, type NodeProps } from '@vue-flow/core';
 import type { CmpNodeData } from '../../composables/useElTreeModel';
-import { getDef } from '../../cmp-defs';
+import { getDef, materialTick } from '../../cmp-defs';
 
 const props = defineProps<NodeProps<CmpNodeData>>();
 
-const iconName = computed(() => getDef(props.data.defType)?.icon ?? '');
+// 依赖 materialTick：/options 合流改写 icon 后节点同步刷新
+const iconName = computed(() => {
+  materialTick.value;
+  return getDef(props.data.defType)?.icon ?? '';
+});
 
 /** 形状 class：决策类菱形，并行/逻辑类圆形 */
 const shapeClass = computed(() => {

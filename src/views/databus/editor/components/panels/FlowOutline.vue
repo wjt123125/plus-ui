@@ -24,7 +24,7 @@ import { computed } from 'vue';
 import { useVueFlow } from '@vue-flow/core';
 import { useElTreeModelInject, type ElNode } from '../../composables/useElTreeModel';
 import { useCanvasController } from '../../composables/useCanvasController';
-import { getDef } from '../../cmp-defs';
+import { getDef, materialTick } from '../../cmp-defs';
 
 defineOptions({ name: 'FlowOutline' });
 
@@ -78,6 +78,8 @@ function traverse(node: ElNode, depth: number, items: OutlineItem[]) {
 }
 
 const outlineItems = computed<OutlineItem[]>(() => {
+  // 依赖 materialTick：合流改写 label/color 后大纲同步刷新
+  materialTick.value;
   const root = treeModel.root.value;
   if (!root) return [];
   const items: OutlineItem[] = [];

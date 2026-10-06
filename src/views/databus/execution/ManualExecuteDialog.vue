@@ -31,6 +31,7 @@
           :clearable="false"
           :show-status-tag="false"
           :disabled="lockedChainId !== undefined"
+          openable
           placeholder="选择已发布链路"
           @change="handleChainChange"
         />

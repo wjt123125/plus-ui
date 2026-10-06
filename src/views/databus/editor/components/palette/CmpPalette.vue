@@ -73,7 +73,13 @@
           </div>
         </el-tab-pane>
         <el-tab-pane label="业务组件" name="business">
-          <div class="cmp-palette__grid">
+          <div v-if="materialError" class="cmp-palette__state is-error">
+            物料加载失败
+            <button type="button" class="cmp-palette__retry" @click="retry">重试</button>
+          </div>
+          <div v-else-if="!materialLoaded" class="cmp-palette__state">物料加载中…</div>
+          <div v-else-if="businessDefs.length === 0" class="cmp-palette__state">暂无可用组件</div>
+          <div v-else class="cmp-palette__grid">
             <el-tooltip
               v-for="def in businessDefs"
               :key="def.type"
@@ -102,7 +108,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { Fold, Search } from '@element-plus/icons-vue';
-import { CMP_DEFS, DND_MIME, PALETTE_GROUPS } from '../../cmp-defs';
+import { CMP_DEFS, DND_MIME, PALETTE_GROUPS, materialTick } from '../../cmp-defs';
+import { useComponentOptions } from '../../composables/useComponentOptions';
 
 const emit = defineEmits<{
   (e: 'collapse'): void;
@@ -111,22 +118,34 @@ const emit = defineEmits<{
 const keyword = ref('');
 const isSearching = computed(() => keyword.value.trim().length > 0);
 
-/** 所有已注册组件（含 virtual 系统节点 start/end，允许用户手动从物料区拖入） */
-const realDefs = CMP_DEFS;
+/** 物料唯一数据源状态：失败显性提示 + 重试，不做本地兜底 */
+const { loaded: materialLoaded, error: materialError, retryOptions } = useComponentOptions();
+function retry() {
+  void retryOptions();
+}
+
+/**
+ * 所有已注册组件（含 virtual 系统节点 start/end，允许用户手动从物料区拖入）。
+ * /options 合流只原地改数组内容，故显式依赖 materialTick 让面板在物料到达后刷新。
+ */
+const realDefs = computed(() => {
+  materialTick.value;
+  return CMP_DEFS;
+});
 
 /** Tab 态：算子页按分组平铺（组头不可折叠） */
 const operatorGroups = computed(() =>
   PALETTE_GROUPS.filter((g) => g.key !== 'business')
-    .map((g) => ({ ...g, defs: realDefs.filter((d) => d.group === g.key) }))
+    .map((g) => ({ ...g, defs: realDefs.value.filter((d) => d.group === g.key) }))
     .filter((g) => g.defs.length > 0)
 );
 
-const businessDefs = computed(() => realDefs.filter((d) => d.group === 'business'));
+const businessDefs = computed(() => realDefs.value.filter((d) => d.group === 'business'));
 
 /** 搜索态：无视 Tab 全局平铺命中结果 */
 const searchResults = computed(() => {
   const kw = keyword.value.trim().toLowerCase();
-  return realDefs.filter((d) =>
+  return realDefs.value.filter((d) =>
     [d.label, d.short, d.desc, d.type].some((s) => s?.toLowerCase().includes(kw))
   );
 });
@@ -284,5 +303,32 @@ function onDragStart(event: DragEvent, type: string) {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   text-align: center;
+}
+
+/* 业务 tab 的加载/失败/空态：失败可点重试，不做静态物料兜底 */
+.cmp-palette__state {
+  padding: 20px 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  text-align: center;
+}
+
+.cmp-palette__state.is-error {
+  color: var(--el-color-danger);
+}
+
+.cmp-palette__retry {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0;
+  font-size: 12px;
+  color: var(--el-color-primary);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.cmp-palette__retry:hover {
+  text-decoration: underline;
 }
 </style>

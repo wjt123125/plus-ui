@@ -53,14 +53,18 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { Handle, Position, type NodeProps } from '@vue-flow/core';
 import type { CmpNodeData } from '../../composables/useElTreeModel';
-import { getDef } from '../../cmp-defs';
+import { getDef, materialTick } from '../../cmp-defs';
 import CmpContextPad from './CmpContextPad.vue';
 
 const props = defineProps<NodeProps<CmpNodeData>>();
 
 const hover = ref(false);
 
-const iconName = computed(() => getDef(props.data.defType)?.icon ?? '');
+// 依赖 materialTick：/options 合流改写 icon 后节点同步刷新
+const iconName = computed(() => {
+  materialTick.value;
+  return getDef(props.data.defType)?.icon ?? '';
+});
 
 /**
  * 品牌色单一来源：根节点挂 --brand（业务卡）/ --node-color（虚拟起止圆点），
@@ -106,8 +110,8 @@ const tipVisible = computed(() => showTipTitle.value || (!props.data.virtual && 
   width: 150px;
   height: 56px;
   padding: 6px 8px;
-  background-color: #fff;
-  border: 1px solid rgba(15, 23, 42, 8%);
+  background-color: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   box-shadow:
     0 1px 2px rgba(16, 24, 40, 4%),
@@ -121,7 +125,7 @@ const tipVisible = computed(() => showTipTitle.value || (!props.data.virtual && 
 /* hover：轻微上浮 + 阴影分层加深（动效白名单：仅 1px 位移） */
 .cmp-node:hover {
   transform: translateY(-1px);
-  border-color: rgba(15, 23, 42, 12%);
+  border-color: var(--el-border-color);
   box-shadow:
     0 2px 4px rgba(16, 24, 40, 5%),
     0 4px 10px rgba(16, 24, 40, 8%);
@@ -212,13 +216,13 @@ const tipVisible = computed(() => showTipTitle.value || (!props.data.virtual && 
   overflow: hidden;
 }
 
-/* 顶行：组件类型名，永远显。冷灰 #1f2937 + 微收字距，标题感更强 */
+/* 顶行：组件类型名，永远显。冷灰主文本色 + 微收字距，标题感更强 */
 .cmp-node__label {
   overflow: hidden;
   font-size: 13px;
   font-weight: 600;
   line-height: 16px;
-  color: #1f2937;
+  color: var(--el-text-color-primary);
   letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -290,16 +294,33 @@ const tipVisible = computed(() => showTipTitle.value || (!props.data.virtual && 
   background-color: var(--el-color-success);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--el-color-success) 25%, transparent);
 }
+
+/* ── 暗色主题：白底彩块改为深底彩块，保证文字对比度 ───────────────────── */
+html.dark .cmp-node {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 30%),
+    0 1px 3px rgba(0, 0, 0, 35%);
+}
+
+html.dark .cmp-node__icon {
+  /* 深色上品牌色 26% 调亮，图标仍用纯品牌色 */
+  background-color: color-mix(in srgb, var(--brand, #909399) 26%, var(--el-bg-color));
+}
+
+html.dark .cmp-node__title {
+  /* 浅色基调混入品牌色：暗底上的浅彩字，与图标呼应 */
+  color: color-mix(in srgb, var(--brand, #6b7280) 65%, #e5eaf3);
+}
 </style>
 
 <!-- 非 scoped：tooltip 浮层 teleport 到 body，scoped 选择器命中不了。
      仅用 .cmp-node-popper 类名限定，不污染全局 el-tooltip。
-     Stripe/Notion/macOS 风浅色卡片浮层：白底 + 浅边框 + 柔影 + 品牌色小图标。 -->
+     Stripe/Notion/macOS 风卡片浮层：表面色 + 浅边框 + 柔影，明暗主题各走变量。 -->
 <style>
 .cmp-node-popper.el-popper.is-light {
   padding: 0;
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 10%);
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-light);
   border-radius: 10px;
   box-shadow:
     0 8px 24px rgba(16, 24, 40, 12%),
@@ -308,8 +329,8 @@ const tipVisible = computed(() => showTipTitle.value || (!props.data.virtual && 
 
 /* 箭头与卡片同底同边，消除默认灰边感 */
 .cmp-node-popper.el-popper.is-light .el-popper__arrow::before {
-  background: #ffffff;
-  border-color: rgba(15, 23, 42, 10%);
+  background: var(--el-bg-color);
+  border-color: var(--el-border-color-light);
 }
 
 .cmp-tip {
@@ -324,7 +345,7 @@ const tipVisible = computed(() => showTipTitle.value || (!props.data.virtual && 
   font-size: 12px;
   font-weight: 600;
   line-height: 1.45;
-  color: #1f2937;
+  color: var(--el-text-color-primary);
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
@@ -339,11 +360,11 @@ const tipVisible = computed(() => showTipTitle.value || (!props.data.virtual && 
   align-items: baseline;
   margin-top: 7px;
   padding-top: 7px;
-  border-top: 1px solid rgba(15, 23, 42, 6%);
+  border-top: 1px solid var(--el-border-color-lighter);
   font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
   font-size: 11px;
   line-height: 1.4;
-  color: #4b5563;
+  color: var(--el-text-color-regular);
 }
 
 .cmp-tip__space.is-first {
@@ -356,6 +377,6 @@ const tipVisible = computed(() => showTipTitle.value || (!props.data.virtual && 
   flex-shrink: 0;
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  color: #6b7280;
+  color: var(--el-text-color-secondary);
 }
 </style>

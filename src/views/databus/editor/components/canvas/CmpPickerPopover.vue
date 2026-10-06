@@ -47,7 +47,7 @@ const pos = ref<{ x: number; y: number } | null>(null);
 const popStyle = computed(() => ({
   left: `${pos.value?.x ?? ctrl.picker.x}px`,
   top: `${pos.value?.y ?? ctrl.picker.y}px`,
-  visibility: pos.value ? 'visible' : 'hidden'
+  visibility: (pos.value ? 'visible' : 'hidden') as 'visible' | 'hidden'
 }));
 
 /** 渲染后实测弹层宽高：右下优先，对侧空间够就翻转，最后夹进取进视口 */

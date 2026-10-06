@@ -8,11 +8,16 @@
   - includeTemplate：默认只列普通链（模板恒草稿不可发布，运行时永远无法被引用）；
   - excludeId：按表主键排除（CHAIN 引用时排除当前编辑链，防直接递归）；
   - showStatusTag：候选项右侧状态徽标（执行弹窗只选已发布时可关）；
+  - openable：右侧加「新窗口打开」按钮（默认关）。开窗行为内聚在本件：选中真实候选才可点，
+    点击按子链表主键 id 解析编辑器路由，用命名窗口 databus_chain_<chainCode> 打开完整编辑器
+    （同子链复用窗口、独立 JS 上下文不影响调用方未保存状态），使用方只加 openable 即可。
   - 选中值不在候选（被删/转模板/状态不符/排除自身）时自动补一条只读项把值露出来。
   不支持 allow-create 自由输入：执行记录页那种编码片段 LIKE 筛选是筛选器，语义不同，勿用本件。
 -->
 <template>
+  <div class="chain-select">
   <el-select
+    class="chain-select__select"
     :model-value="modelValue ?? ''"
     :placeholder="placeholder"
     :disabled="disabled"
@@ -54,11 +59,30 @@
       <span class="chain-select__empty">{{ failed ? '链路列表加载失败，请切走再切回重试' : '暂无可选链路' }}</span>
     </template>
   </el-select>
+  <el-tooltip
+    v-if="openable"
+    content="新窗口打开该链路"
+    placement="top"
+    :show-after="300"
+  >
+    <span class="chain-select__open-wrap">
+      <el-button
+        class="chain-select__open"
+        :disabled="disabled || !selectedOption"
+        @click="onOpenClick"
+      >
+        <el-icon><TopRight /></el-icon>
+      </el-button>
+    </span>
+  </el-tooltip>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted } from 'vue';
-import { ElOption, ElSelect, ElTag } from 'element-plus';
+import { useRouter } from 'vue-router';
+import { ElButton, ElIcon, ElMessage, ElOption, ElSelect, ElTag, ElTooltip } from 'element-plus';
+import { TopRight } from '@element-plus/icons-vue';
 import type { DatabusChainQuery, DatabusChainVo } from '@/api/databus/chain/types';
 import { useChainOptions } from '../../composables/useChainOptions';
 
@@ -83,6 +107,8 @@ const props = withDefaults(
     clearable?: boolean;
     /** 候选项是否显示状态徽标 */
     showStatusTag?: boolean;
+    /** 是否显示「新窗口打开」按钮（CHAIN 子流程查看场景，默认关） */
+    openable?: boolean;
   }>(),
   {
     valueKey: 'chainCode',
@@ -91,7 +117,8 @@ const props = withDefaults(
     placeholder: '选择链路',
     disabled: false,
     clearable: true,
-    showStatusTag: true
+    showStatusTag: true,
+    openable: false
   }
 );
 
@@ -116,6 +143,8 @@ const query = computed<DatabusChainQuery>(() => ({
 }));
 
 const { chains, loading, failed, ensure } = useChainOptions(() => query.value);
+
+const router = useRouter();
 
 /** 挂载首拉是否已结束：refresh 与其并发时复用单飞，避免首次打开弹两条请求 */
 let firstLoadSettled = false;
@@ -175,6 +204,33 @@ function onValueChange(val: SelectValue) {
 }
 
 /**
+ * 当前值对应的真实候选（从未过滤缓存里找，状态过滤/排除自身场景仍能开窗）。
+ * 找不到（值为空/已删除/伪造只读项）返回 null，按钮据此置灰。
+ */
+const selectedOption = computed<DatabusChainVo | null>(() => {
+  const val = props.modelValue;
+  if (val === undefined || val === null || val === '') return null;
+  return chains.value.find((o) => String(optValue(o)) === String(val)) ?? null;
+});
+
+/**
+ * 新浏览器窗口打开选中链路的完整编辑器：
+ * - 编辑器为隐藏菜单，按 path 约定（endsWith /editor 且含 databus）动态解析，不硬编码；
+ * - 窗口名按 chainCode，同一链路复用已开窗口；独立窗口不影响调用方（弹窗/未保存画布）。
+ */
+function onOpenClick() {
+  const opt = selectedOption.value;
+  if (!opt?.id) return;
+  const target = router.getRoutes().find((r) => r.path.endsWith('/editor') && r.path.includes('databus'));
+  if (!target) {
+    ElMessage.error('未找到编辑器路由，请确认编辑器隐藏菜单已加载（重新登录后重试）');
+    return;
+  }
+  const href = router.resolve({ path: target.path, query: { id: String(opt.id) } }).href;
+  window.open(href, `databus_chain_${opt.chainCode}`);
+}
+
+/**
  * 强制重拉（弹窗每次打开等需要最新列表的场景用；普通挂载走缓存）。
  * 与挂载首拉并发时复用同一条在飞请求，之后再调才真正强刷。
  */
@@ -184,6 +240,29 @@ defineExpose({
 </script>
 
 <style scoped>
+.chain-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.chain-select__select {
+  flex: 1;
+  min-width: 0;
+}
+
+.chain-select__open-wrap {
+  /* el-tooltip 包裹 disabled 按钮时需要非禁用元素承接 hover/focus 事件 */
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.chain-select__open {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
 .chain-select__status {
   margin-left: 8px;
 }
