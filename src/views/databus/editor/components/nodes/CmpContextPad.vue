@@ -50,7 +50,14 @@ const hoverPad = ref(false);
 const isVisible = computed(() => props.selected || props.hover || hoverPad.value);
 
 function open(mode: PickerMode, event: MouseEvent) {
-  ctrl.openPicker({ x: event.clientX, y: event.clientY, mode, nodeId: props.nodeId });
+  // 锚点取按钮几何中心而非点击坐标：24px 命中区内点哪里弹窗落点都一致
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  ctrl.openPicker({
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+    mode,
+    nodeId: props.nodeId
+  });
 }
 </script>
 

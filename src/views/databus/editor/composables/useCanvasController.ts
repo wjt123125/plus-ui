@@ -38,7 +38,7 @@ export interface MenuState {
 
 export interface PickerState {
   visible: boolean;
-  /** 弹层左上角的视口坐标（clientX/clientY，不随缩放平移变化） */
+  /** 锚点视口坐标（「+」圆心 / 右键光标的 clientX/clientY）；弹层实际落点由 CmpPickerPopover 计算 */
   x: number;
   y: number;
   mode: PickerMode;
@@ -848,11 +848,12 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     nodeId?: string | null;
     edgeId?: string | null;
   }) {
-    const maxX = window.innerWidth - 220;
-    const maxY = window.innerHeight - 260;
+    // x/y 只存锚点视口坐标（「+」圆心 / 右键光标）；
+    // 偏移、空间不足时的翻转与视口夹取全部由 CmpPickerPopover 按实测弹层尺寸计算，
+    // 不能在这里按固定 440 高预夹——矮视口下会把向下偏移整个顶没
     picker.visible = true;
-    picker.x = Math.max(8, Math.min(payload.x, maxX));
-    picker.y = Math.max(8, Math.min(payload.y, maxY));
+    picker.x = payload.x;
+    picker.y = payload.y;
     picker.mode = payload.mode;
     picker.nodeId = payload.nodeId ?? null;
     picker.edgeId = payload.edgeId ?? null;

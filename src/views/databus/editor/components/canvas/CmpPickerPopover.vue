@@ -1,103 +1,101 @@
+<!--
+  组件选择弹层的薄外壳：只负责遮罩、锚点定位与控制器接线。
+  定位规则：锚点（「+」圆心 / 右键光标）右下优先，留 GAP 净间距；
+  右/下空间不足时翻到锚点左/上侧；最终夹取在视口内。
+  弹层尺寸在渲染后实测，不预设固定高度——矮视口下预设高度会把垂直偏移夹没。
+  面板本体（搜索/推荐/Tab/键盘）全部内聚在 common/CmpPickerPanel。
+-->
 <template>
   <template v-if="ctrl.picker.visible">
     <div class="cmp-picker-mask" @click="ctrl.closePicker()" />
     <div
+      ref="popRef"
       class="cmp-picker-popover"
-      :style="{ left: `${ctrl.picker.x}px`, top: `${ctrl.picker.y}px` }"
+      :style="popStyle"
       @click.stop
     >
-      <div class="cmp-picker-popover__header">
-        <span class="cmp-picker-popover__title">{{ modeLabel[ctrl.picker.mode] }}</span>
-        <button type="button" class="cmp-picker-popover__close" @click="ctrl.closePicker()">
-          <el-icon><Close /></el-icon>
-        </button>
-      </div>
-      <!-- 推荐区：score ≥ 75 -->
-      <template v-if="recommended.length > 0">
-        <div class="cmp-picker-popover__section-label">推荐</div>
-        <div class="cmp-picker-popover__grid">
-          <el-tooltip
-            v-for="item in recommended"
-            :key="item.def.type"
-            :content="`${item.def.label}（${item.def.type}）\n${item.def.desc}`"
-            placement="right"
-            :show-after="300"
-          >
-            <div class="cmp-picker-popover__item is-recommended" @click="ctrl.pickDef(item.def.type)">
-              <span class="cmp-picker-popover__badge">推荐</span>
-              <span class="cmp-picker-popover__icon" :style="{ backgroundColor: item.def.color }">
-                <SvgIcon :icon-class="item.def.icon" />
-              </span>
-              <span class="cmp-picker-popover__label">{{ item.def.short ?? item.def.label }}</span>
-            </div>
-          </el-tooltip>
-        </div>
-      </template>
-
-      <!-- 更多区：score < 75 -->
-      <template v-if="others.length > 0">
-        <div class="cmp-picker-popover__section-label">更多</div>
-        <div class="cmp-picker-popover__grid">
-          <el-tooltip
-            v-for="item in others"
-            :key="item.def.type"
-            :content="`${item.def.label}（${item.def.type}）\n${item.def.desc}`"
-            placement="right"
-            :show-after="300"
-          >
-            <div class="cmp-picker-popover__item" @click="ctrl.pickDef(item.def.type)">
-              <span class="cmp-picker-popover__icon" :style="{ backgroundColor: item.def.color }">
-                <SvgIcon :icon-class="item.def.icon" />
-              </span>
-              <span class="cmp-picker-popover__label">{{ item.def.short ?? item.def.label }}</span>
-            </div>
-          </el-tooltip>
-        </div>
-      </template>
+      <CmpPickerPanel
+        :mode="ctrl.picker.mode"
+        :anchor-def-type="ctrl.picker.anchorDefType"
+        :excluded-types="ctrl.picker.excludedTypes"
+        @pick="onPick"
+        @close="ctrl.closePicker"
+      />
     </div>
   </template>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount } from 'vue';
-import { Close } from '@element-plus/icons-vue';
-import { getRecommendations } from '../../cmp-recommend';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useCanvasController } from '../../composables/useCanvasController';
-import type { PickerMode } from '../../composables/useCanvasController';
+import { recordCmpPick } from '../../composables/useCmpRecommend';
+import CmpPickerPanel from '../common/CmpPickerPanel.vue';
 
 defineOptions({ name: 'CmpPickerPopover' });
 
 const ctrl = useCanvasController();
 
-const all = computed(() =>
-  getRecommendations(
-    ctrl.picker.mode,
-    ctrl.picker.anchorDefType,
-    ctrl.picker.excludedTypes
-  )
+/** 锚点与弹层角的净间距：「+」圆 11px + 光环 3px，24px 保证圆圈完整露出且不贴弹窗 */
+const GAP = 24;
+/** 弹层距视口边缘的最小留白 */
+const MARGIN = 8;
+
+const popRef = ref<HTMLElement | null>(null);
+/** 实测尺寸后算出的最终左上角；null 时先隐藏，避免一帧错位闪现 */
+const pos = ref<{ x: number; y: number } | null>(null);
+
+const popStyle = computed(() => ({
+  left: `${pos.value?.x ?? ctrl.picker.x}px`,
+  top: `${pos.value?.y ?? ctrl.picker.y}px`,
+  visibility: pos.value ? 'visible' : 'hidden'
+}));
+
+/** 渲染后实测弹层宽高：右下优先，对侧空间够就翻转，最后夹进取进视口 */
+function place() {
+  const el = popRef.value;
+  if (!el) return;
+  const w = el.offsetWidth;
+  const h = el.offsetHeight;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const ax = ctrl.picker.x;
+  const ay = ctrl.picker.y;
+
+  let x = ax + GAP;
+  let y = ay + GAP;
+  if (x + w > vw - MARGIN) x = ax - GAP - w;
+  if (y + h > vh - MARGIN) y = ay - GAP - h;
+  x = Math.min(Math.max(x, MARGIN), Math.max(MARGIN, vw - w - MARGIN));
+  y = Math.min(Math.max(y, MARGIN), Math.max(MARGIN, vh - h - MARGIN));
+
+  pos.value = { x, y };
+}
+
+watch(
+  () => ctrl.picker.visible,
+  async (visible) => {
+    if (visible) {
+      pos.value = null;
+      await nextTick();
+      place();
+      window.addEventListener('resize', place);
+    } else {
+      window.removeEventListener('resize', place);
+    }
+  }
 );
 
-/** 推荐阈值：score ≥ 此值归入推荐区 */
-const RECOMMEND_SCORE_THRESHOLD = 75;
+onBeforeUnmount(() => window.removeEventListener('resize', place));
 
-const recommended = computed(() => all.value.filter((item) => item.score >= RECOMMEND_SCORE_THRESHOLD));
-const others = computed(() => all.value.filter((item) => item.score < RECOMMEND_SCORE_THRESHOLD));
-
-/** 模式中文名，用于标题 */
-const modeLabel: Record<PickerMode, string> = {
-  prepend: '上方插入',
-  append: '下方插入',
-  replace: '替换节点',
-  insertEdge: '线上插入'
-};
-
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && ctrl.picker.visible) {
-    ctrl.closePicker();
-  }
+/**
+ * 选中组件：先记真账（后端全局共现 + 本地个人频次），再执行插入。
+ * 必须在 pickDef 之前取 mode/anchor——pickDef 内部会先 closePicker 清空弹层状态。
+ */
+function onPick(defType: string) {
+  const { mode, anchorDefType } = ctrl.picker;
+  recordCmpPick(mode, anchorDefType, defType);
+  ctrl.pickDef(defType);
 }
-window.addEventListener('keydown', onKeydown);
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 </script>
 
 <style scoped>
@@ -110,127 +108,5 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 .cmp-picker-popover {
   position: fixed;
   z-index: 1998;
-  width: 220px;
-  padding: 10px;
-  background-color: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 8px;
-  box-shadow: 0 6px 24px rgb(0 0 0 / 14%);
-}
-
-.cmp-picker-popover__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.cmp-picker-popover__title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--el-text-color-secondary);
-}
-
-.cmp-picker-popover__close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  color: var(--el-text-color-placeholder);
-  cursor: pointer;
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  transition: color 0.15s, background-color 0.15s;
-}
-
-.cmp-picker-popover__close:hover {
-  color: var(--el-text-color-primary);
-  background-color: var(--el-fill-color-light);
-}
-
-.cmp-picker-popover__grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.cmp-picker-popover__item {
-  display: flex;
-  align-items: center;
-  padding: 6px 8px;
-  cursor: pointer;
-  background-color: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.cmp-picker-popover__item:hover {
-  border-color: var(--el-color-primary-light-5);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 8%);
-}
-
-.cmp-picker-popover__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  margin-right: 6px;
-  color: #fff;
-  font-size: 12px;
-  border-radius: 4px;
-}
-
-.cmp-picker-popover__label {
-  min-width: 0;
-  overflow: hidden;
-  font-size: 12px;
-  color: var(--el-text-color-primary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ── 分区标题 ── */
-.cmp-picker-popover__section-label {
-  margin-top: 8px;
-  margin-bottom: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--el-text-color-placeholder);
-}
-
-.cmp-picker-popover__section-label:first-child {
-  margin-top: 0;
-}
-
-/* ── 推荐徽章 ── */
-.cmp-picker-popover__badge {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  padding: 0 4px;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 14px;
-  color: #fff;
-  background-color: var(--el-color-primary);
-  border-radius: 7px;
-}
-
-/* ── 推荐卡片 ── */
-.cmp-picker-popover__item.is-recommended {
-  position: relative;
-  border-color: var(--el-color-primary);
-  background-color: var(--el-color-primary-light-9);
-}
-
-.cmp-picker-popover__item.is-recommended:hover {
-  border-color: var(--el-color-primary);
-  box-shadow: 0 2px 8px rgb(var(--el-color-primary-rgb) / 20%);
 }
 </style>

@@ -162,7 +162,14 @@ const edgePath = computed<[string, number, number]>(() => {
 });
 
 function onAdd(event: MouseEvent) {
-  ctrl.openPicker({ x: event.clientX, y: event.clientY, mode: 'insertEdge', edgeId: props.id });
+  // 锚点取「+」圆心而非点击坐标：命中区内点哪里都不影响弹窗落点
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  ctrl.openPicker({
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+    mode: 'insertEdge',
+    edgeId: props.id
+  });
 }
 
 // 只有带 branchIndex 的边（branch/jump/merge）才能改 label；
