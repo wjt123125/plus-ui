@@ -157,7 +157,7 @@ const {
   onNodeDragStop
 } = useVueFlow();
 
-// dagre 自动排列：提升到顶层，供 canvasController（结构变更后）调用
+// ELK 自动排列：提升到顶层，供 canvasController（结构变更后）调用
 const { autoLayout: runAutoLayout } = useAutoLayout(treeModel);
 
 // 撤销/重做历史栈：数据源切换到 ElNode 树快照

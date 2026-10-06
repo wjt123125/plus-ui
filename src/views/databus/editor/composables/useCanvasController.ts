@@ -11,86 +11,14 @@ import { ElMessage } from 'element-plus';
 import { getDef } from '../cmp-defs';
 import { getPlaceholderHandle, getPlaceholderSlotIndex, GATEWAY_TOTAL_H, GATEWAY_W, JUNCTION_H, JUNCTION_W, NODE_GAP_Y, NODE_H, NODE_W, type CmpNodeData, type ElNode, type ElTreeModel, type EdgeTreeAnchor } from './useElTreeModel';
 
-// ── merge 长边正交走线 ──────────────────────────────────────────────────
-// 视觉路径（CmpBezierEdge）与拖拽命中（findEdgeAt）必须用同一份几何，
-// 否则会出现「看着线在空处、拖过去却命中」的错位。
+// ── 边走线（全图三次贝塞尔）────────────────────────────────────────────
+// 视觉路径（CmpEdge → getBezierPath）与拖拽命中（findEdgeAt）
+// 必须用同一份几何，否则会出现「看着线在空处、拖过去却命中」的错位。
 /** 边的最小结构（VueFlow GraphEdge 天然满足） */
 export interface EdgeGeomLike {
   sourceHandle?: string | null;
   targetHandle?: string | null;
   data?: unknown;
-}
-
-/** 跨列 merge 判定阈值（px，端点水平净跨度＝源右边→junction 左边）。
- *  同深度分支的 merge ≈ dagre ranksep 80；短一整列 ≈ 80+150+80=310，200 为界。
- *  只有跨列长边走正交「汇流排」，短 merge / branch / seq 一律保持贝塞尔。 */
-export const MERGE_ORTHO_MIN_DX = 200;
-/** 汇流排距 junction 左边的距离：卡在 dagre ranksep(80) 的列间空档内，
- *  竖段只穿过列间隙，不扫过任何节点列（中置拐点会穿过中间列＝旧病根）。 */
-export const MERGE_BUS_GAP = 28;
-/** 正交拐角圆角半径（命中采样只取折点，≤半径的误差被 10px 命中阈值吸收） */
-export const MERGE_CORNER_R = 6;
-
-/** 是否为跨越多列的 merge 长边 */
-export function isLongMergeEdge(edge: EdgeGeomLike, dx: number): boolean {
-  const kind = (edge.data as { kind?: string } | undefined)?.kind;
-  return kind === 'merge' && dx > MERGE_ORTHO_MIN_DX;
-}
-
-/** 正交折线关键点：水平汇出 → 汇流排竖段 → 水平并入 */
-export function mergeOrthoPoints(
-  sx: number, sy: number, tx: number, ty: number
-): Array<[number, number]> {
-  const busX = tx - MERGE_BUS_GAP;
-  return [
-    [sx, sy],
-    [busX, sy],
-    [busX, ty],
-    [tx, ty]
-  ];
-}
-
-/** 正交路径（小圆角）＋弧长中点（边 label / +按钮定位）。
- *  LR 布局专用：入口边必须 source 在左、target 在右。 */
-export function mergeOrthoPath(
-  sx: number, sy: number, tx: number, ty: number
-): { d: string; labelX: number; labelY: number } {
-  const busX = tx - MERGE_BUS_GAP;
-  const r = Math.min(
-    MERGE_CORNER_R,
-    Math.abs(ty - sy) / 2,
-    Math.max(0, busX - sx),
-    Math.max(0, tx - busX)
-  );
-  let d = `M ${sx} ${sy}`;
-  if (Math.abs(ty - sy) < 0.5 || r <= 0.5) {
-    d += ` L ${tx} ${ty}`;
-  } else {
-    const vy = ty > sy ? 1 : -1;
-    d += ` L ${busX - r} ${sy}`;
-    d += ` Q ${busX} ${sy} ${busX} ${sy + vy * r}`;
-    d += ` L ${busX} ${ty - vy * r}`;
-    d += ` Q ${busX} ${ty} ${busX + r} ${ty}`;
-    d += ` L ${tx} ${ty}`;
-  }
-  // label/+按钮取路径弧长中点：长边的中点必然落在首段水平走廊（空闲条带）上
-  const lenA = Math.max(0, busX - sx);
-  const lenB = Math.abs(ty - sy);
-  const lenC = Math.max(0, tx - busX);
-  const half = (lenA + lenB + lenC) / 2;
-  let labelX: number;
-  let labelY: number;
-  if (half <= lenA) {
-    labelX = sx + half;
-    labelY = sy;
-  } else if (half <= lenA + lenB) {
-    labelX = busX;
-    labelY = sy + (ty >= sy ? 1 : -1) * (half - lenA);
-  } else {
-    labelX = busX + (half - lenA - lenB);
-    labelY = ty;
-  }
-  return { d, labelX, labelY };
 }
 
 /** 组件选择弹层的使用场景 */
@@ -130,7 +58,7 @@ interface CreateControllerOptions {
   pushHistory: () => void;
   /** 编辑动作完成后回调（供 index.vue 触发 EL 预览刷新） */
   onCommit?: () => void;
-  /** 顶层共享的 dagre 排列实例（结构变更后调用） */
+  /** 顶层共享的自动排列实例（结构变更后调用） */
   autoLayout: (opts?: import('./useAutoLayout').AutoLayoutOptions) => void;
 }
 
@@ -180,9 +108,9 @@ export interface CanvasController {
   commit: () => void;
   /** 双击边/属性面板编辑边 label：通过 edge.data.treeAnchor 定位父算子 → 改 outletLabels[branchIndex] → 重投影 */
   updateEdgeLabel: (edgeId: string, newLabel: string) => void;
-  /** 一键 dagre 排列全图，坐标同步写回树缓存（跨重投影保留） */
+  /** 一键自动排列全图，坐标同步写回树缓存（跨重投影保留） */
   autoLayout: () => void;
-  /** 拖拽过程中当前命中的 edge id（CmpBezierEdge 显示 + 圆圈）；与占位符命中互斥 */
+  /** 拖拽过程中当前命中的 edge id（CmpEdge 显示 + 圆圈）；与占位符命中互斥 */
   dragOverEdgeId: Ref<string | null>;
   /** 拖拽过程中当前命中的占位符 id（PlaceholderNode 虚框高亮）；与 edge 命中互斥 */
   dragOverPlaceholderId: Ref<string | null>;
@@ -260,7 +188,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     commit();
   }
 
-  /** 一键 dagre 排列全图（含 fitView + 写回坐标缓存） */
+  /** 一键自动排列全图（含 fitView + 写回坐标缓存） */
   function autoLayout() {
     runAutoLayout({ fitView: true });
   }
@@ -385,7 +313,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
       return;
     }
 
-    // 追加到根前算一个默认坐标，避免新节点和已有节点（特别是 dagre 排好的分支结构）重叠：
+    // 追加到根前算一个默认坐标，避免新节点和已有节点（特别是自动排好的分支结构）重叠：
     // Y 取所有节点最大 bottom + NODE_GAP_Y，X 对齐主链末端节点，找不到就用落点 x，
     // 让新节点排在主链正下方
     let newX = x;
@@ -432,7 +360,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
    * 指针在虚框内 → 填槽；指针在框外邻接的线上 → 交 findEdgeAt 判线上插入。
    * 用官方 getIntersectingNodes(rect, partially=true) 检测，相比手写矩形相交：
    *  - 命中坐标用 VueFlow 的 computedPosition（已应用 extent:'parent' 钳制、父容器位移等派生计算），
-   *    dagre 重排后立刻同步，避免 store 与 DOM 不一致导致命中失败
+   *    自动重排后立刻同步，避免 store 与 DOM 不一致导致命中失败
    *  - 节点尺寸读取 VueFlow 内部异步测量后的 dimensions，placeholder 尺寸变化也能跟上
    * x/y 是新节点左上角（已由 onDrop 减过 NODE_W/2、NODE_H/2 转换而来）。
    */
@@ -485,10 +413,10 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
    * 而非鼠标点靠近，体感更直观。VueFlow 无"点是否在 edge 上"的官方 API，需自写距离检测。
    *
    * 距离必须量到「屏幕上真正画出来的路径」（edgeRenderedPolyline 按 handle 物理位置
-   * 复算端点：普通边三次贝塞尔分段采样、跨列 merge 长边走正交折点），不能量节点中心
-   * 连直线：网关扇出边起点是菱形右边按 outlet 垂直分布的 handle（最大偏移半高 36px），
-   * 中心连线相对实际曲线在整条扇出边上系统错位——旧直线算法对扇出边几乎永远进不了
-   * 10px 阈值，表现为拖到扇出线上松手却追加到主链末尾、或错命中相邻汇合边。
+   * 复算端点、按三次贝塞尔分段采样），不能量节点中心连直线：网关扇出边
+   * 起点是菱形右边按 outlet 垂直分布的 handle（最大偏移半高 36px），中心连线相对实际
+   * 路径在整条扇出边上系统错位——旧直线算法对扇出边几乎永远进不了 10px 阈值，
+   * 表现为拖到扇出线上松手却追加到主链末尾、或错命中相邻汇合边。
    * 端点节点用 computedPosition + dimensions（已应用 extent 钳制等派生计算）。
    */
   function findEdgeAt(x: number, y: number): string | null {
@@ -542,7 +470,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
   }
 
   /**
-   * 复算一条边实际渲染的端点（flow 坐标，LR 布局），与 CmpBezierEdge 同源：
+   * 复算一条边实际渲染的端点（flow 坐标，LR 布局），与 CmpEdge 同源：
    * - source：四类节点都是 Position.Right 右边中点；gateway 多个 outlet handle
    *   沿右边按 top%=i/(n-1)*100 垂直分布（GatewayNode.handleStyle 钉死），
    *   按 edge.sourceHandle 取对应 outlet
@@ -587,12 +515,10 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
   }
 
   /**
-   * 把边实际绘制的路径拍扁成折线采样点：
-   * - 跨列 merge 长边：mergeOrthoPoints 的正交折点（与 CmpBezierEdge 正交道同源，
-   *   视觉上的 ≤6px 圆角与折点偏差被 EDGE_HIT_PAD=10 吸收）
-   * - 其余：三次贝塞尔。控制点与 @vue-flow/core 的 getBezierPath 一致
-   *   （Right→Left）：calculateControlOffset=0.5*distance，
-   *   故 cp1=(midX, sy)、cp2=(midX, ty)
+   * 把边实际绘制的贝塞尔拍扁成折线采样点：三次贝塞尔（与 CmpEdge →
+   * getBezierPath 同源）。控制点与 @vue-flow/core 的 getBezierPath 一致
+   * （Right→Left）：calculateControlOffset=0.5*distance，
+   * 故 cp1=(midX, sy)、cp2=(midX, ty)。
    */
   function edgeRenderedPolyline(
     edge: EdgeGeomLike,
@@ -600,9 +526,6 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     t: EdgeHitNode
   ): Array<[number, number]> {
     const { sx, sy, tx, ty } = edgeRenderedEndpoints(edge, s, t);
-    if (isLongMergeEdge(edge, tx - sx)) {
-      return mergeOrthoPoints(sx, sy, tx, ty);
-    }
     const midX = (sx + tx) / 2;
     const pts: Array<[number, number]> = [];
     for (let i = 0; i <= BEZIER_HIT_STEPS; i++) {
@@ -649,7 +572,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
 
   /**
    * 拖拽过程中的两类高亮目标（互斥，由 resolveDropTarget 统一裁决）：
-   * - dragOverEdgeId：边命中，CmpBezierEdge 显示 + 圆圈
+   * - dragOverEdgeId：边命中，CmpEdge 显示 + 圆圈
    * - dragOverPlaceholderId：占位符虚框本体命中，PlaceholderNode 虚线框高亮
    * dragover 每秒触发数十次，重复赋同值不触发响应式更新（Vue 按值比较），
    * 只有真正跨边界时相关组件才重渲染。
@@ -894,7 +817,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     commit();
     select(newNode.id);
     // insertOnEdge 会改变整条链路的拓扑（seq splice / 分支包装），新节点坐标和子树位置
-    // 都不准确。自动跑一次 dagre 重排，不做 fitView（保留当前视口缩放位置）
+    // 都不准确。自动跑一次重排，不做 fitView（保留当前视口缩放位置）
     runAutoLayout({ fitView: false });
   }
 

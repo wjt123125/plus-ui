@@ -35,9 +35,6 @@ importers:
       '@codemirror/view':
         specifier: ^6.43.12
         version: 6.43.12
-      '@dagrejs/dagre':
-        specifier: ^3.1.1
-        version: 3.1.1
       '@element-plus/icons-vue':
         specifier: 2.3.2
         version: 2.3.2(vue@3.5.40(typescript@6.0.3))
@@ -95,6 +92,9 @@ importers:
       element-plus:
         specifier: 2.14.3
         version: 2.14.3(vue@3.5.40(typescript@6.0.3))
+      elkjs:
+        specifier: ^0.12.0
+        version: 0.12.0
       highlight.js:
         specifier: 11.11.1
         version: 11.11.1
@@ -273,12 +273,6 @@ packages:
   '@ctrl/tinycolor@4.2.0':
     resolution: {integrity: sha512-kzyuwOAQnXJNLS9PSyrk0CWk35nWJW/zl/6KvnTBMFK65gm7U1/Z5BqjxeapjZCIhQcM/DsrEmcbRwDyXyXK4A==}
     engines: {node: '>=14'}
-
-  '@dagrejs/dagre@3.1.1':
-    resolution: {integrity: sha512-zroZB1dFOFiGgv4Xcrn1DckB1o4aOikPqD2NDQPV0WM//CXGcS6xiD0rNkqHmw6FEg4tabt4nxPLwgCWT+Vb2A==}
-
-  '@dagrejs/graphlib@4.0.5':
-    resolution: {integrity: sha512-7xrBTqIts3o+PMUZX97wSc+7TUbW+/rULzGNCTP6yooNVDXbzw4Wutg/H/xOutTB/c/k0YqOAavgPh4/Zk9PFA==}
 
   '@element-plus/icons-vue@2.3.2':
     resolution: {integrity: sha512-OzIuTaIfC8QXEPmJvB4Y4kw34rSXdCJzxcD1kFStBvr8bK6X1zQAYDo0CNMjojnfTqRQCJ0I7prlErcoRiET2A==}
@@ -1570,6 +1564,9 @@ packages:
     peerDependencies:
       vue: ^3.3.7
 
+  elkjs@0.12.0:
+    resolution: {integrity: sha512-YZcKynxVxYoKIOEpywEPwCFdg+BTbxQRNf3pbwdDCvc8O3kQD8bmIwSxKU1eOTVc4Xo+VG9Te+575mlfvOrhEQ==}
+
   entities@4.5.0:
     resolution: {integrity: sha512-V0hjH4dGPh9Ao5p0MoRY6BVqtwCjhz6vI5LT8AJ55H+4g9/4vbHx1I54fS0XuclLhDHArPQCiMjDxjaL8fPxhw==}
     engines: {node: '>=0.12'}
@@ -2618,12 +2615,6 @@ snapshots:
       w3c-keyname: 2.2.8
 
   '@ctrl/tinycolor@4.2.0': {}
-
-  '@dagrejs/dagre@3.1.1':
-    dependencies:
-      '@dagrejs/graphlib': 4.0.5
-
-  '@dagrejs/graphlib@4.0.5': {}
 
   '@element-plus/icons-vue@2.3.2(vue@3.5.40(typescript@6.0.3))':
     dependencies:
@@ -3847,6 +3838,8 @@ snapshots:
       normalize-wheel-es: 1.2.0
       vue: 3.5.40(typescript@6.0.3)
       vue-component-type-helpers: 3.3.8
+
+  elkjs@0.12.0: {}
 
   entities@4.5.0: {}
 

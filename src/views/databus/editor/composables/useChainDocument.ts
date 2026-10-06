@@ -22,7 +22,7 @@ export interface ChainDocumentStore {
   setEdges: (edges: Edge[]) => void;
   /** 加载后取消选中，委托画布控制器 */
   select: (id: string | null) => void;
-  /** 加载完成后 dagre 重排，委托画布控制器 */
+  /** 加载完成后自动排列，委托画布控制器 */
   autoLayout: () => void;
   /** 重建历史基线，委托历史栈 */
   resetHistory: () => void;
@@ -67,7 +67,7 @@ export function useChainDocument(store: ChainDocumentStore) {
   /**
    * 按链路主键加载已保存链路到画布：
    * 取 Vo 的 cmpProperty 对象（后端 TypeHandler 已反序列化）→ 载入模型树 →
-   * 重投影 → 重建历史基线 → dagre 重排。
+   * 重投影 → 重建历史基线 → ELK 自动排列。
    */
   async function loadChainToEditor(id: number | string) {
     const { data } = await getChain(id);
@@ -89,7 +89,7 @@ export function useChainDocument(store: ChainDocumentStore) {
     select(null);
     nextTick(() => {
       resetHistory();
-      // 载入已保存链路同样需要 dagre 重排（投影默认坐标顺序摆放，分支会绕圈）
+      // 载入已保存链路同样需要自动排列（投影默认坐标顺序摆放，分支会绕圈）
       autoLayout();
     });
   }

@@ -56,7 +56,7 @@ export interface ElNode {
 }
 
 // ────────────────────────────────────────────────────────────────
-// 2. 节点尺寸常量（与 cmp-defs 配合，供投影器与 dagre 共用）
+// 2. 节点尺寸常量（与 cmp-defs 配合，供投影器与自动布局共用）
 // ────────────────────────────────────────────────────────────────
 
 export const NODE_W = 150;
@@ -64,7 +64,7 @@ export const NODE_H = 56;
 export const GATEWAY_W = 56;
 /** Gateway 形状本身高度（圆/菱形 56×56）——virtual 起止节点也复用这个尺寸 */
 export const GATEWAY_H = 56;
-/** Gateway 含 label 的总高度（dagre 布局按这个算间距，避免 label 被下一个节点 handle 压住） */
+/** Gateway 含 label 的总高度（自动布局按这个算间距，避免 label 被下一个节点 handle 压住） */
 export const GATEWAY_TOTAL_H = 72;
 export const JUNCTION_W = 16;
 export const JUNCTION_H = 16;
@@ -81,7 +81,7 @@ const START_Y = 40;
  */
 // WHILE（循环槽）与 WHEN（多分支槽）是两个不同算子，均在集合内
 const SLOT_WRAP_TYPES = new Set(['IF', 'SWITCH', 'FOR', 'WHILE', 'ITERATOR', 'CATCH', 'WHEN']);
-/** 默认节点间距（投影时初始摆放，dagre 会重排）
+/** 默认节点间距（投影时初始摆放，自动排列会重排）
  *  默认走 LR 方向：cursorX 递增、cursorY 固定，
  *  与 handle Left/Right 方位一致，避免纵向排布导致连线绕圈。 */
 export const NODE_GAP_X = 210;

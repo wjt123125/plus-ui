@@ -45,7 +45,7 @@ import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
 import '@vue-flow/minimap/dist/style.css';
 import CmpNode from '../nodes/CmpNode.vue';
-import CmpBezierEdge from '../nodes/edges/CmpBezierEdge.vue';
+import CmpEdge from '../nodes/edges/CmpEdge.vue';
 import FlowViewportControls from './FlowViewportControls.vue';
 import FlowSidePanel from './FlowSidePanel.vue';
 import CmpPickerPopover from './CmpPickerPopover.vue';
@@ -78,7 +78,7 @@ const nodeTypes = markRaw({
   junction: JunctionNode,
   placeholder: PlaceholderNode
 });
-const edgeTypes = markRaw({ cmp: CmpBezierEdge });
+const edgeTypes = markRaw({ cmp: CmpEdge });
 
 const defaultEdgeOptions = {
   type: 'cmp',
