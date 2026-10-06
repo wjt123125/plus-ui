@@ -107,38 +107,63 @@ export function useAutoLayout(treeModel: ElTreeModel) {
       laid[n.id] = { x: d.x - d.width / 2, y: d.y - d.height / 2, w: d.width, h: d.height };
     }
 
-    // 预构建 descendants 邻接表:sourceId → 所有通过非 merge 边可达的 targetIds
-    // 用于 BFS 把 branch 根节点的 deltaY 传播到整棵子树(保持 dagre 排好的相对结构)
-    // 排除 merge 边是因为它指向 junction,子树到此为止
+    // 预构建 descendants 邻接表:sourceId → 所有边可达的 targetIds（含 merge 边）。
+    // BFS 平移分支子树时要穿过「嵌套网关的汇合点」到达其后置续节点
+    // （merge 边是进入嵌套 junction 的唯一路径，若一刀切排除，槽内为
+    // 「嵌套菱形 + 续尾」结构时，嵌套 junction 和续尾节点漏平移，留在 dagre
+    // 原位与其他分支节点重叠——2026-10-06 链 29 的 CATCH catch 槽即此症）；
+    // 但不能穿过「本网关自己的汇合点」(${gwId}_end)，否则会串到兄弟分支，
+    // 该截断在 BFS 内按 junctionId 逐网关判定。
     const edgeList = getEdges.value;
     const descendants = new Map<string, string[]>();
     for (const e of edgeList) {
-      const kind = (e.data as { kind?: string })?.kind;
-      if (kind !== 'merge') {
-        if (!descendants.has(e.source)) descendants.set(e.source, []);
-        descendants.get(e.source)!.push(e.target);
-      }
+      if (!descendants.has(e.source)) descendants.set(e.source, []);
+      descendants.get(e.source)!.push(e.target);
     }
 
     // 对每个 gateway,把 dagre 排好的分支顺序按 outlet 数组索引重新分配
-    // outlet 数组顺序 = 物理 handle 顺序(GatewayNode.vue handleStyle top% 钉死):
+    // outlet 数组顺序 = 物理 handle 顺序(GatewayNode.vue handleStyle top% 钉死,
+    // LR 布局下 handle 沿网关右边垂直分布):
     //   IF: outlets[0]=true(上) outlets[1]=false(下)
     //   SWITCH: outlets[0]=case_1(最上) outlets[1]=case_2 outlets[2]=case_3(最下)
     //   CATCH: outlets[0]=try outlets[1]=catch
     //   AND/OR/NOT: outlets[0]=b1 outlets[1]=b2
     //   WHEN: outlets[0]=branch_0 outlets[1]=branch_1 ...
     const gatewayNodes = flowNodes.filter((n) => n.type === 'gateway');
+
+    // 分支子树收集：从 branch 根 BFS，穿过嵌套网关的汇合点及其 seq 续尾，
+    // 只截断「本网关自己」的汇合点。包围盒测量与整块平移共用同一遍历，
+    // 保证「按多高分配条带」与「平移哪些节点」的范围严格一致。
+    function collectBranchSubtree(rootId: string, ownJunctionId: string): Set<string> {
+      const visited = new Set<string>();
+      const stack = [rootId];
+      while (stack.length > 0) {
+        const id = stack.pop()!;
+        if (visited.has(id)) continue;
+        visited.add(id);
+        for (const k of descendants.get(id) ?? []) {
+          if (!visited.has(k) && k !== ownJunctionId) stack.push(k);
+        }
+      }
+      return visited;
+    }
+
+    // 步骤 a:为每个网关产出修正计划——分支清单（branch/jump 两种边都要，
+    // 否则 placeholder 分支仍按 dagre 原始顺序排列 → 交叉）＋全分支子树闭包
+    interface GwPlan {
+      gwId: string;
+      junctionId: string;
+      branches: { outletIdx: number; nodeId: string }[];
+      /** 所有分支子树闭包的并集，仅用于判定网关间嵌套深度 */
+      subtreeIds: Set<string>;
+    }
+    const plans: GwPlan[] = [];
     for (const gw of gatewayNodes) {
       const gwId = gw.id;
       const gwData = gw.data as CmpNodeData | undefined;
       const outlets = gwData?.outlets ?? [];
       if (outlets.length < 2) continue; // 单分支无需修正(循环体只有一个 outlet)
-
-      // 步骤 a:对每个 outlet handle,找到 gateway 发出的非 merge 边 → 目标节点
-      // 分支边有两种:kind='branch'(业务分支)和 kind='jump'(placeholder 分支)
-      // 两种都要纳入修正,否则 placeholder 分支仍按 dagre 原始顺序排列 → 交叉
-      type BranchInfo = { outletIdx: number; nodeId: string; centerY: number };
-      const branches: BranchInfo[] = [];
+      const branches: GwPlan['branches'] = [];
       for (let i = 0; i < outlets.length; i++) {
         const handle = outlets[i].handle;
         const branchEdge = edgeList.find((e) => {
@@ -150,54 +175,104 @@ export function useAutoLayout(treeModel: ElTreeModel) {
             kind !== undefined // 排除无 kind 的边(理论上不会有,防御性)
           );
         });
-        if (branchEdge) {
-          const target = laid[branchEdge.target];
-          if (target) {
-            branches.push({ outletIdx: i, nodeId: branchEdge.target, centerY: target.y + target.h / 2 });
-          }
+        if (branchEdge && laid[branchEdge.target]) {
+          branches.push({ outletIdx: i, nodeId: branchEdge.target });
         }
       }
       if (branches.length < 2) continue;
 
-      // 步骤 b:按 outletIdx 排序(outlets 数组顺序即预期从上到下顺序)
+      // 按 outletIdx 排序(outlets 数组顺序即预期从上到下顺序)
       branches.sort((a, b) => a.outletIdx - b.outletIdx);
-
-      // 步骤 c:算分支群总高,整体在 gateway 中心两侧居中
-      const gwCenterY = laid[gwId].y + laid[gwId].h / 2;
-      let branchGroupHeight = 0;
-      for (let i = 0; i < branches.length; i++) {
-        branchGroupHeight += laid[branches[i].nodeId].h;
-        if (i < branches.length - 1) branchGroupHeight += NODE_GAP_Y;
-      }
-      // cursorY:分支群起始 y(上边缘),从 gateway 中心向上偏移半群高
-      let cursorY = gwCenterY - branchGroupHeight / 2;
-
-      // 步骤 d:按 outlet 顺序依次分配每个 branch 根节点的目标中心 y,
-      //  算出与 dagre 原始 centerY 的差值 deltaY
-      const deltaYPerBranch = new Map<string, number>();
+      const junctionId = `${gwId}_end`;
+      const subtreeIds = new Set<string>();
       for (const b of branches) {
-        const nodeH = laid[b.nodeId].h;
-        const targetCenterY = cursorY + nodeH / 2;
-        const deltaY = targetCenterY - b.centerY;
-        deltaYPerBranch.set(b.nodeId, deltaY);
-        cursorY += nodeH + NODE_GAP_Y;
+        for (const id of collectBranchSubtree(b.nodeId, junctionId)) subtreeIds.add(id);
+      }
+      plans.push({ gwId, junctionId, branches, subtreeIds });
+    }
+
+    // 步骤 b:处理顺序——嵌套最深（depth 最大＝最外层）的网关最后排：
+    // 深度 0 是最内层，升序处理。外层网关要按「内层补丁后」的真实子树
+    // 包围盒分配条带高（catch 槽根节点只有 56px、子树内嵌 SWITCH 四路
+    // 扇出真实高约 350，先排外层会按原始位置测高，与内层重排后有偏差）
+    const depthCache = new Map<string, number>();
+    function planDepth(p: GwPlan): number {
+      const cached = depthCache.get(p.gwId);
+      if (cached !== undefined) return cached;
+      let d = 0;
+      for (const q of plans) {
+        if (q.gwId !== p.gwId && p.subtreeIds.has(q.gwId)) d = Math.max(d, planDepth(q) + 1);
+      }
+      depthCache.set(p.gwId, d);
+      return d;
+    }
+    plans.sort((a, b) => planDepth(a) - planDepth(b));
+
+    for (const plan of plans) {
+      const { gwId, junctionId, branches } = plan;
+      const gwCenterY = laid[gwId].y + laid[gwId].h / 2;
+
+      // 步骤 c:每个分支条带高＝其子树真实包围盒高（BFS min y → max y+h）。
+      //  不能只取分支根节点高：CATCH 的 try 槽只有一个抛异常节点，catch 槽
+      //  根（inspect）背后却挂着 SWITCH 四路扇出；按根高排条带必然互相压叠，
+      //  短分支的长 merge 边没有自己的水平走廊，只能从兄弟列节点上扫过去。
+      let groupHeight = 0;
+      const spans = branches.map((b) => {
+        const ids = collectBranchSubtree(b.nodeId, junctionId);
+        let minY = Infinity;
+        let maxY = -Infinity;
+        for (const id of ids) {
+          const l = laid[id];
+          if (!l) continue;
+          if (l.y < minY) minY = l.y;
+          if (l.y + l.h > maxY) maxY = l.y + l.h;
+        }
+        if (!Number.isFinite(minY)) {
+          const l = laid[b.nodeId];
+          minY = l.y;
+          maxY = l.y + l.h;
+        }
+        return { ids, minY, maxY, h: maxY - minY, centerY: (minY + maxY) / 2 };
+      });
+      spans.forEach((sp, i) => {
+        groupHeight += sp.h;
+        if (i < spans.length - 1) groupHeight += NODE_GAP_Y;
+      });
+
+      // 步骤 d:条带群在网关中心两侧居中，各分支子树整块平移
+      //  （dagre 已排好子树内部相对位置，平移只改它在整图中的垂直位置；
+      //   不同分支各走各的闭包，互不干扰）
+      let cursorY = gwCenterY - groupHeight / 2;
+      for (const sp of spans) {
+        const delta = cursorY + sp.h / 2 - sp.centerY;
+        if (Math.abs(delta) > 0.5) {
+          for (const id of sp.ids) {
+            const l = laid[id];
+            if (l) l.y += delta;
+          }
+        }
+        cursorY += sp.h + NODE_GAP_Y;
       }
 
-      // 步骤 e:BFS 把 deltaY 应用到 branch 根及其所有 reachable 子孙
-      //  为什么 BFS?因为 dagre 已经把子孙节点排好了相对位置,整体平移就能
-      //  保持分支内部结构不变,只改它在整图中的垂直位置
-      //  不同 branch 各走各的 BFS,互不干扰
-      for (const [rootId, delta] of deltaYPerBranch) {
-        const visited = new Set<string>();
-        const stack = [rootId];
-        while (stack.length > 0) {
-          const id = stack.pop()!;
-          if (visited.has(id)) continue;
-          visited.add(id);
-          laid[id].y += delta;
-          const kids = descendants.get(id) ?? [];
-          for (const k of kids) {
-            if (!visited.has(k)) stack.push(k);
+      // 步骤 e:汇合点对齐条带群中心，修正量沿汇合后的 seq 单流继续传播
+      //  （junction 出边只有汇合后单流，边有向，BFS 不可能串回兄弟分支）。
+      //  途中若遇到后续网关（含它自己的汇合点），整块一起平移；该网关轮到
+      //  自己时再按当前位置做一次「绝对居中」，平移量被自然吸收、结果幂等。
+      const junction = laid[junctionId];
+      if (junction) {
+        const jDelta = gwCenterY - junction.h / 2 - junction.y;
+        if (Math.abs(jDelta) > 0.5) {
+          const visited = new Set<string>();
+          const stack = [junctionId];
+          while (stack.length > 0) {
+            const id = stack.pop()!;
+            if (visited.has(id)) continue;
+            visited.add(id);
+            const l = laid[id];
+            if (l) l.y += jDelta;
+            for (const k of descendants.get(id) ?? []) {
+              if (!visited.has(k)) stack.push(k);
+            }
           }
         }
       }

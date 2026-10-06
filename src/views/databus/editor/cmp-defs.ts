@@ -289,6 +289,22 @@ export const CMP_DEFS: CmpDef[] = [
     icon: 'ph:flag-checkered',
     group: 'business'
   },
+  {
+    type: 'exceptionThrower',
+    label: '异常抛出',
+    desc: '测试用故障制造机：按异常类名（常量或 {{ $.路径 }}）反射抛出异常，配合 CATCH 验证异常兜底链；生产链路勿用',
+    color: '#f56c6c',
+    icon: 'ph:warning',
+    group: 'other'
+  },
+  {
+    type: 'exceptionInspect',
+    label: '异常识别',
+    desc: 'CATCH 异常处理体内使用：按对照表顺序 instanceof 识别异常类型（支持子类、可追查 cause），输出 $.<tag>.type/className/message，再接 SWITCH 分流',
+    color: '#e6a23c',
+    icon: 'ph:bug',
+    group: 'other'
+  },
 
   // ── BPM 业务组件（均有后端真实现，注册名与后端 @LiteflowComponent 一致；
   //    顺序按 BPM 主线编排自然递进：会话 → 建/查/改/删 BO → 启流程 → 终止流程 → 完任务

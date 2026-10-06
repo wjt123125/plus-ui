@@ -11,6 +11,88 @@ import { ElMessage } from 'element-plus';
 import { getDef } from '../cmp-defs';
 import { getPlaceholderHandle, getPlaceholderSlotIndex, GATEWAY_TOTAL_H, GATEWAY_W, JUNCTION_H, JUNCTION_W, NODE_GAP_Y, NODE_H, NODE_W, type CmpNodeData, type ElNode, type ElTreeModel, type EdgeTreeAnchor } from './useElTreeModel';
 
+// ── merge 长边正交走线 ──────────────────────────────────────────────────
+// 视觉路径（CmpBezierEdge）与拖拽命中（findEdgeAt）必须用同一份几何，
+// 否则会出现「看着线在空处、拖过去却命中」的错位。
+/** 边的最小结构（VueFlow GraphEdge 天然满足） */
+export interface EdgeGeomLike {
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+  data?: unknown;
+}
+
+/** 跨列 merge 判定阈值（px，端点水平净跨度＝源右边→junction 左边）。
+ *  同深度分支的 merge ≈ dagre ranksep 80；短一整列 ≈ 80+150+80=310，200 为界。
+ *  只有跨列长边走正交「汇流排」，短 merge / branch / seq 一律保持贝塞尔。 */
+export const MERGE_ORTHO_MIN_DX = 200;
+/** 汇流排距 junction 左边的距离：卡在 dagre ranksep(80) 的列间空档内，
+ *  竖段只穿过列间隙，不扫过任何节点列（中置拐点会穿过中间列＝旧病根）。 */
+export const MERGE_BUS_GAP = 28;
+/** 正交拐角圆角半径（命中采样只取折点，≤半径的误差被 10px 命中阈值吸收） */
+export const MERGE_CORNER_R = 6;
+
+/** 是否为跨越多列的 merge 长边 */
+export function isLongMergeEdge(edge: EdgeGeomLike, dx: number): boolean {
+  const kind = (edge.data as { kind?: string } | undefined)?.kind;
+  return kind === 'merge' && dx > MERGE_ORTHO_MIN_DX;
+}
+
+/** 正交折线关键点：水平汇出 → 汇流排竖段 → 水平并入 */
+export function mergeOrthoPoints(
+  sx: number, sy: number, tx: number, ty: number
+): Array<[number, number]> {
+  const busX = tx - MERGE_BUS_GAP;
+  return [
+    [sx, sy],
+    [busX, sy],
+    [busX, ty],
+    [tx, ty]
+  ];
+}
+
+/** 正交路径（小圆角）＋弧长中点（边 label / +按钮定位）。
+ *  LR 布局专用：入口边必须 source 在左、target 在右。 */
+export function mergeOrthoPath(
+  sx: number, sy: number, tx: number, ty: number
+): { d: string; labelX: number; labelY: number } {
+  const busX = tx - MERGE_BUS_GAP;
+  const r = Math.min(
+    MERGE_CORNER_R,
+    Math.abs(ty - sy) / 2,
+    Math.max(0, busX - sx),
+    Math.max(0, tx - busX)
+  );
+  let d = `M ${sx} ${sy}`;
+  if (Math.abs(ty - sy) < 0.5 || r <= 0.5) {
+    d += ` L ${tx} ${ty}`;
+  } else {
+    const vy = ty > sy ? 1 : -1;
+    d += ` L ${busX - r} ${sy}`;
+    d += ` Q ${busX} ${sy} ${busX} ${sy + vy * r}`;
+    d += ` L ${busX} ${ty - vy * r}`;
+    d += ` Q ${busX} ${ty} ${busX + r} ${ty}`;
+    d += ` L ${tx} ${ty}`;
+  }
+  // label/+按钮取路径弧长中点：长边的中点必然落在首段水平走廊（空闲条带）上
+  const lenA = Math.max(0, busX - sx);
+  const lenB = Math.abs(ty - sy);
+  const lenC = Math.max(0, tx - busX);
+  const half = (lenA + lenB + lenC) / 2;
+  let labelX: number;
+  let labelY: number;
+  if (half <= lenA) {
+    labelX = sx + half;
+    labelY = sy;
+  } else if (half <= lenA + lenB) {
+    labelX = busX;
+    labelY = sy + (ty >= sy ? 1 : -1) * (half - lenA);
+  } else {
+    labelX = busX + (half - lenA - lenB);
+    labelY = ty;
+  }
+  return { d, labelX, labelY };
+}
+
 /** 组件选择弹层的使用场景 */
 export type PickerMode = 'prepend' | 'append' | 'replace' | 'insertEdge';
 
@@ -402,11 +484,11 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
    * 命中体用新节点矩形 9 点采样（4 角 + 4 边中点 + 中心）——视觉语义即"拖拽中的节点本体靠近边"，
    * 而非鼠标点靠近，体感更直观。VueFlow 无"点是否在 edge 上"的官方 API，需自写距离检测。
    *
-   * 距离必须量到「屏幕上真正画出来的贝塞尔曲线」（edgeRenderedPolyline 按 handle 物理位置
-   * 复算端点、三次贝塞尔分段采样），不能量节点中心连直线：网关扇出边起点是菱形底边按
-   * outlet 分布的 handle（最大偏移半宽 28px），终点是分支节点顶边中点，中心连线相对实际
-   * 曲线在整条扇出边上系统错位 14~40px——旧直线算法对扇出边几乎永远进不了 10px 阈值，
-   * 表现为拖到扇出线上松手却追加到主链末尾、或错命中相邻的汇合边（节点跑到分支下面那条线）。
+   * 距离必须量到「屏幕上真正画出来的路径」（edgeRenderedPolyline 按 handle 物理位置
+   * 复算端点：普通边三次贝塞尔分段采样、跨列 merge 长边走正交折点），不能量节点中心
+   * 连直线：网关扇出边起点是菱形右边按 outlet 垂直分布的 handle（最大偏移半高 36px），
+   * 中心连线相对实际曲线在整条扇出边上系统错位——旧直线算法对扇出边几乎永远进不了
+   * 10px 阈值，表现为拖到扇出线上松手却追加到主链末尾、或错命中相邻汇合边。
    * 端点节点用 computedPosition + dimensions（已应用 extent 钳制等派生计算）。
    */
   function findEdgeAt(x: number, y: number): string | null {
@@ -460,15 +542,15 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
   }
 
   /**
-   * 复算一条边实际渲染的贝塞尔端点（flow 坐标），与 CmpBezierEdge → getBezierPath 同源：
-   * - target：四类节点（cmp/gateway/junction/placeholder）的 target handle 全是
-   *   Position.Top 居中 → 顶边中点
-   * - source：gateway 底边 outlet handle 按 left%=i/(n-1)*100 物理分布
-   *   （GatewayNode.handleStyle 钉死），按 edge.sourceHandle 取对应 outlet；
-   *   其余节点都是 Position.Bottom 居中 → 底边中点
+   * 复算一条边实际渲染的端点（flow 坐标，LR 布局），与 CmpBezierEdge 同源：
+   * - source：四类节点都是 Position.Right 右边中点；gateway 多个 outlet handle
+   *   沿右边按 top%=i/(n-1)*100 垂直分布（GatewayNode.handleStyle 钉死），
+   *   按 edge.sourceHandle 取对应 outlet
+   * - target：Position.Left 左边中点；junction 多个 inlet 沿左边按同样的 top%
+   *   垂直分布，按 edge.targetHandle 取对应 inlet（JunctionNode.inletStyle）
    */
   function edgeRenderedEndpoints(
-    edge: { sourceHandle?: string | null },
+    edge: EdgeGeomLike,
     s: EdgeHitNode,
     t: EdgeHitNode
   ): { sx: number; sy: number; tx: number; ty: number } {
@@ -476,42 +558,60 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     const sw = s.dimensions?.width ?? sf.w;
     const sh = s.dimensions?.height ?? sf.h;
     const tf = fallbackNodeSize(t.type);
-    const tw = t.dimensions?.width ?? tf.w;
+    const th = t.dimensions?.height ?? tf.h;
 
-    let sx = s.computedPosition.x + sw / 2;
-    const sy = s.computedPosition.y + sh;
+    const sx = s.computedPosition.x + sw;
+    let sy = s.computedPosition.y + sh / 2;
     if (s.type === 'gateway' && edge.sourceHandle) {
       const outlets = (s.data as CmpNodeData | undefined)?.outlets ?? [];
       const idx = outlets.findIndex((o) => o.handle === edge.sourceHandle);
       if (idx >= 0) {
         const n = outlets.length;
-        const leftPct = n <= 1 ? 0.5 : idx / (n - 1);
-        sx = s.computedPosition.x + sw * leftPct;
+        const topPct = n <= 1 ? 0.5 : idx / (n - 1);
+        sy = s.computedPosition.y + sh * topPct;
       }
     }
-    return { sx, sy, tx: t.computedPosition.x + tw / 2, ty: t.computedPosition.y };
+
+    const tx = t.computedPosition.x;
+    let ty = t.computedPosition.y + th / 2;
+    if (t.type === 'junction' && edge.targetHandle) {
+      const inlets = (t.data as CmpNodeData | undefined)?.outlets ?? [];
+      const idx = inlets.findIndex((o) => o.handle === edge.targetHandle);
+      if (idx >= 0) {
+        const n = inlets.length;
+        const topPct = n <= 1 ? 0.5 : idx / (n - 1);
+        ty = t.computedPosition.y + th * topPct;
+      }
+    }
+    return { sx, sy, tx, ty };
   }
 
   /**
-   * 把边实际绘制的三次贝塞尔拍扁成折线采样点。控制点与 @vue-flow/core 的
-   * getBezierPath（Bottom→Top、距离正向）一致：calculateControlOffset 返回
-   * 0.5*distance，故 cp1=(sx, 中)、cp2=(tx, 中)。TB 布局下边始终向下，无反向分支。
+   * 把边实际绘制的路径拍扁成折线采样点：
+   * - 跨列 merge 长边：mergeOrthoPoints 的正交折点（与 CmpBezierEdge 正交道同源，
+   *   视觉上的 ≤6px 圆角与折点偏差被 EDGE_HIT_PAD=10 吸收）
+   * - 其余：三次贝塞尔。控制点与 @vue-flow/core 的 getBezierPath 一致
+   *   （Right→Left）：calculateControlOffset=0.5*distance，
+   *   故 cp1=(midX, sy)、cp2=(midX, ty)
    */
   function edgeRenderedPolyline(
-    edge: { sourceHandle?: string | null },
+    edge: EdgeGeomLike,
     s: EdgeHitNode,
     t: EdgeHitNode
   ): Array<[number, number]> {
     const { sx, sy, tx, ty } = edgeRenderedEndpoints(edge, s, t);
-    const midY = (sy + ty) / 2;
+    if (isLongMergeEdge(edge, tx - sx)) {
+      return mergeOrthoPoints(sx, sy, tx, ty);
+    }
+    const midX = (sx + tx) / 2;
     const pts: Array<[number, number]> = [];
     for (let i = 0; i <= BEZIER_HIT_STEPS; i++) {
       const u = i / BEZIER_HIT_STEPS;
       const inv = 1 - u;
       const px =
-        inv ** 3 * sx + 3 * inv * inv * u * sx + 3 * inv * u * u * tx + u ** 3 * tx;
+        inv ** 3 * sx + 3 * inv * inv * u * midX + 3 * inv * u * u * midX + u ** 3 * tx;
       const py =
-        inv ** 3 * sy + 3 * inv * inv * u * midY + 3 * inv * u * u * midY + u ** 3 * ty;
+        inv ** 3 * sy + 3 * inv * inv * u * sy + 3 * inv * u * u * ty + u ** 3 * ty;
       pts.push([px, py]);
     }
     return pts;

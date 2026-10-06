@@ -78,7 +78,12 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, useVueFlow, type EdgeProps } from '@vue-flow/core';
 import { Plus } from '@element-plus/icons-vue';
-import { useCanvasController } from '../../../composables/useCanvasController';
+import {
+  isLongMergeEdge,
+  mergeOrthoPath,
+  useCanvasController,
+  type EdgeGeomLike
+} from '../../../composables/useCanvasController';
 
 defineOptions({ name: 'CmpBezierEdge' });
 
@@ -146,17 +151,30 @@ function onHoverLeave() {
 }
 onBeforeUnmount(() => clearTimeout(hoverOffTimer));
 
-// 节点移动时 sourceX/Y 等 props 变化，路径必须响应式重算
-const edgePath = computed(() =>
-  getBezierPath({
+// 节点移动时 sourceX/Y 等 props 变化，路径必须响应式重算。
+// 跨列 merge 长边（短分支汇合点远在最长分支之后）改走正交「汇流排」：
+// 水平汇出 → 在 junction 前 28px 的列间隙内竖段汇流 → 水平并入，
+// 竖段只穿列间空隙，不再扫过中间列的网关/分支节点；
+// 短 merge / branch / seq 保持贝塞尔。几何与 useCanvasController 命中检测同源。
+const edgePath = computed<[string, number, number]>(() => {
+  if (isLongMergeEdge(props.data as EdgeGeomLike | undefined, props.targetX - props.sourceX)) {
+    const p = mergeOrthoPath(
+      props.sourceX,
+      props.sourceY,
+      props.targetX,
+      props.targetY
+    );
+    return [p.d, p.labelX, p.labelY];
+  }
+  return getBezierPath({
     sourceX: props.sourceX,
     sourceY: props.sourceY,
     sourcePosition: props.sourcePosition,
     targetX: props.targetX,
     targetY: props.targetY,
     targetPosition: props.targetPosition
-  })
-);
+  });
+});
 
 function onAdd(event: MouseEvent) {
   ctrl.openPicker({ x: event.clientX, y: event.clientY, mode: 'insertEdge', edgeId: props.id });
