@@ -1,25 +1,26 @@
 /**
  * 组件管理页展示映射：分组/控件/节点类型等中文文案与小工具。
- * 分组口径与编辑器物料面板 PALETTE_GROUPS 七组对齐（cmp-defs.ts）。
+ * 面板分组（group）口径由后端字典 GET /databus/component/groups 下发，
+ * 与编辑器物料面板共用 useComponentTaxonomy；本文件只留编译期兜底与查询函数。
  */
 import type { ExprRole, NodeTypeKind, PropSchema, WidgetKind } from '@/api/databus/component/types';
+import { FALLBACK_GROUPS } from '../../editor/cmp-defs';
+import { useComponentTaxonomy } from '../../editor/composables/useComponentTaxonomy';
 
-/** 物料面板七组 key → 中文（/options 的 group 字段） */
-export const GROUP_LABELS: Record<string, string> = {
-  flow: '流程节点',
-  sequence: '顺序编排',
-  branch: '条件分支',
-  loop: '循环迭代',
-  other: '异常与逻辑',
-  subflow: '子流程',
-  business: '业务组件'
-};
+/** 编译期兜底七组 key → 中文（字典未到位、或字典无此行时用） */
+const FALLBACK_GROUP_LABELS = new Map(FALLBACK_GROUPS.map((g) => [g.key, g.label]));
 
+const { groupLabelMap } = useComponentTaxonomy();
+
+/**
+ * 面板分组 key → 中文，三级回退：字典 → FALLBACK_GROUPS → 原 key 字符串。
+ * 读的是 computed，在渲染期调用即可随字典到位自动刷新。
+ */
 export function groupLabel(group?: string | null): string {
   if (!group) {
     return '未分组';
   }
-  return GROUP_LABELS[group] ?? group;
+  return groupLabelMap.value.get(group) ?? FALLBACK_GROUP_LABELS.get(group) ?? group;
 }
 
 /** 控件类型 → 中文 */
@@ -91,17 +92,6 @@ export const CATEGORY_OPTIONS = [
   { value: 'AI', label: '人工智能' },
   { value: 'PLATFORM', label: '平台对接（BPM 等）' }
 ] as const;
-
-/** 面板七组选项（value=组 key，label=中文，color=组色），顺序与 PALETTE_GROUPS 对齐 */
-export const GROUP_OPTIONS: { value: string; label: string; color: string }[] = [
-  { value: 'flow', label: GROUP_LABELS.flow, color: '#909399' },
-  { value: 'sequence', label: GROUP_LABELS.sequence, color: '#409eff' },
-  { value: 'branch', label: GROUP_LABELS.branch, color: '#e6a23c' },
-  { value: 'loop', label: GROUP_LABELS.loop, color: '#67c23a' },
-  { value: 'other', label: GROUP_LABELS.other, color: '#f56c6c' },
-  { value: 'subflow', label: GROUP_LABELS.subflow, color: '#909399' },
-  { value: 'business', label: GROUP_LABELS.business, color: '#409eff' }
-];
 
 /** 节点类型下拉 */
 export const NODE_TYPE_OPTIONS = (Object.keys(NODE_TYPE_LABELS) as NodeTypeKind[]).map((value) => ({

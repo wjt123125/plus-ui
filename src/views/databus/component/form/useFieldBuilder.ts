@@ -14,7 +14,7 @@ import type {
 } from '@/api/databus/component/types';
 
 /**
- * 参数 Tab 的字段构造器（从 ComponentForm 抽出，2026-10-07 分包重构）。
+ * 参数 Tab 的字段构造器（从组件表单壳抽出，2026-10-07 分包重构）。
  * 双模式纪律：可视化为主模型实时序列化 paramSchema；JSON 模式解析失败不允许切回（不丢数据）。
  */
 

@@ -26,7 +26,7 @@
  * 新增 CmpDef 时：在 score() 里按 group/conditionKind 匹配已有分支即可；
  * 若新组件是全新 group，在 getGroupKind() 里加映射，再在 score() 各分支里补权重。
  */
-import { CMP_DEFS, PALETTE_GROUPS, getDef, type CmpDef } from './cmp-defs';
+import { CMP_DEFS, getDef, paletteGroups, type CmpDef } from './cmp-defs';
 import type { PickerMode } from './composables/useCanvasController';
 
 /** 把 cmp-defs 的 group 归约成推荐逻辑关心的几个大类 */
@@ -179,14 +179,16 @@ export function getRecommendations(
   const excluded = new Set(excludedTypes);
   const anchorKind = getGroupKind(anchorDefType ? getDef(anchorDefType) : undefined);
 
+  // 分组字典的当前值（同步读，字典未到位即编译期兜底七组）；取一次快照保证整轮排序口径一致
+  const groups = paletteGroups.value;
   const scored = CMP_DEFS
     .map((def) => ({ def, score: score(def, mode, anchorKind, excluded) }))
     .filter((s) => s.score >= 0)
     .toSorted((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
-      // 同分：按 PALETTE_GROUPS 的自然顺序（物料面板分组顺序）
-      const aGroupIdx = PALETTE_GROUPS.findIndex((g) => g.key === a.def.group);
-      const bGroupIdx = PALETTE_GROUPS.findIndex((g) => g.key === b.def.group);
+      // 同分：按面板分组字典的自然顺序
+      const aGroupIdx = groups.findIndex((g) => g.key === a.def.group);
+      const bGroupIdx = groups.findIndex((g) => g.key === b.def.group);
       return aGroupIdx - bGroupIdx;
     });
 

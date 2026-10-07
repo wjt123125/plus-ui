@@ -8,8 +8,8 @@
   交互（n8n / Dify 范式）：
   - 打开即聚焦搜索框；搜索态跨分类平铺命中（与左侧 CmpPalette 搜索行为一致）；
   - 非搜索态：推荐区（按 recommendCutoff 取前 6，3 列×2 行，无角标）+ el-tabs（编排算子/业务组件，
-    默认 tab 跟锚点：锚点是算子默认算子页，其余默认业务页），算子页内按 PALETTE_GROUPS 分段，
-    业务页内按 bizCategory / lfNodeType 分 BPM 平台、通用组件、条件组件三段；
+    默认 tab 跟锚点：锚点是算子默认算子页，其余默认业务页），算子页内按字典分组 paletteGroups 分段，
+    业务页内按字典业务域 domains 分段，段的 label / color / 渲染顺序一律取自字典行；
   - 定宽 380、max-height 440，结果区独立滚动，tab 头 sticky；
   - 键盘：↑↓ 在「推荐 + 当前 tab」扁平序列上移动高亮，回车选中，Esc 关闭。
 -->
@@ -128,9 +128,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { Close, Search } from '@element-plus/icons-vue';
-import { PALETTE_GROUPS, getDef, type CmpDef } from '../../cmp-defs';
+import { getDef, paletteGroups, type CmpDef } from '../../cmp-defs';
 import type { PickerMode } from '../../composables/useCanvasController';
 import { useCmpRecommend } from '../../composables/useCmpRecommend';
+import { useComponentTaxonomy } from '../../composables/useComponentTaxonomy';
 import CmpPickerCard from './CmpPickerCard.vue';
 
 defineOptions({ name: 'CmpPickerPanel' });
@@ -195,7 +196,9 @@ const anchorDef = computed(() =>
 );
 const activeTab = ref<'operator' | 'business'>(anchorDef.value?.operator ? 'operator' : 'business');
 
-// ── 非搜索态分组（顺序与 PALETTE_GROUPS / CmpPalette 一致） ──────────────
+// ── 非搜索态分组（分段 label / color / 顺序全部取自字典，与 CmpPalette 同源） ──
+const { domains, defaultDomainKey, ensureTaxonomy } = useComponentTaxonomy();
+
 const recommendedDefs = computed(() =>
   scoredAll.value
     .filter((s) => s.score >= recommendCutoff.value)
@@ -204,34 +207,34 @@ const recommendedDefs = computed(() =>
 );
 
 const operatorGroups = computed(() =>
-  PALETTE_GROUPS.filter((g) => g.key !== 'business' && g.key !== 'flow')
+  paletteGroups.value
+    .filter((g) => g.key !== 'business' && g.key !== 'flow')
     .map((g) => ({ ...g, defs: allDefs.value.filter((d) => d.group === g.key) }))
     .filter((g) => g.defs.length > 0)
 );
 
 /**
- * 业务页分段（依据物料自带元数据，不靠 label 猜）：
- * - 条件槽件（lfNodeType=NodeBoolean/For/Iterator/Switch）单列末段：它们是算子配件，
- *   与普通业务叶子混排会误导（推荐引擎同样对其降权）；
- * - bizCategory：bpm=BPM 平台集成，common=通用加工；未声明的新叶子兜底进通用段。
+ * 业务页分段：一段一个字典业务域，label / color / 渲染顺序全部由字典行给（后端 sort asc）。
+ * - 物料未声明域时归入兜底域（字典 isDefault='Y'，缺省 common）；
+ * - 条件槽件不再前端特判 lfNodeType：后端派生时已把 node_type≠NODE 的件写进 slot 域。
+ *   （lfNodeType 仍保留在 CmpDef 上供拖拽行为与推荐降权使用，只是不再参与分组。）
+ * - 域字典未到位（端点失败 / 域表空）时退化为单层：拿分组字典的 business 行当唯一段头，
+ *   不另造域常量，避免已删的 BUSINESS_SECTION_META 换个马甲复活。
  */
-const BUSINESS_SECTION_META = [
-  { key: 'bpm', label: 'BPM 平台', color: '#7c3aed', match: (d: CmpDef) => d.bizCategory === 'bpm' },
-  { key: 'common', label: '通用组件', color: '#67c23a', match: (d: CmpDef) => d.bizCategory !== 'bpm' },
-  {
-    key: 'slot',
-    label: '条件组件',
-    color: '#e6a23c',
-    match: (d: CmpDef) => !!d.lfNodeType && d.lfNodeType !== 'NodeComponent'
+const businessGroups = computed(() => {
+  const businessDefs = allDefs.value.filter((x) => x.group === 'business');
+  if (domains.value.length === 0) {
+    if (businessDefs.length === 0) return [];
+    const g = paletteGroups.value.find((x) => x.key === 'business');
+    return [{ key: 'business', label: g?.label ?? null, color: g?.color ?? undefined, defs: businessDefs }];
   }
-] as const;
-
-const businessGroups = computed(() =>
-  BUSINESS_SECTION_META.map((m) => ({
-    ...m,
-    defs: allDefs.value.filter((d) => d.group === 'business' && m.match(d))
-  })).filter((g) => g.defs.length > 0)
-);
+  return domains.value
+    .map((d) => ({
+      ...d,
+      defs: businessDefs.filter((x) => (x.bizCategory ?? defaultDomainKey.value) === d.key)
+    }))
+    .filter((g) => g.defs.length > 0);
+});
 
 /** 渲染模型：卡片携带扁平序列下标，推荐区与 tab 内的同类型卡片高亮互不串 */
 interface IndexedItem {
@@ -256,16 +259,16 @@ const operatorSections = computed<IndexedSection[]>(() => {
   let offset = recommendedDefs.value.length;
   return operatorGroups.value.map((g) => {
     const items = g.defs.map((def) => ({ def, index: offset++ }));
-    return { key: g.key, label: g.label, color: g.color, items };
+    return { key: g.key, label: g.label, color: g.color ?? undefined, items };
   });
 });
 
-/** 业务页：三段，扁平下标同样接在推荐区之后 */
+/** 业务页：一段一个字典业务域，扁平下标同样接在推荐区之后 */
 const businessSections = computed<IndexedSection[]>(() => {
   let offset = recommendedDefs.value.length;
   return businessGroups.value.map((g) => {
     const items = g.defs.map((def) => ({ def, index: offset++ }));
-    return { key: g.key, label: g.label, color: g.color, items };
+    return { key: g.key, label: g.label, color: g.color ?? undefined, items };
   });
 });
 
@@ -321,7 +324,10 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 
-onMounted(() => searchRef.value?.focus());
+onMounted(() => {
+  void ensureTaxonomy();
+  searchRef.value?.focus();
+});
 </script>
 
 <style scoped>

@@ -106,10 +106,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { Fold, Search } from '@element-plus/icons-vue';
-import { CMP_DEFS, DND_MIME, PALETTE_GROUPS, materialTick } from '../../cmp-defs';
+import { CMP_DEFS, DND_MIME, materialTick, paletteGroups } from '../../cmp-defs';
 import { useComponentOptions } from '../../composables/useComponentOptions';
+import { useComponentTaxonomy } from '../../composables/useComponentTaxonomy';
 
 const emit = defineEmits<{
   (e: 'collapse'): void;
@@ -124,6 +125,12 @@ function retry() {
   void retryOptions();
 }
 
+/** 分组字典（会话级缓存，未到位时为编译期 FALLBACK_GROUPS） */
+const { ensureTaxonomy } = useComponentTaxonomy();
+onMounted(() => {
+  void ensureTaxonomy();
+});
+
 /**
  * 所有已注册组件（含 virtual 系统节点 start/end，允许用户手动从物料区拖入）。
  * /options 合流只原地改数组内容，故显式依赖 materialTick 让面板在物料到达后刷新。
@@ -133,9 +140,10 @@ const realDefs = computed(() => {
   return CMP_DEFS;
 });
 
-/** Tab 态：算子页按分组平铺（组头不可折叠） */
+/** Tab 态：算子页按分组平铺（组头不可折叠）；分组名/颜色/顺序全部取自字典行 */
 const operatorGroups = computed(() =>
-  PALETTE_GROUPS.filter((g) => g.key !== 'business')
+  paletteGroups.value
+    .filter((g) => g.key !== 'business')
     .map((g) => ({ ...g, defs: realDefs.value.filter((d) => d.group === g.key) }))
     .filter((g) => g.defs.length > 0)
 );

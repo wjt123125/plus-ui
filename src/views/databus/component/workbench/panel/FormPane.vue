@@ -1,51 +1,33 @@
 <!--
-  自定义组件新增/编辑抽屉（2026-10-07 分包重构：主壳只保留抽屉框架、表单模型与
-  加载/提交编排；五个 Tab 各自内聚于 tabs/，参数构造器逻辑沉到 useFieldBuilder，
-  脚本执行体沉到 ScriptTab）。
-  字段一个不删，按用户心智切五段，每段独立滚动、校验不过 tab 挂红点并自动跳转：
+  组件编辑面板（工作台右栏 tab 内容，原新增/编辑抽屉剥壳而来）。
+  主壳只保留面板框架、表单模型与加载/提交编排；五个 Tab 各自内聚于 form/tabs/，
+  参数构造器逻辑在 useFieldBuilder，脚本执行体在 ScriptTab。
+  字段一个不删，按用户心智切五段，校验不过 tab 挂红点并自动跳转：
   ① 基础 ② 外观 ③ 参数 ④ 执行体 ⑤ 高级
   el-form 跨组件 provide：子 Tab 内 el-form-item 照常注册，主壳统一 validate。
+  tab 内容缓存不销毁：切走草稿保留，脏状态通过 dirty-change 上报给 tab 条。
 -->
 <template>
-  <el-drawer
-    v-model="visible"
-    size="50%"
-    resizable
-    append-to-body
-    destroy-on-close
-    :close-on-click-modal="false"
-    modal-class="databus-component-drawer"
-    class="component-form"
-  >
-    <template #header>
-      <div class="cf-header">
-        <div class="cf-header__title-wrap">
-          <span class="cf-header__title">
-            <el-tooltip
-              :content="form.status === '0' ? '已启用' : '已停用'"
-              placement="top"
-              :show-after="200"
-            >
-              <span
-                class="cf-header__dot"
-                :class="form.status === '0' ? 'is-enabled' : 'is-disabled'"
-                aria-hidden="true"
-              />
-            </el-tooltip>
-            {{ isEdit ? '编辑自定义组件' : '新增自定义组件' }}
-          </span>
-          <span class="cf-header__code">{{ form.componentCode || '未命名编码' }}</span>
-        </div>
-        <div class="cf-header__enabled" @click.stop>
-          <el-switch
-            v-model="form.status"
-            active-value="0"
-            inactive-value="1"
-            size="small"
-          />
-        </div>
+  <div class="cf-pane">
+    <header class="cf-head">
+      <el-tooltip
+        :content="form.status === '0' ? '已启用' : '已停用'"
+        placement="top"
+        :show-after="200"
+      >
+        <span
+          class="cf-head__dot"
+          :class="form.status === '0' ? 'is-enabled' : 'is-disabled'"
+          aria-hidden="true"
+        />
+      </el-tooltip>
+      <div class="cf-head__title-wrap">
+        <span class="cf-head__title">{{ isEdit ? '编辑组件' : '新增组件' }}</span>
+        <span class="cf-head__code">{{ form.componentCode || '未命名编码' }}</span>
       </div>
-    </template>
+      <span class="cf-head__spacer" />
+      <el-switch v-model="form.status" active-value="0" inactive-value="1" size="small" />
+    </header>
 
     <el-form
       ref="formRef"
@@ -74,7 +56,7 @@
           :has-artifact="hasScriptArtifact"
           :invalid="invalidTabs.has('script')"
           @published="onScriptPublished"
-          @rolled="handleRolled"
+          @open-changes="emit('open-changes')"
         />
         <AdvancedTab
           :form="form"
@@ -84,39 +66,57 @@
       </el-tabs>
     </el-form>
 
-    <template #footer>
-      <div class="cf-footer">
-        <el-button @click="visible = false">取 消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">确 定</el-button>
-      </div>
-    </template>
-  </el-drawer>
+    <footer class="cf-footer">
+      <span v-if="dirty" class="cf-footer__dirty">有未保存的改动</span>
+      <span class="cf-footer__spacer" />
+      <el-button size="small" @click="emit('cancel')">取 消</el-button>
+      <el-button size="small" type="primary" :loading="submitting" @click="handleSubmit">
+        保 存
+      </el-button>
+    </footer>
+  </div>
 </template>
 
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus';
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { addComponent, getComponent, updateComponent } from '@/api/databus/component';
 import type { DatabusComponentForm, ScriptSaveResult } from '@/api/databus/component/types';
 import modal from '@/plugins/modal';
-import { defaultForm, TAB_OF, type ComponentFormModel, type TabName } from './form.types';
-import { useFieldBuilder } from './useFieldBuilder';
-import { validateJsonColumn } from './validate';
-import AdvancedTab from './tabs/AdvancedTab.vue';
-import AppearanceTab from './tabs/AppearanceTab.vue';
-import BasicTab from './tabs/BasicTab.vue';
-import ParamsTab from './tabs/ParamsTab.vue';
-import ScriptTab from './tabs/ScriptTab.vue';
+import { defaultForm, TAB_OF, type ComponentFormModel, type TabName } from '../../form/form.types';
+import { useFieldBuilder } from '../../form/useFieldBuilder';
+import { validateJsonColumn } from '../../form/validate';
+import AdvancedTab from '../../form/tabs/AdvancedTab.vue';
+import AppearanceTab from '../../form/tabs/AppearanceTab.vue';
+import BasicTab from '../../form/tabs/BasicTab.vue';
+import ParamsTab from '../../form/tabs/ParamsTab.vue';
+import ScriptTab from '../../form/tabs/ScriptTab.vue';
+import type { ComponentSaved, FormPreset } from '../workbench.types';
 
-const emit = defineEmits<{
-  (e: 'success'): void;
+defineOptions({ name: 'ComponentFormPane' });
+
+const props = defineProps<{
+  /** databus_component 行 id；空为新增 */
+  dbId?: number;
+  /** 台账已有标签聚合，供标签输入联想 */
+  tagSuggestions?: string[];
+  /** 宿主自增触发重载（回滚/外部保存后同步） */
+  refreshToken?: number;
+  /** 新增态的目录上下文预设（树目录节点右键「新建组件」携带 group/domain） */
+  preset?: FormPreset;
 }>();
 
-const visible = ref(false);
+const emit = defineEmits<{
+  (e: 'saved', payload: ComponentSaved): void;
+  (e: 'cancel'): void;
+  (e: 'dirty-change', dirty: boolean): void;
+  /** 执行体 Tab 请求打开同组件「代码变更」tab */
+  (e: 'open-changes'): void;
+}>();
+
 const submitting = ref(false);
 const detailLoading = ref(false);
 const formRef = ref<FormInstance>();
-const tagSuggestions = ref<string[]>([]);
 
 /** 当前激活 tab 与校验不过的 tab 集合（红点 + 自动跳转） */
 const activeTab = ref<TabName>('basic');
@@ -149,6 +149,39 @@ const rules: FormRules<DatabusComponentForm> = {
   category: [{ required: true, message: '请选择台账分类', trigger: 'change' }]
 };
 
+/** 脏状态基线：表单 + 构造器状态的快照，与当前快照不等即为脏 */
+const dirty = ref(false);
+let baseline = '';
+
+function snapshot(): string {
+  return JSON.stringify({
+    form: form.value,
+    rows: builder.fieldRows.value,
+    jsonMode: builder.jsonMode.value,
+    schemaJson: builder.schemaJson.value
+  });
+}
+
+function markBaseline() {
+  baseline = snapshot();
+  dirty.value = false;
+  emit('dirty-change', false);
+}
+
+watch(
+  () => snapshot(),
+  (val) => {
+    if (val === baseline) {
+      return;
+    }
+    const next = !detailLoading.value;
+    if (next !== dirty.value) {
+      dirty.value = next;
+      emit('dirty-change', next);
+    }
+  }
+);
+
 /**
  * 表单任意变化后静默复校：红点随修随灭；valid 时清空集合。
  * 仅在已有红点时触发，避免每次击键都跑全量校验。
@@ -172,23 +205,29 @@ watch(
   { deep: true }
 );
 
-/** 新增；传 id 为编辑（拉详情回显），suggestions 为台账已有标签聚合 */
-async function open(id?: number, suggestions?: string[]) {
-  tagSuggestions.value = suggestions ?? [];
+/** 复位为空表单（新增，或切换编辑对象时先清场） */
+function resetForm() {
   activeTab.value = 'basic';
   invalidTabs.value = new Set();
   hasScriptArtifact.value = false;
   form.value = defaultForm();
+  applyPreset();
   builder.reset();
   scriptTabRef.value?.resetScript();
-  visible.value = true;
-  if (id == null) {
-    return;
-  }
-  await loadDetail(id);
 }
 
-/** 拉详情并回填（首次打开与脚本回滚后复用） */
+/** 目录右键「新建组件」的上下文预设；仅新增态生效，避免用户在表单里再选一次 */
+function applyPreset() {
+  if (props.dbId != null || !props.preset) {
+    return;
+  }
+  if (props.preset.group !== undefined) {
+    form.value.groupName = props.preset.group;
+  }
+  form.value.domain = props.preset.domain ?? null;
+}
+
+/** 拉详情并回填（首次挂载、宿主刷新与脚本回滚后复用） */
 async function loadDetail(id: number) {
   detailLoading.value = true;
   try {
@@ -200,6 +239,7 @@ async function loadDetail(id: number) {
       shortName: data.shortName ?? '',
       category: data.category,
       groupName: data.groupName ?? '',
+      domain: data.domain ?? null,
       icon: data.icon ?? '',
       color: data.color ?? '',
       sort: data.sort ?? 100,
@@ -224,9 +264,22 @@ async function loadDetail(id: number) {
     // schema 解析失败时 builder 自行锁定 JSON 模式并装原文（不丢数据）
     builder.load(form.value.paramSchema ?? '');
     scriptTabRef.value?.applyScript(data.scriptBody);
+    await nextTick();
+    markBaseline();
   } finally {
     detailLoading.value = false;
   }
+}
+
+/** 重载当前面板（宿主 refreshToken 变化时调用） */
+async function reload() {
+  resetForm();
+  if (props.dbId != null) {
+    await loadDetail(props.dbId);
+    return;
+  }
+  await nextTick();
+  markBaseline();
 }
 
 /** 脚本发布成功：物化列回写 form + 重建字段构造器（ScriptTab 已负责清错与提示） */
@@ -247,15 +300,16 @@ function onScriptPublished(data: ScriptSaveResult, scriptBody: string) {
   }
   // 物化 schema 必然合法；强制回到可视化只读字段列表
   builder.load(form.value.paramSchema);
-  emit('success');
+  emitSaved();
 }
 
-/** 回滚产生新版本后：重拉详情同步正文/契约，并通知台账刷新合流态 */
-async function handleRolled() {
-  if (form.value.id != null) {
-    await loadDetail(form.value.id);
-  }
-  emit('success');
+function emitSaved() {
+  emit('saved', {
+    id: form.value.id,
+    code: form.value.componentCode,
+    name: form.value.componentName,
+    version: form.value.version
+  });
 }
 
 /** el-form 校验：回调形式收集逐字段错误，供 tab 红点与跳转 */
@@ -280,9 +334,7 @@ async function handleSubmit() {
   const { valid, fields } = await validateFormFields();
   if (!valid) {
     const badKeys = Object.keys(fields);
-    invalidTabs.value = new Set(
-      badKeys.map((k) => TAB_OF[k as keyof DatabusComponentForm]!)
-    );
+    invalidTabs.value = new Set(badKeys.map((k) => TAB_OF[k as keyof DatabusComponentForm]!));
     activeTab.value = TAB_OF[badKeys[0] as keyof DatabusComponentForm]!;
     return;
   }
@@ -316,35 +368,48 @@ async function handleSubmit() {
       await addComponent(payload);
     }
     modal.msgSuccess(isEdit.value ? '修改成功' : '新增成功');
-    visible.value = false;
-    emit('success');
+    markBaseline();
+    emitSaved();
   } finally {
     submitting.value = false;
   }
 }
 
-defineExpose({ open });
+onMounted(reload);
+
+// 编辑对象切换 / 宿主请求刷新 / 新建预设换目录
+watch(
+  () => [props.dbId, props.refreshToken, props.preset?.group, props.preset?.domain],
+  () => {
+    // 新建表单已有草稿时只就地改预设，不清空用户输入
+    if (props.dbId == null && dirty.value) {
+      applyPreset();
+      return;
+    }
+    reload();
+  }
+);
+
+defineExpose({ reload });
 </script>
 
 <style lang="scss" scoped>
-.component-form {
-  :deep(.el-drawer__header) {
-    margin-bottom: 12px;
-  }
-
-  :deep(.el-drawer__body) {
-    padding-top: 8px;
-  }
+.cf-pane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--el-bg-color, #fff);
 }
 
-.cf-header {
+.cf-head {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex: 1;
-  min-width: 0;
-  margin-right: 8px;
+  gap: 10px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5);
 
   &__title-wrap {
     display: flex;
@@ -354,9 +419,6 @@ defineExpose({ open });
   }
 
   &__title {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
     font-size: 15px;
     font-weight: 700;
     color: var(--el-text-color-primary, #1d2129);
@@ -368,11 +430,18 @@ defineExpose({ open });
     color: var(--el-text-color-secondary);
   }
 
+  &__spacer {
+    flex: 1;
+  }
+
   &__dot {
     width: 9px;
     height: 9px;
     border-radius: 50%;
-    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    flex-shrink: 0;
+    transition:
+      background-color 0.2s ease,
+      box-shadow 0.2s ease;
 
     &.is-enabled {
       background-color: var(--el-color-success);
@@ -384,15 +453,14 @@ defineExpose({ open });
       box-shadow: 0 0 0 3px var(--el-fill-color);
     }
   }
-
-  &__enabled {
-    display: inline-flex;
-    align-items: center;
-    flex-shrink: 0;
-  }
 }
 
 .cf-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 20px 20px;
+
   :deep(.el-form-item) {
     margin-bottom: 12px;
   }
@@ -433,8 +501,20 @@ defineExpose({ open });
 }
 
 .cf-footer {
+  flex-shrink: 0;
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
   gap: 8px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--el-border-color-lighter, #ebeef5);
+
+  &__dirty {
+    font-size: 12px;
+    color: var(--el-color-warning, #e6a23c);
+  }
+
+  &__spacer {
+    flex: 1;
+  }
 }
 </style>

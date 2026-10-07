@@ -2,6 +2,8 @@ import type { AxiosPromise } from '@/utils/api-types';
 import type { PageResult } from '@/api/types';
 import request from '@/utils/request';
 import type {
+  ComponentDomainOption,
+  ComponentGroupOption,
   ComponentOptionsResp,
   DatabusComponentForm,
   DatabusComponentQuery,
@@ -21,6 +23,30 @@ import type {
 export function listComponentOptions(): AxiosPromise<ComponentOptionsResp> {
   return request({
     url: '/databus/component/options',
+    method: 'get'
+  });
+}
+
+/**
+ * 查询物料面板分组字典（编辑器面板与台账树共用，不分页，返回不包络）。
+ * GET /databus/component/groups（权限 databus:editor:list）。
+ * 模块级会话缓存见 useComponentTaxonomy，组件内不要直接重复调用。
+ */
+export function listComponentGroups(): AxiosPromise<ComponentGroupOption[]> {
+  return request({
+    url: '/databus/component/groups',
+    method: 'get'
+  });
+}
+
+/**
+ * 查询物料业务域字典（business 组二次分段与台账树第二层共用，不分页，返回不包络）。
+ * GET /databus/component/domains（权限 databus:editor:list）。
+ * 模块级会话缓存见 useComponentTaxonomy，组件内不要直接重复调用。
+ */
+export function listComponentDomains(): AxiosPromise<ComponentDomainOption[]> {
+  return request({
+    url: '/databus/component/domains',
     method: 'get'
   });
 }

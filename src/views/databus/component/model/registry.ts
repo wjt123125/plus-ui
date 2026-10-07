@@ -34,6 +34,8 @@ export interface ComponentRegistryRow {
   db?: DatabusComponentVo;
   /** 生效面板分组（DB 治理正本 → option.group） */
   group: string;
+  /** 生效业务域（仅 business 件有意义；DB 治理正本 → option.domain，空值＝兜底域） */
+  domain?: string;
   /** 生效图标（Iconify 名或本地 svg 名） */
   icon?: string;
   /** 生效面板色值 */
@@ -75,6 +77,7 @@ export function buildRegistry(
         source: 'SYSTEM',
         option: opt,
         group: def?.group ?? opt.group ?? '',
+        domain: opt.domain ?? undefined,
         icon: opt.icon ?? def?.icon ?? undefined,
         color: opt.color ?? def?.color,
         deprecated: !!opt.deprecated,
@@ -95,6 +98,7 @@ export function buildRegistry(
         option: opt,
         db,
         group: db?.groupName || opt.group || def?.group || '',
+        domain: db?.domain || opt.domain || undefined,
         icon: db?.icon || opt.icon || def?.icon || undefined,
         color: db?.color || opt.color || def?.color,
         shortName: db?.shortName || undefined,
@@ -119,6 +123,7 @@ export function buildRegistry(
       source,
       db,
       group: db.groupName || '',
+      domain: db.domain ?? undefined,
       icon: db.icon ?? undefined,
       color: db.color ?? undefined,
       shortName: db.shortName || undefined,

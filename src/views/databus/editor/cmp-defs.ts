@@ -12,8 +12,12 @@
  * 与 RuoYi 菜单图标走同一套存储与渲染方式（SvgIcon 组件），字符串可直接入库；
  * 未来物料市场 jar 组件注册时，icon 可存 URL 或内联 SVG，渲染层再扩展分支。
  */
-import { ref } from 'vue';
-import type { ComponentOption, NodeTypeKind } from '@/api/databus/component/types';
+import { ref, shallowRef } from 'vue';
+import type {
+  ComponentGroupOption,
+  ComponentOption,
+  NodeTypeKind
+} from '@/api/databus/component/types';
 
 /** HTML5 拖拽 MIME：面板 dragstart 写入、画布 drop 时读取桩类型 */
 export const DND_MIME = 'application/x-databus-cmp';
@@ -31,10 +35,9 @@ export type ConditionKind = 'if' | 'switch' | 'for' | 'while' | 'iterator' | 'bo
  * - conditionKind: 算子需要的条件组件类型
  * - lfNodeType: 业务组件在 LiteFlow 中的节点类型（缺省 NodeComponent；
  *   布尔条件组件为 NodeBooleanComponent，只能放在 IF/WHILE 等条件槽）
- * - group: 物料面板分组
- * - bizCategory: 业务叶子的业务域（由 /options 的 domain 映射，仅普通 business 叶子有）：
- *   bpm=BPM 平台集成件，common=通用数据加工；
- *   算子条件槽件（带 lfNodeType）不带域，选择器单独归「条件组件」段。
+ * - group: 物料面板分组（key 由后端分组字典下发，前端不做值白名单）
+ * - bizCategory: 业务域（由 /options 的 domain 原样透传，后端派生后取值 bpm/common/slot）。
+ *   与 lfNodeType 正交：槽件同时带 lfNodeType（拖拽行为语义）与 bizCategory='slot'（分组归属语义）。
  */
 export interface CmpDef {
   type: string;
@@ -55,9 +58,9 @@ export interface CmpDef {
     | 'NodeForComponent'
     | 'NodeIteratorComponent'
     | 'NodeSwitchComponent';
-  group?: 'flow' | 'sequence' | 'branch' | 'loop' | 'other' | 'subflow' | 'business';
+  group?: string;
   /** 业务域分类（business 叶子的选择器分段依据），来自 /options domain */
-  bizCategory?: 'bpm' | 'common';
+  bizCategory?: string;
 }
 
 /**
@@ -230,16 +233,26 @@ const STRUCTURE_DEFS: CmpDef[] = [
   }
 ];
 
-/** 物料面板分组顺序、标题与组色（标题圆点用） */
-export const PALETTE_GROUPS: { key: NonNullable<CmpDef['group']>; label: string; color: string }[] = [
-  { key: 'flow', label: '流程节点', color: '#909399' },
-  { key: 'sequence', label: '顺序编排', color: '#409eff' },
-  { key: 'branch', label: '条件分支', color: '#e6a23c' },
-  { key: 'loop', label: '循环迭代', color: '#67c23a' },
-  { key: 'other', label: '异常与逻辑', color: '#f56c6c' },
-  { key: 'subflow', label: '子流程', color: '#909399' },
-  { key: 'business', label: '业务组件', color: '#409eff' }
+/**
+ * 面板分组编译期兜底（字典端点失败/未到位时用，保证面板不白屏）。
+ * label/color/sort 与 databus_component_group 的 seed 行逐字一致，字典到位后由 paletteGroups 覆盖。
+ */
+export const FALLBACK_GROUPS: ComponentGroupOption[] = [
+  { key: 'flow', label: '流程节点', color: '#909399', sort: 10 },
+  { key: 'sequence', label: '顺序编排', color: '#409eff', sort: 20 },
+  { key: 'branch', label: '条件分支', color: '#e6a23c', sort: 30 },
+  { key: 'loop', label: '循环迭代', color: '#67c23a', sort: 40 },
+  { key: 'other', label: '异常与逻辑', color: '#f56c6c', sort: 50 },
+  { key: 'subflow', label: '子流程', color: '#909399', sort: 60 },
+  { key: 'business', label: '业务组件', color: '#409eff', sort: 70 }
 ];
+
+/**
+ * 面板分组运行时值（顺序/标题/组色）。字典到位后由 useComponentTaxonomy 赋值。
+ * 用 shallowRef 承载是为了 cmp-recommend 的同步 tie-break：读到的永远是「当前值」，
+ * 字典没到就用兜底、到了自动切，无需 await（详见元数据后端化设计文档 §5.3）。
+ */
+export const paletteGroups = shallowRef<ComponentGroupOption[]>([...FALLBACK_GROUPS]);
 
 /**
  * 全部已注册组件：结构件（静态）+ 业务物料（/options 全量下发，原地增删）。
@@ -268,10 +281,18 @@ export function isBooleanDef(def: CmpDef | undefined | null): boolean {
  */
 export const materialTick = ref(0);
 
-/** 远程 group 白名单：非七组之内的值忽略，避免脏数据把面板分组打穿 */
-const VALID_GROUPS = new Set<CmpDef['group']>([
-  'flow', 'sequence', 'branch', 'loop', 'other', 'subflow', 'business'
-]);
+/**
+ * 远程 group 白名单 = 分组字典的 key 集合（paletteGroups 当前值 ∪ 编译期兜底七组）。
+ * 字典外的值降级到兜底组 business，避免脏数据把面板分组打穿；
+ * 字典新增一行即被识别，无需前端发版。
+ */
+function knownGroupKeys(): Set<string> {
+  const keys = new Set<string>(FALLBACK_GROUPS.map((g) => g.key));
+  for (const g of paletteGroups.value) {
+    keys.add(g.key);
+  }
+  return keys;
+}
 
 /** 后端 NodeTypeKind → LiteFlow 节点 lfNodeType；NODE/null 为普通叶子（不写该字段） */
 function mapNodeType(nodeType?: NodeTypeKind | null): CmpDef['lfNodeType'] | undefined {
@@ -290,7 +311,7 @@ function mapNodeType(nodeType?: NodeTypeKind | null): CmpDef['lfNodeType'] | und
 }
 
 /** /options 单项 → 本地 CmpDef（纯展示映射；结构行为字段一律不出现） */
-function toCmpDef(opt: ComponentOption): CmpDef {
+function toCmpDef(opt: ComponentOption, validGroups: Set<string>): CmpDef {
   const lfNodeType = mapNodeType(opt.nodeType);
   const def: CmpDef = {
     type: opt.code,
@@ -298,15 +319,12 @@ function toCmpDef(opt: ComponentOption): CmpDef {
     desc: opt.description ?? '',
     color: opt.color ?? '#409eff',
     icon: opt.icon ?? 'ph:puzzle-piece',
-    group:
-      opt.group && VALID_GROUPS.has(opt.group as CmpDef['group'])
-        ? (opt.group as CmpDef['group'])
-        : 'business'
+    group: opt.group && validGroups.has(opt.group) ? opt.group : 'business'
   };
   if (opt.shortName) def.short = opt.shortName;
   if (lfNodeType) def.lfNodeType = lfNodeType;
-  // 业务域只落普通叶子；槽件（BOOLEAN/FOR/ITERATOR/SWITCH）归「条件组件」段，不带域
-  if (!lfNodeType && (opt.domain === 'bpm' || opt.domain === 'common')) {
+  // 域由后端下发（含 slot 派生结果），前端不再做值白名单与 nodeType 守卫
+  if (opt.domain) {
     def.bizCategory = opt.domain;
   }
   return def;
@@ -320,6 +338,7 @@ function toCmpDef(opt: ComponentOption): CmpDef {
  * - 接口失败不调用本函数，物料区保持上一批（会话期仅首拉）或为空，绝不塞本地数据。
  */
 export function applyComponentOptions(options: ComponentOption[]): void {
+  const validGroups = knownGroupKeys();
   // 直接遍历 Map.keys()：删除当前游标键在 Map 迭代规范下安全（未访问到的键删除后即跳过）
   for (const type of DEF_MAP.keys()) {
     if (!STRUCTURE_TYPES.has(type)) {
@@ -334,7 +353,7 @@ export function applyComponentOptions(options: ComponentOption[]): void {
   for (const opt of options) {
     // 无 code 的脏项跳过；与结构件撞码的远程项不允许覆盖画布语法
     if (!opt?.code || STRUCTURE_TYPES.has(opt.code)) continue;
-    const def = toCmpDef(opt);
+    const def = toCmpDef(opt, validGroups);
     CMP_DEFS.push(def);
     DEF_MAP.set(def.type, def);
   }

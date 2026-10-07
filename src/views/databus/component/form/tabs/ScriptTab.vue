@@ -33,7 +33,7 @@
         </el-tag>
         <span class="cf-script-head__spacer" />
         <el-button size="small" plain :disabled="!form.id" @click="openVersions">
-          版本历史{{ hasArtifact ? `（v${form.version ?? '-'} 最新）` : '' }}
+          代码变更{{ hasArtifact ? `（v${form.version ?? '-'} 最新）` : '' }}
         </el-button>
         <el-tooltip
           content="保存即编译并全局热更，等同服务端发版；编译失败不落库"
@@ -77,8 +77,6 @@
         </div>
       </div>
     </div>
-
-    <ScriptVersionDrawer ref="versionDrawerRef" @rolled="emit('rolled')" />
   </el-tab-pane>
 </template>
 
@@ -92,7 +90,6 @@ import modal from '@/plugins/modal';
 import { checkPermi } from '@/utils/permission';
 import type { ComponentFormModel } from '../form.types';
 import JavaCodeEditor from '../JavaCodeEditor.vue';
-import ScriptVersionDrawer from '../ScriptVersionDrawer.vue';
 import TabLabel from './TabLabel.vue';
 
 defineOptions({ name: 'ScriptTab' });
@@ -106,8 +103,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** 脚本发布成功：主壳回写物化列 + 重建字段构造器 + 通知台账刷新 */
   (e: 'published', data: ScriptSaveResult, scriptBody: string): void;
-  /** 版本回滚后：主壳重拉详情 */
-  (e: 'rolled'): void;
+  /** 打开「代码变更」tab（原版本历史抽屉已升级为右栏独立 tab） */
+  (e: 'open-changes'): void;
 }>();
 
 const isEdit = computed(() => props.form.id != null);
@@ -117,7 +114,6 @@ const scriptText = ref('');
 const scriptSaving = ref(false);
 const compileDiagnostics = ref<ScriptDiagnostic[]>([]);
 const compileMessage = ref('');
-const versionDrawerRef = ref<InstanceType<typeof ScriptVersionDrawer>>();
 
 /** 新建态重置 */
 function resetScript() {
@@ -169,7 +165,7 @@ function openVersions() {
   if (props.form.id == null) {
     return;
   }
-  versionDrawerRef.value?.open(props.form.id, props.form.version);
+  emit('open-changes');
 }
 
 defineExpose({ resetScript, applyScript });

@@ -1,222 +1,100 @@
+
 <template>
-  <div class="page-container">
-    <div class="page-inner">
-      <!-- 顶部标题栏 -->
-      <div class="page-header">
-        <div class="page-title-wrap">
-          <h2 class="page-title">组件管理</h2>
-          <p class="page-subtitle">
-            共 {{ rows.length }} 个组件（内置 {{ builtinCount }} · 治理覆盖 {{ overlayCount }} · 库存脚本件
-            {{ customCount }}）。库存件逻辑存 DB、保存即热更，治理覆盖只改外观契约仍取内置。
-          </p>
-        </div>
-        <button
-          v-hasPermi="['databus:component:add']"
-          class="add-btn"
-          @click="handleAdd"
-        >
-          <el-icon><Plus /></el-icon>
-          <span>新增自定义组件</span>
-        </button>
-      </div>
+  <div class="cmpwb-page">
+    <!--
+      组件管理工作台（三栏推拉布局，无遮罩抽屉，对标 Trae 客户端）：
+        AI 助手栏 / 工作面板（主内容区）/ 组件树
+      「组件库」是工作面板里的一个普通 tab（卡片网格宿主），与其它 tab 一样可关闭；
+      点树的目录节点打开/聚焦它，点叶节点或卡片开「查看」tab；编辑与代码变更各自独立 tab，
+      tab 身份 = 组件 + 模式，会话仅存内存，离开路由即清空。分栏宽度与开合状态记 localStorage。
+      台账数据来自 /options（内置+启用自定义富 schema）与 /list（全部 DB 行）的合流。
 
-      <!-- 搜索框 -->
-      <div class="search-form">
-        <div class="search-input-wrapper">
-          <el-icon class="search-input-icon"><Search /></el-icon>
-          <el-input
-            v-model="keyword"
-            class="search-input"
-            placeholder="搜索名称 / 短名 / 编码 / 标签 / 描述..."
-            clearable
-          />
-        </div>
-      </div>
+      §2.0：两侧栏的开合入口收敛到顶部 header（唯一入口），栏收起即宽度归零、不占位——
+      AI 栏的 44px mini rail 与组件树的 34px 竖条把手都已废除。高度由外层 wrapper 吃
+      calc(100vh - 123px)、header flex-shrink:0、.cmpwb flex:1 + min-height:0 三段式分配，不再硬算。
+    -->
+    <WorkbenchHeader
+      v-model:ai-collapsed="aiCollapsed"
+      v-model:nav-collapsed="treeCollapsed"
+      ai-label="AI 助手"
+      nav-label="组件树"
+    />
 
-      <!-- 来源 + 分组筛选 -->
-      <div class="filter-bar">
-        <div class="filter-tabs">
-          <button class="filter-tab" :class="{ active: !sourceFilter }" @click="sourceFilter = ''">
-            全部来源
-          </button>
-          <button
-            class="filter-tab"
-            :class="{ active: sourceFilter === 'SYSTEM' }"
-            @click="sourceFilter = 'SYSTEM'"
-          >
-            内置
-          </button>
-          <button
-            class="filter-tab"
-            :class="{ active: sourceFilter === 'OVERLAY' }"
-            @click="sourceFilter = 'OVERLAY'"
-          >
-            治理覆盖
-          </button>
-          <button
-            class="filter-tab"
-            :class="{ active: sourceFilter === 'CUSTOM' }"
-            @click="sourceFilter = 'CUSTOM'"
-          >
-            库存脚本件
-          </button>
-        </div>
-        <div class="filter-divider" />
-        <div class="filter-tabs">
-          <button class="filter-tab" :class="{ active: !groupFilter }" @click="groupFilter = ''">
-            全部分组
-          </button>
-          <button
-            v-for="g in groupOptions"
-            :key="g.key"
-            class="filter-tab"
-            :class="{ active: groupFilter === g.key }"
-            @click="groupFilter = g.key"
-          >
-            {{ g.label }}
-          </button>
-        </div>
-      </div>
+    <div class="cmpwb">
+      <!-- 栏 1：AI 助手 -->
+      <AiAssistantRail
+        :collapsed="aiCollapsed"
+        :width="aiWidth"
+        title="AI 助手"
+        welcome-title="组件助手"
+        welcome-desc="用自然语言查询组件、生成参数契约与排查脚本编译失败。"
+        @select="onAiSelect"
+      />
+      <Splitter v-if="!aiCollapsed" v-model="aiWidth" :min="AI_MIN" :max="AI_MAX" />
 
-      <!-- 库存脚本件启动期注册失败警示条 -->
-      <el-alert
-        v-if="unhealthy.length"
-        type="error"
-        :closable="false"
-        show-icon
-        class="health-banner"
+      <!-- 栏 2：工作面板（主内容区，常驻不可折叠） -->
+      <WorkPanel
+        v-model:active-key="activeKey"
+        :tabs="tabs"
+        :rows="rows"
+        :tag-suggestions="tagPool"
+        :refresh-tokens="refreshTokens"
+        @close="wb.close"
+        @dirty-change="wb.setDirty"
+        @saved="handleSaved"
+        @rolled="handleRolled"
+        @open-changes="handleOpenChanges"
+        @edit="handleEdit"
+        @delete="handleDelete"
+        @changes="handleChanges"
       >
-        <template #title>
-          <span>{{ unhealthy.length }} 个库存脚本件启动期编译/注册失败，相关链路执行将报错：</span>
-        </template>
-        <div class="health-banner__list">
-          <div v-for="h in unhealthy" :key="h.componentId" class="health-banner__item">
-            <el-tag size="small" type="danger" effect="dark">{{ h.componentCode }}</el-tag>
-            <span class="health-banner__msg">{{ h.error }}</span>
-          </div>
-        </div>
-      </el-alert>
-
-      <!-- 卡片网格 -->
-      <div v-loading="loading" class="card-grid">
-        <div
-          v-for="row in filteredRows"
-          :key="row.source + ':' + row.code"
-          class="mt-card"
-          :class="{ 'mt-card--off': row.db && row.disabled }"
-          @click="openDetail(row)"
-        >
-          <div class="mt-card-head">
-            <div class="mt-icon" :style="iconTileStyle(row)">
-              <SvgIcon v-if="row.icon" :icon-class="row.icon" />
-              <el-icon v-else><Box /></el-icon>
-            </div>
-            <div class="mt-title-area">
-              <div class="mt-title">{{ row.name }}</div>
-              <div class="mt-component">
-                <span class="mt-component-id">{{ row.code }}</span>
-                <button class="copy-id-btn" title="复制组件编码" @click.stop="copyCode(row)">
-                  <el-icon><CopyDocument /></el-icon>
-                </button>
-              </div>
-            </div>
-            <div v-if="row.db" class="mt-switch-wrap" @click.stop>
-              <el-tooltip :content="row.disabled ? '已停用' : '已启用'" placement="top" :show-after="200">
-                <span class="status-dot" :class="dotClass(row)" />
-              </el-tooltip>
-              <el-switch
-                :model-value="row.db.status === '0'"
-                size="small"
-                :loading="togglingCode === row.code"
-                @change="(val) => toggleEnabled(row, val as boolean)"
-              />
-            </div>
-          </div>
-
-          <div class="mt-meta">
-            <span class="mt-badge" :class="sourceBadgeClass(row.source)">{{ sourceLabel(row.source) }}</span>
-            <el-tag size="small" effect="plain" type="info">{{ groupLabel(row.group) }}</el-tag>
-            <el-tag v-if="rowNodeType(row)" size="small" effect="plain">
-              {{ nodeTypeLabel(rowNodeType(row)!) }}
-            </el-tag>
-            <el-tooltip
-              v-if="row.scripted"
-              content="脚本库存件：逻辑存 DB，保存即编译热更"
-              placement="top"
-            >
-              <el-tag size="small" type="success" effect="plain">
-                脚本{{ row.db?.version != null ? ` v${row.db.version}` : '' }}
-              </el-tag>
-            </el-tooltip>
-            <el-tooltip
-              v-if="row.deprecated"
-              :content="row.deprecateNote || '该组件已废弃，不建议在新链路使用'"
-              placement="top"
-            >
-              <el-tag size="small" type="warning" effect="dark">废弃</el-tag>
-            </el-tooltip>
-            <el-tag v-if="row.disabled" size="small" type="info" effect="plain">已停用</el-tag>
-          </div>
-          <div v-if="row.tags?.length" class="mt-tags">
-            <el-tag
-              v-for="t in row.tags.slice(0, 4)"
-              :key="t"
-              size="small"
-              effect="plain"
-              class="mt-tag-chip"
-            >
-              # {{ t }}
-            </el-tag>
-            <span v-if="row.tags.length > 4" class="mt-tags-more">+{{ row.tags.length - 4 }}</span>
-          </div>
-          <div v-if="row.option?.description || row.db?.description" class="mt-desc">
-            {{ row.option?.description || row.db?.description }}
-          </div>
-
-          <div class="mt-actions" @click.stop>
-            <el-button
-              v-hasPermi="['databus:component:query']"
-              link
-              type="primary"
-              size="small"
-              @click="openDetail(row)"
-            >
-              <el-icon><View /></el-icon>详情
-            </el-button>
-            <template v-if="row.db">
-              <el-button
-                v-hasPermi="['databus:component:edit']"
-                link
-                type="primary"
-                size="small"
-                @click="handleEdit(row)"
-              >
-                <el-icon><Edit /></el-icon>编辑
-              </el-button>
-              <el-button
-                v-hasPermi="['databus:component:remove']"
-                link
-                type="danger"
-                size="small"
-                @click="handleDelete(row)"
-              >
-                <el-icon><Delete /></el-icon>删除
-              </el-button>
+        <template #grid>
+          <ComponentGrid
+            :rows="scopedRows"
+            :scope="scope"
+            :unhealthy="unhealthy"
+            :loading="loading"
+            :toggling-code="togglingCode"
+            :active-code="activeCode"
+            @open="openDetail"
+            @edit="handleEdit"
+            @delete="handleDelete"
+            @toggle="toggleEnabled"
+          >
+            <template #meta>
+              <span class="cmpwb__counts">
+                内置 {{ builtinCount }} · 治理覆盖 {{ overlayCount }} · 库存脚本件 {{ customCount }}
+              </span>
             </template>
-          </div>
-        </div>
-        <el-empty v-if="!loading && filteredRows.length === 0" description="没有符合条件的组件" />
-      </div>
-    </div>
+          </ComponentGrid>
+        </template>
+      </WorkPanel>
 
-    <ComponentDetailDrawer ref="detailDrawerRef" @edit="handleEdit" @delete="handleDelete" />
-    <ComponentForm ref="componentFormRef" @success="getList" />
+      <!-- 栏 3：组件树（可拖宽、可收起；「新建组件」入口在目录节点的右键菜单里） -->
+      <Splitter v-if="!treeCollapsed" v-model="treeWidth" :min="TREE_MIN" :max="TREE_MAX" target="next" />
+      <ComponentTree
+        v-if="!treeCollapsed"
+        :rows="rows"
+        :unhealthy="unhealthy"
+        :recent="recentOrdered"
+        :scope="scope"
+        :loading="loading"
+        :dirty-codes="dirtyCodes"
+        :style="{ width: treeWidth + 'px', flexShrink: 0 }"
+        @update:scope="onScopeChange"
+        @view="openDetail"
+        @edit="handleEdit"
+        @changes="handleChanges"
+        @toggle="toggleEnabled"
+        @delete="handleDelete"
+        @add="handleAdd"
+      />
+    </div>
   </div>
 </template>
 
 <script setup name="DatabusComponent" lang="ts">
-import { Box, CopyDocument, Delete, Edit, Plus, Search, View } from '@element-plus/icons-vue';
-import { ElMessage } from 'element-plus';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import {
   delComponent,
   listComponent,
@@ -224,99 +102,61 @@ import {
   listScriptRuntime,
   updateComponent
 } from '@/api/databus/component';
-import type { ComponentSource, NodeTypeKind, ScriptRuntime } from '@/api/databus/component/types';
+import type { ScriptRuntime, ScriptSaveResult } from '@/api/databus/component/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import modal from '@/plugins/modal';
-import { PALETTE_GROUPS } from '../editor/cmp-defs';
-import ComponentDetailDrawer from './detail/ComponentDetailDrawer.vue';
-import ComponentForm from './form/ComponentForm.vue';
-import { groupLabel, nodeTypeLabel } from './model/labels';
+import { usePersisted } from '../workbench/composables/usePersisted';
+import Splitter from '../workbench/components/Splitter.vue';
+import WorkbenchHeader from '../workbench/components/WorkbenchHeader.vue';
+import AiAssistantRail from '../workbench/ai/AiAssistantRail.vue';
+import { useComponentTaxonomy } from '../editor/composables/useComponentTaxonomy';
+import { usePhIcons } from '../editor/composables/usePhIcons';
+import ComponentGrid from './workbench/list/ComponentGrid.vue';
+import ComponentTree from './workbench/tree/ComponentTree.vue';
+import WorkPanel from './workbench/panel/WorkPanel.vue';
+import { useComponentTabs } from './workbench/composables/useComponentTabs';
+import { useRecentComponents } from './workbench/composables/useRecentComponents';
+import type { ComponentSaved, ComponentTab, FormPreset, TreeScope } from './workbench/workbench.types';
 import { buildRegistry } from './model/registry';
 import type { ComponentRegistryRow, DefMeta } from './model/registry';
 
-/**
- * 组件管理台账页（Style-B 小卡片网格，与连接管理同范式）。
- * 列表是 /options（内置+启用自定义富 schema）与 /list（全部 DB 行）的合流；
- * 面板分组/色值等展示元数据同样取自 /options（物料唯一数据源），
- * 停用件只在 /list 里露出。
- */
+/** 分栏尺寸约定（详见 docs/refactor-component-workbench.md） */
+const AI_MIN = 260;
+const AI_MAX = 360;
+const TREE_MIN = 180;
+const TREE_MAX = 320;
 
 const rows = ref<ComponentRegistryRow[]>([]);
-/** 库存脚本件运行时健康（启动期失败件用于页顶红条） */
+/** 库存脚本件运行时健康（启动期失败件用于列表顶部红条与树「异常件」节点） */
 const runtimeHealth = ref<ScriptRuntime[]>([]);
 const { loading, withLoading } = useLoading(true);
-const keyword = ref('');
-const sourceFilter = ref<'' | ComponentSource>('');
-const groupFilter = ref<'' | string>('');
 const togglingCode = ref<string>();
+const scope = ref<TreeScope>({ kind: 'all' });
 
-const detailDrawerRef = ref<InstanceType<typeof ComponentDetailDrawer>>();
-const componentFormRef = ref<InstanceType<typeof ComponentForm>>();
+const wb = useComponentTabs();
+const { tabs, activeKey } = wb;
+const { recentOrdered, touch: touchRecent, remove: removeRecent } = useRecentComponents();
+/** 分组/业务域字典：组件树 business 组下钻三层要用，进页面即触发（模块级缓存，全会话一次） */
+const { defaultDomainKey, ensureTaxonomy } = useComponentTaxonomy();
+/** ph 图标全集：台账 icon 契约是 `ph:*`，树叶子与卡片渲染前必须离线注入，否则运行时联网取图 */
+const { loadPhIcons } = usePhIcons();
 
+// 进页面即打开「组件库」tab（可关闭，之后由点树目录节点重新打开）
+wb.openGrid();
+
+/** 前端偏好：AI 栏与组件树的开合与宽度（工作面板是主内容区，不参与折叠） */
+const aiCollapsed = usePersisted('databus.cmpwb.aiCollapsed', true);
+const aiWidth = usePersisted('databus.cmpwb.aiWidth', 300);
+const treeCollapsed = usePersisted('databus.cmpwb.treeCollapsed', false);
+const treeWidth = usePersisted('databus.cmpwb.treeWidth', 240);
+
+/** tab key → 重载令牌：回滚后自增，让同组件的编辑面板重取脚本体 */
+const refreshTokens = reactive<Record<string, number>>({});
+
+const unhealthy = computed(() => runtimeHealth.value.filter((h) => !h.healthy));
 const builtinCount = computed(() => rows.value.filter((r) => r.source === 'SYSTEM').length);
 const overlayCount = computed(() => rows.value.filter((r) => r.source === 'OVERLAY').length);
 const customCount = computed(() => rows.value.filter((r) => r.source === 'CUSTOM').length);
-const unhealthy = computed(() => runtimeHealth.value.filter((h) => !h.healthy));
-
-/** 三态徽标文案/配色 */
-function sourceLabel(source: ComponentSource): string {
-  if (source === 'SYSTEM') {
-    return '内置';
-  }
-  return source === 'OVERLAY' ? '治理覆盖' : '库存脚本件';
-}
-
-function sourceBadgeClass(source: ComponentSource): string {
-  if (source === 'SYSTEM') {
-    return 'mt-badge--sys';
-  }
-  return source === 'OVERLAY' ? 'mt-badge--overlay' : 'mt-badge--custom';
-}
-
-/** 分组胶囊：按面板七组顺序，只列存在的组，尾部补未分组 */
-const groupOptions = computed(() => {
-  const present = new Set(rows.value.map((r) => r.group));
-  const list: { key: string; label: string }[] = PALETTE_GROUPS.filter((g) => present.has(g.key)).map(
-    (g) => ({
-      key: g.key,
-      label: g.label
-    })
-  );
-  if (present.has('')) {
-    list.push({ key: '__ungrouped', label: '未分组' });
-  }
-  return list;
-});
-
-const filteredRows = computed(() => {
-  let list = rows.value;
-  if (sourceFilter.value) {
-    list = list.filter((r) => r.source === sourceFilter.value);
-  }
-  if (groupFilter.value) {
-    const key = groupFilter.value === '__ungrouped' ? '' : groupFilter.value;
-    list = list.filter((r) => (r.group || '') === key);
-  }
-  const kw = keyword.value.trim().toLowerCase();
-  if (kw) {
-    list = list.filter((r) =>
-      [
-        r.name,
-        r.shortName,
-        r.code,
-        r.option?.description,
-        r.db?.description,
-        ...(r.tags ?? [])
-      ].some((s) => s?.toLowerCase().includes(kw))
-    );
-  }
-  return list;
-});
-
-/** 节点类型兜底：option 缓存 → db 契约列（停用行没有 option） */
-function rowNodeType(row: ComponentRegistryRow): NodeTypeKind | null {
-  return (row.option?.nodeType as NodeTypeKind | null | undefined) ?? row.db?.nodeType ?? null;
-}
 
 /** 标签建议池：台账已有标签去重，供新增/编辑表单自由创建时联想 */
 const tagPool = computed(() => {
@@ -330,6 +170,47 @@ const tagPool = computed(() => {
   }
   return [...set];
 });
+
+/** 组件树 scope → 「组件库」网格行集 */
+const scopedRows = computed(() => {
+  switch (scope.value.kind) {
+    case 'unhealthy': {
+      const codes = new Set(unhealthy.value.map((h) => h.componentCode));
+      return rows.value.filter((r) => codes.has(r.code));
+    }
+    case 'recent': {
+      const map = new Map(rows.value.map((r) => [r.code, r]));
+      return recentOrdered.value.map((item) => map.get(item.code)).filter((r): r is ComponentRegistryRow => !!r);
+    }
+    case 'group': {
+      const key = scope.value.key === '__ungrouped' ? '' : scope.value.key;
+      return rows.value.filter((r) => (r.group || '') === key);
+    }
+    case 'domain': {
+      // 与组件树的 business 组下钻分桶同一套口径：空 domain 归兜底域
+      const key = scope.value.key;
+      return rows.value.filter(
+        (r) => r.group === 'business' && (r.domain || defaultDomainKey.value) === key
+      );
+    }
+    case 'code': {
+      // 提取到 const：对 scope.value 的判别收窄不会带进 filter 回调闭包
+      const code = scope.value.code;
+      return rows.value.filter((r) => r.code === code);
+    }
+    default:
+      return rows.value;
+  }
+});
+
+const activeCode = computed(() => tabs.value.find((t) => t.key === activeKey.value)?.code);
+
+/** 本会话有未保存草稿的组件编码 → 树上标 M（VS Code modified 惯例） */
+const dirtyCodes = computed(() => tabs.value.filter((t) => t.dirty && t.code).map((t) => t.code));
+
+function rowByCode(code: string): ComponentRegistryRow | undefined {
+  return rows.value.find((r) => r.code === code);
+}
 
 /** 拉取双源合流 + 脚本运行健康；任一源失败不阻断其他源渲染 */
 const getList = async () => {
@@ -358,28 +239,78 @@ const getList = async () => {
   });
 };
 
-function iconTileStyle(row: ComponentRegistryRow) {
-  return {
-    backgroundColor: row.color || 'var(--el-color-primary)',
-    color: '#fff'
-  };
-}
+// ── 树 / 网格 → 工作面板 ────────────────────────────────────────
 
-function dotClass(row: ComponentRegistryRow) {
-  return row.disabled ? 'status-offline' : 'status-online';
+function onScopeChange(next: TreeScope) {
+  scope.value = next;
+  if (next.kind !== 'code') {
+    // 点目录节点（全部组件 / 异常件 / 最近访问 / 分组）= 打开或聚焦「组件库」tab
+    wb.openGrid();
+    return;
+  }
+  const row = rowByCode(next.code);
+  if (row) {
+    openDetail(row);
+  }
 }
 
 function openDetail(row: ComponentRegistryRow) {
-  detailDrawerRef.value?.open(row);
+  wb.openDetail(row);
+  touchRecent(row);
 }
 
-function handleAdd() {
-  componentFormRef.value?.open(undefined, tagPool.value);
+/** 新建组件：入口是组件树目录节点的右键菜单（§2.3），携带该目录的 group/domain 预设 */
+function handleAdd(preset?: FormPreset) {
+  wb.openForm(undefined, undefined, preset);
 }
 
 function handleEdit(row: ComponentRegistryRow) {
-  if (row.db?.id != null) {
-    componentFormRef.value?.open(row.db.id, tagPool.value);
+  if (row.db?.id == null) {
+    return;
+  }
+  wb.openForm(row.db.id, row);
+  touchRecent(row);
+}
+
+function handleChanges(row: ComponentRegistryRow) {
+  if (wb.openChanges(row)) {
+    touchRecent(row);
+  }
+}
+
+/** 编辑面板内「代码变更」按钮：按 tab 上的组件定位台账行 */
+function handleOpenChanges(tab: ComponentTab) {
+  const row = rowByCode(tab.code);
+  if (row) {
+    handleChanges(row);
+  }
+}
+
+async function handleSaved(tab: ComponentTab, payload: ComponentSaved) {
+  await getList();
+  if (payload.id == null) {
+    return;
+  }
+  const saved = rowByCode(payload.code);
+  if (tab.dbId == null) {
+    // 新增成功：form:new 临时 tab 转正为 form:id，避免再点保存又建一条
+    wb.adoptNewForm(payload.code, payload.id, payload.name);
+  } else {
+    wb.openForm(payload.id, { code: payload.code, name: payload.name });
+  }
+  touchRecent({ code: payload.code, name: payload.name, source: saved?.source ?? 'CUSTOM' });
+}
+
+/** 回滚生效：刷新台账 + 让同组件的编辑面板重取脚本体 */
+async function handleRolled(tab: ComponentTab, result: ScriptSaveResult) {
+  await getList();
+  if (!result.success) {
+    return;
+  }
+  for (const t of tabs.value) {
+    if (t.code === tab.code && t.kind === 'form') {
+      refreshTokens[t.key] = (refreshTokens[t.key] ?? 0) + 1;
+    }
   }
 }
 
@@ -390,6 +321,10 @@ async function handleDelete(row: ComponentRegistryRow) {
   await modal.confirm(`是否确认删除自定义组件"${row.name}"（${row.code}）？删除后不可恢复。`);
   await delComponent(row.db.id);
   modal.msgSuccess('删除成功');
+  const staleKeys = tabs.value.filter((t) => t.code === row.code).map((t) => t.key);
+  wb.closeByCode(row.code);
+  staleKeys.forEach((key) => delete refreshTokens[key]);
+  removeRecent(row.code);
   await getList();
 }
 
@@ -417,397 +352,85 @@ async function toggleEnabled(row: ComponentRegistryRow, val: boolean) {
   }
 }
 
-async function copyCode(row: ComponentRegistryRow) {
-  try {
-    await navigator.clipboard.writeText(row.code);
-    ElMessage.success(`已复制组件编码：${row.code}`);
-  } catch {
-    ElMessage.warning('复制失败，请手动选择文本复制');
+/** AI 助手选中某组件（v1 空壳预留）：等价于在树上点该叶子 */
+function onAiSelect(payload: string) {
+  const row = rowByCode(payload);
+  if (row) {
+    scope.value = { kind: 'code', code: row.code };
+    openDetail(row);
+  }
+}
+
+// 台账刷新后剔除已不存在的「最近访问」项
+watch(rows, (list) => {
+  if (!list.length) {
+    return;
+  }
+  const alive = new Set(list.map((r) => r.code));
+  for (const item of recentOrdered.value) {
+    if (!alive.has(item.code)) {
+      removeRecent(item.code);
+    }
+  }
+});
+
+/** Ctrl+U 开合 AI 栏；输入区/代码编辑器内不抢键 */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable || !!target.closest('.cm-editor');
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (!event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) {
+    return;
+  }
+  if (isTypingTarget(event.target)) {
+    return;
+  }
+  if (event.key.toLowerCase() === 'u') {
+    event.preventDefault();
+    aiCollapsed.value = !aiCollapsed.value;
   }
 }
 
 onMounted(() => {
+  // 字典与 ph 图标全集都在树首次渲染前触发：字典未到位时 business 组先渲两层（树挂 loading），
+  // 到位后自动下钻三层；图标全集是独立 chunk，注入完成前叶子图标位为空但不会联网。
+  void ensureTaxonomy();
+  void loadPhIcons();
   getList();
+  window.addEventListener('keydown', onKeydown);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown);
 });
 </script>
 
 <style lang="scss" scoped>
-.page-container {
-  padding: 24px 24px 32px;
-  background: var(--el-fill-color-light, #f5f7fa);
-  min-height: 100%;
-}
-
-.page-inner {
-  max-width: 1200px;
-  margin: 0 auto;
+/* 页面级 wrapper：吃掉视口高度，header 与三栏区各取所需（§2.0 高度公式） */
+.cmpwb-page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  height: calc(100vh - 123px);
+  min-height: 480px;
 }
 
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.page-title-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.page-title {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--el-text-color-primary, #1d2129);
-}
-
-.page-subtitle {
-  margin: 0;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-}
-
-.add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 20px;
-  border: none;
-  border-radius: 9999px;
-  background: linear-gradient(
-    135deg,
-    var(--el-color-primary) 0%,
-    var(--el-color-primary-light-3) 100%
-  );
-  color: #fff;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.3);
-  transition: all 0.25s ease;
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.4);
-  }
-}
-
-.search-form {
-  width: 100%;
-}
-
-.search-input-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  background: var(--el-bg-color, #fff);
-  border: 2px solid var(--el-border-color, #e8eaec);
-  border-radius: 12px;
-  padding: 4px 4px 4px 14px;
-  transition: all 0.2s ease;
-
-  &:focus-within {
-    border-color: var(--el-color-primary);
-    box-shadow: 0 0 0 3px rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.12);
-  }
-}
-
-.search-input-icon {
-  color: var(--el-text-color-secondary);
-  font-size: 16px;
-}
-
-.search-input {
+.cmpwb {
   flex: 1;
-
-  :deep(.el-input__wrapper) {
-    box-shadow: none !important;
-    background: transparent !important;
-    padding: 0 8px;
-  }
-
-  :deep(.el-input__inner) {
-    border: none;
-    outline: none;
-    background: transparent;
-    font-size: 14px;
-    height: 32px;
-  }
-}
-
-.filter-bar {
+  min-height: 0;
   display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.filter-tabs {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.filter-divider {
-  width: 1px;
-  align-self: stretch;
-  background: var(--el-border-color, #e8eaec);
-}
-
-.filter-tab {
-  padding: 6px 16px;
-  border-radius: 9999px;
-  border: 1px solid var(--el-border-color, #e8eaec);
+  align-items: stretch;
+  overflow: hidden;
   background: var(--el-bg-color, #fff);
-  color: var(--el-text-color-regular, #363b41);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  transition: all 0.2s ease;
-
-  &:hover {
-    border-color: var(--el-color-primary);
-    color: var(--el-color-primary);
-    box-shadow: 0 2px 6px rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.1);
-  }
-
-  &.active {
-    background-color: var(--el-color-primary);
-    border-color: var(--el-color-primary);
-    color: #fff;
-  }
+  border: 1px solid var(--el-border-color-lighter, #ebeef5);
+  border-radius: 8px;
 }
 
-.card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
-  min-height: 80px;
-}
-
-.mt-card {
-  background: var(--el-bg-color, #fff);
-  border: 1px solid var(--el-border-color, #e2e8f0);
-  border-radius: 14px;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
-  padding: 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  cursor: pointer;
-  transition: all 0.25s ease;
-
-  &:hover {
-    box-shadow: 0 12px 28px rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.18);
-    border-color: var(--el-color-primary);
-    transform: translateY(-2px);
-  }
-}
-
-.mt-card--off {
-  opacity: 0.72;
-}
-
-.mt-card-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.mt-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  font-size: 20px;
-}
-
-.mt-title-area {
-  flex: 1;
-  min-width: 0;
-}
-
-.mt-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--el-text-color-primary, #1d2129);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mt-component {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  font-family: 'JetBrains Mono', Consolas, monospace;
-  min-width: 0;
-}
-
-.mt-component-id {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.copy-id-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--el-text-color-secondary);
-  cursor: pointer;
-  opacity: 0;
-  transition: all 0.15s ease;
-  flex-shrink: 0;
-
-  .el-icon {
-    font-size: 12px;
-  }
-
-  &:hover {
-    background: rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.1);
-    color: var(--el-color-primary);
-    opacity: 1;
-  }
-
-  .mt-card:hover & {
-    opacity: 0.7;
-  }
-}
-
-.mt-switch-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.status-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8);
-
-  &.status-online {
-    background: var(--el-color-success, #10b981);
-  }
-
-  &.status-offline {
-    background: var(--el-color-info, #9ca3af);
-  }
-
-  &.status-danger {
-    background: var(--el-color-danger, #f56c6c);
-  }
-}
-
-.mt-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.mt-desc {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--el-text-color-secondary);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.mt-badge {
-  display: inline-block;
-  padding: 2px 10px;
-  border-radius: 9999px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.mt-badge--sys {
-  background: rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.1);
-  color: var(--el-color-primary);
-}
-
-.mt-badge--overlay {
-  background: rgba(125, 76, 219, 0.12);
-  color: #7d4cdb;
-}
-
-.mt-badge--custom {
-  background: rgba(16, 185, 129, 0.14);
-  color: #10b981;
-}
-
-.health-banner {
-  align-items: flex-start;
-}
-
-.health-banner__list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.health-banner__item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.health-banner__msg {
-  color: var(--el-text-color-regular, #363b41);
-  word-break: break-all;
-}
-
-.mt-tags {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.mt-tag-chip {
-  border-style: dashed;
-}
-
-.mt-tags-more {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.mt-actions {
-  display: flex;
-  gap: 4px;
-  border-top: 1px solid var(--el-border-color-lighter, #ebeef5);
-  padding-top: 10px;
-  margin-top: auto;
+.cmpwb__counts {
+  color: var(--el-text-color-placeholder);
 }
 </style>

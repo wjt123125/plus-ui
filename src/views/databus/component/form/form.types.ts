@@ -14,6 +14,7 @@ export const TAB_OF: Partial<Record<keyof DatabusComponentForm, TabName>> = {
   componentCode: 'basic',
   componentName: 'basic',
   category: 'basic',
+  icon: 'appearance',
   dataExample: 'advanced',
   inputSchema: 'advanced',
   outputSchema: 'advanced'
@@ -25,6 +26,7 @@ export const defaultForm = (): ComponentFormModel => ({
   shortName: '',
   category: 'DATA',
   groupName: 'business',
+  domain: '',
   icon: '',
   color: '',
   sort: 100,

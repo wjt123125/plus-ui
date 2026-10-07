@@ -35,8 +35,31 @@ export type EditorKind = 'form' | 'script';
  */
 export type ComponentSource = 'SYSTEM' | 'OVERLAY' | 'CUSTOM';
 
-/** 业务叶子业务域：bpm=BPM 平台件，common=通用件 */
-export type ComponentDomain = 'bpm' | 'common';
+/**
+ * 面板分组字典项（GET /databus/component/groups，权限 databus:editor:list）。
+ * key 与 @DatabusCmp.group() 及 databus_component.group_name 对齐，后端可增删行，前端不做值白名单。
+ */
+export interface ComponentGroupOption {
+  key: string;
+  label: string;
+  /** 分组色值（面板圆点 / 树目录色点） */
+  color?: string | null;
+  /** 显示顺序（升序） */
+  sort?: number | null;
+}
+
+/**
+ * 业务域字典项（GET /databus/component/domains，权限 databus:editor:list）。
+ * key 与 databus_component.domain 对齐（seed 为 bpm/common/slot）。
+ */
+export interface ComponentDomainOption {
+  key: string;
+  label: string;
+  color?: string | null;
+  sort?: number | null;
+  /** 是否兜底域（domain 为空的件归此域；全表至多一行 true） */
+  isDefault?: boolean | null;
+}
 
 /** select/multiselect 候选项 */
 export interface PropOption {
@@ -95,8 +118,8 @@ export interface ComponentOption {
   name: string;
   shortName?: string | null;
   group?: string | null;
-  /** 业务叶子业务域（bpm/common；仅 business 组下发，其余为 null） */
-  domain?: ComponentDomain | null;
+  /** 业务域（后端派生后取值 bpm/common/slot/null；仅 business 组下发，null=未指派） */
+  domain?: string | null;
   icon?: string | null;
   color?: string | null;
   description?: string | null;

@@ -1,28 +1,20 @@
 <!--
-  组件台账详情抽屉（三态）：
+  组件详情面板（工作台右栏 tab 内容，三态）：
   - SYSTEM 内置：注解事实源只读，看参数 schema 递归树 + 配置示例
   - OVERLAY 治理覆盖：治理列取 DB、契约取内置注解，可编辑/删除治理行
   - CUSTOM 库存脚本件：脚本工件版本 + 物化契约，可编辑/脚本维护
   - 停用 DB 行不在 /options（无 schema 富信息），给警示条并回落 db 契约列
 
-  布局（2026-10-07 重构）：头部身份 + 来源/状态标签（三态说明进 hover 提示）+ 一句话描述；
+  布局（2026-10-07 工作台重构）：原 el-drawer 外壳剥除，改为文档流内常驻面板；
+  头部身份 + 来源/状态标签（三态说明进 hover 提示）+ 一句话描述；
   主体两个 Tab——「配置说明」（配置参数 / 配置示例 / 输入输出数据结构折叠）与
   「基本信息」（基本信息 / 外观与分类 / 备注与文档三个折叠分组，默认全展开，
-  组内 el-descriptions 两列表格）。
-  来源、状态、废弃说明全抽屉只出现一次（头部承载），不再在表格里重复。
+  组内 el-descriptions 两列表格）；底部操作条常驻。
+  来源、状态、废弃说明只出现一次（头部承载），不再在表格里重复。
 -->
 <template>
-  <el-drawer
-    v-model="visible"
-    size="50%"
-    resizable
-    :close-on-click-modal="true"
-    append-to-body
-    destroy-on-close
-    modal-class="databus-component-drawer"
-    :title="title"
-  >
-    <div v-if="row" class="detail">
+  <div class="detail-pane">
+    <div class="detail">
       <!-- 头部身份卡 -->
       <div class="detail-head">
         <span class="detail-icon" :style="iconStyle">
@@ -199,41 +191,51 @@
       </el-tabs>
     </div>
 
-    <template #footer>
-      <div v-if="row?.db" class="detail-footer">
+    <!-- 底部操作条：面板常驻，无遮罩无「关闭抽屉」概念 -->
+    <div class="detail-footer">
+      <template v-if="row.db">
         <el-button
           v-hasPermi="['databus:component:remove']"
           type="danger"
           plain
+          size="small"
           @click="emit('delete', row)"
         >
           删除
         </el-button>
-        <div class="detail-footer-spacer" />
-        <el-button @click="visible = false">关 闭</el-button>
         <el-button
-          v-hasPermi="['databus:component:edit']"
-          type="primary"
-          @click="emit('edit', row)"
+          v-if="row.scripted"
+          v-hasPermi="['databus:component:script:edit']"
+          size="small"
+          :icon="Clock"
+          @click="emit('changes', row)"
         >
-          编 辑
+          代码变更
         </el-button>
-      </div>
-      <div v-else class="detail-footer">
-        <div class="detail-footer-spacer" />
-        <el-button type="primary" @click="visible = false">关 闭</el-button>
-      </div>
-    </template>
-  </el-drawer>
+      </template>
+      <div class="detail-footer-spacer" />
+      <el-button
+        v-if="row.db"
+        v-hasPermi="['databus:component:edit']"
+        type="primary"
+        size="small"
+        :icon="Edit"
+        @click="emit('edit', row)"
+      >
+        编辑
+      </el-button>
+      <el-tag v-else type="info" size="small" effect="plain">内置只读件，可在编辑器中另存为定制配置</el-tag>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { Box, CopyDocument } from '@element-plus/icons-vue';
+import { computed, ref, watch } from 'vue';
+import { Box, Clock, CopyDocument, Edit } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
-import SchemaFieldTree from './SchemaFieldTree.vue';
-import JsonCodeEditor from '../../editor/components/common/JsonCodeEditor.vue';
-import type { ComponentRegistryRow } from '../model/registry';
+import SchemaFieldTree from '../../detail/SchemaFieldTree.vue';
+import JsonCodeEditor from '../../../editor/components/common/JsonCodeEditor.vue';
+import type { ComponentRegistryRow } from '../../model/registry';
 import {
   CATEGORY_OPTIONS,
   editorLabel,
@@ -241,16 +243,20 @@ import {
   nodeTypeLabel,
   parseSchemaFields,
   prettyJson
-} from '../model/labels';
+} from '../../model/labels';
 import type { EditorKind, NodeTypeKind, PropSchema } from '@/api/databus/component/types';
+
+defineOptions({ name: 'ComponentDetailPane' });
+
+const props = defineProps<{
+  row: ComponentRegistryRow;
+}>();
 
 const emit = defineEmits<{
   (e: 'edit', row: ComponentRegistryRow): void;
   (e: 'delete', row: ComponentRegistryRow): void;
+  (e: 'changes', row: ComponentRegistryRow): void;
 }>();
-
-const visible = ref(false);
-const row = ref<ComponentRegistryRow | null>(null);
 
 /** 主体 Tab：默认落在配置说明 */
 const activeTab = ref<'contract' | 'governance'>('contract');
@@ -259,11 +265,19 @@ const schemaCollapse = ref<string[]>([]);
 /** 基本信息折叠分组：默认全展开，用户可自行收起 */
 const govCollapse = ref<string[]>(['base', 'look', 'desc']);
 
-const title = computed(() => row.value?.name ?? '组件详情');
+// tab 内容缓存不销毁，切换到另一个组件时复位折叠/页签状态
+watch(
+  () => props.row.code,
+  () => {
+    activeTab.value = 'contract';
+    schemaCollapse.value = [];
+    govCollapse.value = ['base', 'look', 'desc'];
+  }
+);
 
 /** 三态来源文案/标签色 */
 const sourceText = computed(() => {
-  switch (row.value?.source) {
+  switch (props.row.source) {
     case 'SYSTEM':
       return '内置';
     case 'OVERLAY':
@@ -276,15 +290,15 @@ const sourceText = computed(() => {
 });
 
 const sourceTagType = computed<'primary' | 'warning' | 'success'>(() => {
-  if (row.value?.source === 'SYSTEM') {
+  if (props.row.source === 'SYSTEM') {
     return 'primary';
   }
-  return row.value?.source === 'OVERLAY' ? 'warning' : 'success';
+  return props.row.source === 'OVERLAY' ? 'warning' : 'success';
 });
 
 /** 三态释义：正常态不占警示条，收进头部来源标签的 hover 提示 */
 const sourceTip = computed(() => {
-  switch (row.value?.source) {
+  switch (props.row.source) {
     case 'SYSTEM':
       return '系统内置组件，内容只读：名称、参数和示例由程序内置定义；可以为它新建一条同名定制配置来修改外观，也可以脚本化改造成库存脚本件。';
     case 'OVERLAY':
@@ -298,14 +312,11 @@ const sourceTip = computed(() => {
 
 /** 头部状态 tag：废弃 > 停用 > 启用；纯内置无 DB 行不显示（恒为生效态） */
 const statusTag = computed<{ text: string; type: 'info' | 'success' | 'warning'; effect: 'plain' | 'dark' } | null>(() => {
-  if (!row.value) {
-    return null;
-  }
-  if (row.value.deprecated) {
+  if (props.row.deprecated) {
     return { text: '废弃', type: 'warning', effect: 'dark' };
   }
-  if (row.value.db) {
-    return row.value.disabled
+  if (props.row.db) {
+    return props.row.disabled
       ? { text: '停用', type: 'info', effect: 'plain' }
       : { text: '启用', type: 'success', effect: 'plain' };
   }
@@ -314,11 +325,11 @@ const statusTag = computed<{ text: string; type: 'info' | 'success' | 'warning';
 
 /** 节点类型：option 契约缓存优先，停用行回落 db 契约列 */
 const rowNodeType = computed<NodeTypeKind | null | undefined>(
-  () => row.value?.option?.nodeType ?? row.value?.db?.nodeType
+  () => props.row.option?.nodeType ?? props.row.db?.nodeType
 );
 
 const rowEditor = computed<EditorKind | null | undefined>(
-  () => row.value?.option?.editor ?? row.value?.db?.editor
+  () => props.row.option?.editor ?? props.row.db?.editor
 );
 
 /**
@@ -326,26 +337,26 @@ const rowEditor = computed<EditorKind | null | undefined>(
  * 停用行没有 option，直接解析 db.paramSchema 契约缓存（{"fields":[...]}）。
  */
 const fields = computed<PropSchema[]>(() => {
-  const fromOption = row.value?.option?.schema?.fields;
+  const fromOption = props.row.option?.schema?.fields;
   if (fromOption?.length) {
     return fromOption;
   }
-  return parseSchemaFields(row.value?.db?.paramSchema) ?? [];
+  return parseSchemaFields(props.row.db?.paramSchema) ?? [];
 });
 
 /** 配置示例：option 缓存优先，回落 db 列 */
 const example = computed(() =>
-  prettyJson(row.value?.option?.dataExample ?? row.value?.db?.dataExample)
+  prettyJson(props.row.option?.dataExample ?? props.row.db?.dataExample)
 );
 
 /** 组件描述：优先内置 option 注解，回落 DB 治理列；头部一句话展示 */
 const descriptionText = computed(
-  () => row.value?.option?.description || row.value?.db?.description || ''
+  () => props.row.option?.description || props.row.db?.description || ''
 );
 
 /** 输入/输出契约 Schema：仅 DB 行携带原始列 */
-const inputSchema = computed(() => prettyJson(row.value?.db?.inputSchema));
-const outputSchema = computed(() => prettyJson(row.value?.db?.outputSchema));
+const inputSchema = computed(() => prettyJson(props.row.db?.inputSchema));
+const outputSchema = computed(() => prettyJson(props.row.db?.outputSchema));
 
 /** 旧五分类 code → 中文（查不到回落原值） */
 function categoryLabel(raw?: string | null): string {
@@ -356,38 +367,40 @@ function categoryLabel(raw?: string | null): string {
 }
 
 const iconStyle = computed(() => ({
-  backgroundColor: row.value?.color || 'var(--el-color-primary)'
+  backgroundColor: props.row.color || 'var(--el-color-primary)'
 }));
 
-function open(target: ComponentRegistryRow) {
-  row.value = target;
-  activeTab.value = 'contract';
-  schemaCollapse.value = [];
-  govCollapse.value = ['base', 'look', 'desc'];
-  visible.value = true;
-}
-
 async function copyCode() {
-  if (!row.value?.code) {
+  if (!props.row.code) {
     return;
   }
   try {
-    await navigator.clipboard.writeText(row.value.code);
-    ElMessage.success(`已复制组件编码：${row.value.code}`);
+    await navigator.clipboard.writeText(props.row.code);
+    ElMessage.success(`已复制组件编码：${props.row.code}`);
   } catch {
     ElMessage.warning('复制失败，请手动选择文本复制');
   }
 }
-
-defineExpose({ open });
 </script>
 
 <style lang="scss" scoped>
+/* 面板占满右栏 tab 内容区：正文独立滚动，操作条常驻底部 */
+.detail-pane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .detail {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 0 4px;
+  padding: 18px 20px 20px;
 }
 
 .detail-head {
@@ -455,7 +468,7 @@ defineExpose({ open });
 }
 
 .detail-tabs {
-  // 抽屉内分栏，压缩 tab 条与正文的留白
+  // 面板内分栏，压缩 tab 条与正文的留白
   :deep(.el-tabs__header) {
     margin-bottom: 12px;
   }
@@ -565,46 +578,18 @@ defineExpose({ open });
   color: var(--el-text-color-placeholder);
 }
 
+/* 常驻操作条：面板底部，不随正文滚动 */
 .detail-footer {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--el-border-color-lighter, #ebeef5);
+  background: var(--el-bg-color, #fff);
 }
 
 .detail-footer-spacer {
   flex: 1;
-}
-</style>
-
-<!--
-  el-drawer teleport 到 body，scoped 样式不命中；靠 modal-class 限定作用域。
-  原生 resizable 把手：8px 热区 + 3px 全高隐线（悬停才整根变蓝），
-  这里把 ::before 改成抽屉左缘居中的常驻胶囊握把，悬停/拖拽时变主题色并拉长。
--->
-<style lang="scss">
-.databus-component-drawer {
-  .el-drawer.rtl > .el-drawer__dragger {
-    width: 12px;
-  }
-
-  .el-drawer.rtl > .el-drawer__dragger::before {
-    top: 50%;
-    bottom: auto;
-    left: 50%;
-    width: 4px;
-    height: 56px;
-    border-radius: 999px;
-    background-color: var(--el-border-color-darker, #c0c4cc);
-    transform: translate(-50%, -50%);
-    transition:
-      background-color 0.2s,
-      height 0.2s;
-  }
-
-  .el-drawer.rtl > .el-drawer__dragger:hover::before,
-  .el-drawer.rtl.is-dragging > .el-drawer__dragger::before {
-    height: 72px;
-    background-color: var(--el-color-primary);
-  }
 }
 </style>
