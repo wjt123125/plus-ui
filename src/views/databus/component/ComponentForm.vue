@@ -1,11 +1,11 @@
 <template>
   <el-drawer
     v-model="visible"
-    size="800px"
+    size="50%"
     resizable
     append-to-body
     destroy-on-close
-    close-on-click-modal
+    :close-on-click-modal="false"
     modal-class="databus-component-drawer"
     class="component-form"
   >

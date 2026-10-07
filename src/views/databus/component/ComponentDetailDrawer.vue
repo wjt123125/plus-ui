@@ -10,7 +10,7 @@
     v-model="visible"
     size="800px"
     resizable
-    close-on-click-modal
+    :close-on-click-modal="true"
     append-to-body
     destroy-on-close
     modal-class="databus-component-drawer"
