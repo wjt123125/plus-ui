@@ -197,15 +197,17 @@ function parseNode(cmp: CmpProperty, parentOperatorId: string | undefined): ElNo
   // 节点标题为纯编辑态字段，叶子与算子都随 properties.title 往返（空白不恢复）
   if (cmp.properties?.title?.trim()) node.title = cmp.properties.title;
 
+  // CHAIN 子流程引用（新格式）：type 直发 CHAIN，id=子链 chainCode。
+  // CHAIN def 虽是算子（operator: true），语义上是一张不展开的子流程引用卡片，
+  // 必须在算子分支前拦截，不走 condition/children 递归（即使带 children 也忽略，
+  // 子链内部编排是独立的另一条链数据，不在本画布展开）。
+  if (cmp.type === 'CHAIN') {
+    node.cmpId = cmp.id ?? '';
+    if (cmp.properties?.tag) node.tag = cmp.properties.tag;
+    return node;
+  }
+
   if (!isOperator) {
-    // CHAIN 子流程引用：序列化态伪装成 NodeComponent（id=子链 chainCode），
-    // 靠 properties.chainRef 标记还原为 CHAIN 算子，否则会退化成「未知组件」业务卡
-    if (cmp.properties?.chainRef === true) {
-      node.type = 'CHAIN';
-      node.cmpId = cmp.id ?? '';
-      if (cmp.properties?.tag) node.tag = cmp.properties.tag;
-      return node;
-    }
     // 业务组件叶子：CmpProperty.id 是注册名，properties.tag 是数据空间名
     // type 保留 LiteFlow 节点类型（5 种叶子），未知值兜底 NodeComponent
     node.type = LEAF_LF_TYPES.has(cmp.type) ? cmp.type : 'NodeComponent';
@@ -295,21 +297,22 @@ function serializeNode(node: ElNode): CmpProperty | null {
   if (def?.virtual) return null;
   const isOperator = !!def?.operator;
 
-  // CHAIN 特例：后端没有 ChainParser（JSON→EL 方向缺失），
-  // 把 CHAIN 转成普通 NodeComponent + id=chainCode，后端 generateEL 输出 chainCode，
+  // CHAIN 特例：子流程引用叶子直发 type=CHAIN（后端 ChainParser 已支持双向转换），
+  // id=子链 chainCode；后端 generateNodeComponent 对 id 非空子项按 id 产出 chainCode，
   // LiteFlow 引擎自动在 chainMap 里查找同名子链。
-  // chainRef 标记给反向加载用：没有它，重载后这个叶子会被当成「未知组件」业务卡。
+  // tag/title 随 properties 往返（同一条子链可多处引用，靠 tag 区分场景）。
   if (node.type === 'CHAIN') {
     const title = node.title?.trim();
     const leaf: CmpProperty = {
       id: node.cmpId || node.tag || node.id,
-      type: 'NodeComponent',
-      properties: {
-        chainRef: true,
+      type: 'CHAIN'
+    };
+    if (node.tag || title) {
+      leaf.properties = {
         ...(node.tag ? { tag: node.tag } : {}),
         ...(title ? { title } : {})
-      }
-    };
+      };
+    }
     return leaf;
   }
 
