@@ -1,0 +1,16 @@
+/* Tab 子组件共用的小灰字提示（scoped @use 引入后仅作用于当前子组件） */
+.cf-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+  font-style: normal;
+
+  &--warn {
+    color: var(--el-color-warning, #e6a23c);
+  }
+
+  &--error {
+    color: var(--el-color-danger, #f56c6c);
+  }
+}

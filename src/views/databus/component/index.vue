@@ -228,11 +228,11 @@ import type { ComponentSource, NodeTypeKind, ScriptRuntime } from '@/api/databus
 import { useLoading } from '@/hooks/async/useLoading';
 import modal from '@/plugins/modal';
 import { PALETTE_GROUPS } from '../editor/cmp-defs';
-import ComponentDetailDrawer from './ComponentDetailDrawer.vue';
-import ComponentForm from './ComponentForm.vue';
-import { groupLabel, nodeTypeLabel } from './component-labels';
-import { buildRegistry } from './registry';
-import type { ComponentRegistryRow, DefMeta } from './registry';
+import ComponentDetailDrawer from './detail/ComponentDetailDrawer.vue';
+import ComponentForm from './form/ComponentForm.vue';
+import { groupLabel, nodeTypeLabel } from './model/labels';
+import { buildRegistry } from './model/registry';
+import type { ComponentRegistryRow, DefMeta } from './model/registry';
 
 /**
  * 组件管理台账页（Style-B 小卡片网格，与连接管理同范式）。
