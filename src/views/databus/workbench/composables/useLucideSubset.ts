@@ -33,6 +33,13 @@ const LUCIDE_SUBSET: IconifyJSON = {
     'panel-right-open': {
       body: `<g ${S}><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18m-5-6l-3-3l3-3"/></g>`
     },
+    // 底部编译控制台开关（箭头语义与左右家族同约定：面板展开指底部、收起背离）
+    'panel-bottom-close': {
+      body: `<g ${S}><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18m-6-7l-3 3l-3-3"/></g>`
+    },
+    'panel-bottom-open': {
+      body: `<g ${S}><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18M9 10l3-3l3 3"/></g>`
+    },
     // 工作面板 tab 图标
     'layout-grid': {
       body: `<g ${S}><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></g>`

@@ -16,8 +16,11 @@
     <WorkbenchHeader
       v-model:ai-collapsed="aiCollapsed"
       v-model:nav-collapsed="treeCollapsed"
+      v-model:console-open="consoleOpen"
       ai-label="AI 助手"
       nav-label="组件树"
+      console-label="编译输出"
+      :console-count="consoleErrorCount"
     />
 
     <div class="cmpwb">
@@ -90,6 +93,10 @@
         @add="handleAdd"
       />
     </div>
+
+    <!-- 底部编译控制台：脚本体发布/编译结果汇入（Trae terminal 范式），编译失败自动弹出；
+         作为 .cmpwb 的 flex 兄弟节点插入，展开时 .cmpwb flex:1 自动让位，无需重算高度 -->
+    <CompileConsole />
   </div>
 </template>
 
@@ -106,8 +113,10 @@ import type { ScriptRuntime, ScriptSaveResult } from '@/api/databus/component/ty
 import { useLoading } from '@/hooks/async/useLoading';
 import modal from '@/plugins/modal';
 import { usePersisted } from '../workbench/composables/usePersisted';
+import { useCompileConsole } from '../workbench/composables/useCompileConsole';
 import Splitter from '../workbench/components/Splitter.vue';
 import WorkbenchHeader from '../workbench/components/WorkbenchHeader.vue';
+import CompileConsole from '../workbench/components/CompileConsole.vue';
 import AiAssistantRail from '../workbench/ai/AiAssistantRail.vue';
 import { useComponentTaxonomy } from '../editor/composables/useComponentTaxonomy';
 import { usePhIcons } from '../editor/composables/usePhIcons';
@@ -152,6 +161,24 @@ const treeWidth = usePersisted('databus.cmpwb.treeWidth', 240);
 
 /** tab key → 重载令牌：回滚后自增，让同组件的编辑面板重取脚本体 */
 const refreshTokens = reactive<Record<string, number>>({});
+
+/** 编译控制台（工作台级单例）：底部抽屉开合 + header 错误角标 + 诊断跳行目标 */
+const { open: consoleOpen, errorCount: consoleErrorCount, revealTarget } = useCompileConsole();
+
+/**
+ * 控制台诊断行跳行第一棒：激活目标组件的编辑 tab。本 watch 在页面 setup 注册、
+ * 全场最早执行（pre-flush 按注册顺序），FormPane 切执行体 tab、ScriptTab 跳行随后接力。
+ * openForm 对已开 tab 只聚焦不重载（v-show 常驻），草稿不丢。
+ */
+watch(revealTarget, (target) => {
+  if (!target) {
+    return;
+  }
+  const row = rows.value.find((r) => r.db?.id === target.componentId);
+  if (row?.db?.id != null) {
+    wb.openForm(row.db.id, row);
+  }
+});
 
 const unhealthy = computed(() => runtimeHealth.value.filter((h) => !h.healthy));
 const builtinCount = computed(() => rows.value.filter((r) => r.source === 'SYSTEM').length);

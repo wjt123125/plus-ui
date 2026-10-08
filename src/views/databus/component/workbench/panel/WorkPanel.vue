@@ -212,11 +212,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 38px;
-  padding: 0 6px;
-  border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5);
-  /* 卡片化：底色比 tab 白底深一档，active tab 才浮得出来 */
-  background: var(--el-fill-color, #f0f2f5);
+  height: 42px;
+  margin: 8px 8px 4px;
+  padding: 0 4px;
+  border-radius: var(--app-radius-lg, 14px);
+  /* Safari 轨道：浅灰半透明 + 磨砂（工作台专属 token，暗色主题自动适配） */
+  background: var(--wb-tab-track-bg);
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
 }
 
 .work-panel__tabs {
@@ -228,6 +231,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   overflow-y: hidden;
   scrollbar-width: thin;
   min-width: 0;
+  /* 滚动容器会按 overflow 裁剪投影，用上下内边距把激活卡片的投影留在裁剪盒内 */
+  padding: 5px 0 7px;
 }
 
 .wb-tab {
@@ -238,7 +243,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   height: 28px;
   padding: 0 6px 0 10px;
   max-width: 200px;
-  border-radius: 6px;
+  border-radius: var(--app-radius-md, 10px);
+  /* Safari：未激活是比轨道深一档的凹陷胶囊，与轨道拉开层次 */
+  background: var(--wb-tab-bg);
   font-size: 12px;
   color: var(--el-text-color-secondary);
   cursor: pointer;
@@ -249,22 +256,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
     color 0.15s ease,
     box-shadow 0.15s ease;
 
+  /* Safari：hover 时胶囊再加深一档 */
   &:hover {
-    background: var(--el-bg-color-overlay, rgb(255 255 255 / 60%));
+    background: var(--wb-tab-hover-bg);
 
     .wb-tab__close {
       opacity: 1;
     }
   }
 
-  /* 卡片化：白底 + 外阴影抬升 + 顶部主色条；阴影走 EP 变量以兼容暗色主题 */
+  /* Safari：激活是凸起悬浮卡片 + 柔影（亮色纯白、暗色深灰，均亮于轨道） */
   &.is-active {
-    background: var(--el-bg-color, #fff);
+    background: var(--wb-tab-card-bg);
     color: var(--el-text-color-primary, #1d2129);
     font-weight: 600;
-    box-shadow:
-      inset 0 2px 0 var(--el-color-primary),
-      var(--el-box-shadow-light);
+    box-shadow: var(--wb-tab-card-shadow);
   }
 
   &__icon {

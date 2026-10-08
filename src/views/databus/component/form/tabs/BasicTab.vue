@@ -1,9 +1,6 @@
 <!-- ① 基础 Tab：编码（编辑禁改）/名称/短名/台账分类/描述 -->
 <template>
   <el-tab-pane name="basic">
-    <template #label>
-      <TabLabel title="基础" :invalid="invalid" />
-    </template>
     <el-form-item label="组件编码" prop="componentCode">
       <el-input
         v-model="form.componentCode"
@@ -45,14 +42,12 @@
 <script setup lang="ts">
 import { CATEGORY_OPTIONS } from '../../model/labels';
 import type { ComponentFormModel } from '../form.types';
-import TabLabel from './TabLabel.vue';
 
 defineOptions({ name: 'BasicTab' });
 
 defineProps<{
   form: ComponentFormModel;
   isEdit: boolean;
-  invalid?: boolean;
 }>();
 </script>
 

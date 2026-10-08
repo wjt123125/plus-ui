@@ -1,9 +1,6 @@
 <!-- ③ 参数 Tab：节点类型/配置形态 + 配置字段可视化构造器（高级结构 popover，可切 JSON 高级模式） -->
 <template>
   <el-tab-pane name="params">
-    <template #label>
-      <TabLabel title="参数" :invalid="invalid" />
-    </template>
     <el-form-item label="节点类型">
       <el-select
         v-model="form.nodeType"
@@ -239,7 +236,6 @@ import { ArrowDown, ArrowRight, ArrowUp, Delete, Plus } from '@element-plus/icon
 import { EDITOR_OPTIONS, NODE_TYPE_OPTIONS } from '../../model/labels';
 import type { ComponentFormModel } from '../form.types';
 import type { FieldBuilder } from '../useFieldBuilder';
-import TabLabel from './TabLabel.vue';
 
 defineOptions({ name: 'ParamsTab' });
 
@@ -248,7 +244,6 @@ const props = defineProps<{
   builder: FieldBuilder;
   /** 库存脚本件：物化字段只读，节点类型/配置形态禁改 */
   hasArtifact: boolean;
-  invalid?: boolean;
 }>();
 
 // 解构出的 ref 保持响应式（不在此处解 .value），方法直接在模板绑定

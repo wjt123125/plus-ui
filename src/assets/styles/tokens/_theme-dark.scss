@@ -190,6 +190,16 @@ html.dark {
   --tags-view-active-bg: var(--el-color-primary-dark-6);
   --tags-view-active-border-color: var(--el-color-primary-light-2);
 
+  // --- 组件工作台 tab（Safari 浮动卡片式，暗色：凹陷深胶囊 → 轨道 → 凸起深灰卡片） ---
+  --wb-tab-track-bg: rgba(120, 120, 128, 0.22);
+  --wb-tab-bg: rgba(0, 0, 0, 0.35);
+  --wb-tab-hover-bg: rgba(0, 0, 0, 0.5);
+  --wb-tab-card-bg: #3f3f46;
+  --wb-tab-card-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.35);
+
   --app-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
   --app-shadow-md: 0 12px 28px rgba(0, 0, 0, 0.28);
   --app-shadow-lg: 0 20px 44px rgba(0, 0, 0, 0.32);

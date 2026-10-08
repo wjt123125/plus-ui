@@ -25,6 +25,16 @@
   --tags-view-active-bg: var(--el-color-primary);
   --tags-view-active-border-color: var(--el-color-primary);
 
+  // --- 组件工作台 tab（Safari 浮动卡片式：凹陷胶囊 → 轨道 → 凸起白卡片，仅工作台内部使用） ---
+  --wb-tab-track-bg: rgba(120, 120, 128, 0.12);
+  --wb-tab-bg: rgba(120, 120, 128, 0.2);
+  --wb-tab-hover-bg: rgba(120, 120, 128, 0.3);
+  --wb-tab-card-bg: #ffffff;
+  --wb-tab-card-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.05),
+    0 1px 2px rgba(15, 23, 42, 0.1),
+    0 2px 8px rgba(15, 23, 42, 0.08);
+
   // --- 应用壳：圆角、阴影、表面、导航、强调色与文案色 ---
   --app-radius-sm: calc(var(--app-radius-base) - 8px);
   --app-radius-md: calc(var(--app-radius-base) - 4px);

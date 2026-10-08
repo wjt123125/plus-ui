@@ -1,9 +1,6 @@
 <!-- ② 外观 Tab：面板分组/业务域/图标/颜色/排序/标签 -->
 <template>
   <el-tab-pane name="appearance">
-    <template #label>
-      <TabLabel title="外观" :invalid="invalid" />
-    </template>
     <el-form-item label="面板分组">
       <el-select v-model="form.groupName" placeholder="未分组" clearable style="width: 100%">
         <el-option v-for="g in groups" :key="g.key" :label="g.label" :value="g.key" />
@@ -74,7 +71,6 @@ import { useComponentTaxonomy } from '../../../editor/composables/useComponentTa
 import { usePhIcons } from '../../../editor/composables/usePhIcons';
 import type { ComponentFormModel } from '../form.types';
 import PhIconPicker from './PhIconPicker.vue';
-import TabLabel from './TabLabel.vue';
 
 defineOptions({ name: 'AppearanceTab' });
 
@@ -95,7 +91,6 @@ const SLOT_DOMAIN_KEY = 'slot';
 const props = defineProps<{
   form: ComponentFormModel;
   tagSuggestions: string[];
-  invalid?: boolean;
 }>();
 
 // 分组/业务域字典（模块级会话缓存，多个面板同时挂载只发一个请求）

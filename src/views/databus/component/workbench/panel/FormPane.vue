@@ -2,8 +2,8 @@
   组件编辑面板（工作台右栏 tab 内容，原新增/编辑抽屉剥壳而来）。
   主壳只保留面板框架、表单模型与加载/提交编排；五个 Tab 各自内聚于 form/tabs/，
   参数构造器逻辑在 useFieldBuilder，脚本执行体在 ScriptTab。
-  字段一个不删，按用户心智切五段，校验不过 tab 挂红点并自动跳转：
-  ① 基础 ② 外观 ③ 参数 ④ 执行体 ⑤ 高级
+  字段一个不删，按用户心智切五段，分段控件在卡头标题右侧（el-tabs 仅作 pane 容器），
+  校验不过对应段挂红点并自动跳转：① 基础 ② 外观 ③ 参数 ④ 执行体 ⑤ 高级
   el-form 跨组件 provide：子 Tab 内 el-form-item 照常注册，主壳统一 validate。
   tab 内容缓存不销毁：切走草稿保留，脏状态通过 dirty-change 上报给 tab 条。
 -->
@@ -26,6 +26,21 @@
         <span class="cf-head__code">{{ form.componentCode || '未命名编码' }}</span>
       </div>
       <span class="cf-head__spacer" />
+      <!-- Safari 分段控件（macOS 工具栏式）：两侧 spacer 把它居中在标题与开关之间的空白区 -->
+      <nav class="cf-head__seg" aria-label="表单分段">
+        <button
+          v-for="tab in FORM_TABS"
+          :key="tab.name"
+          type="button"
+          class="cf-seg"
+          :class="{ 'is-active': activeTab === tab.name }"
+          @click="activeTab = tab.name"
+        >
+          {{ tab.title }}
+          <i v-if="invalidTabs.has(tab.name)" class="cf-seg__dot" aria-label="校验未通过" />
+        </button>
+      </nav>
+      <span class="cf-head__spacer" />
       <el-switch v-model="form.status" active-value="0" inactive-value="1" size="small" />
     </header>
 
@@ -37,32 +52,19 @@
       label-position="top"
       class="cf-body"
     >
+      <!-- el-tabs 只作 pane 容器：注册 + v-show 缓存切换，分段控件在卡头 -->
       <el-tabs v-model="activeTab" class="cf-tabs">
-        <BasicTab :form="form" :is-edit="isEdit" :invalid="invalidTabs.has('basic')" />
-        <AppearanceTab
-          :form="form"
-          :tag-suggestions="tagSuggestions"
-          :invalid="invalidTabs.has('appearance')"
-        />
-        <ParamsTab
-          :form="form"
-          :builder="builder"
-          :has-artifact="hasScriptArtifact"
-          :invalid="invalidTabs.has('params')"
-        />
+        <BasicTab :form="form" :is-edit="isEdit" />
+        <AppearanceTab :form="form" :tag-suggestions="tagSuggestions" />
+        <ParamsTab :form="form" :builder="builder" :has-artifact="hasScriptArtifact" />
         <ScriptTab
           ref="scriptTabRef"
           :form="form"
           :has-artifact="hasScriptArtifact"
-          :invalid="invalidTabs.has('script')"
           @published="onScriptPublished"
           @open-changes="emit('open-changes')"
         />
-        <AdvancedTab
-          :form="form"
-          :has-artifact="hasScriptArtifact"
-          :invalid="invalidTabs.has('advanced')"
-        />
+        <AdvancedTab :form="form" :has-artifact="hasScriptArtifact" />
       </el-tabs>
     </el-form>
 
@@ -92,6 +94,7 @@ import BasicTab from '../../form/tabs/BasicTab.vue';
 import ParamsTab from '../../form/tabs/ParamsTab.vue';
 import ScriptTab from '../../form/tabs/ScriptTab.vue';
 import type { ComponentSaved, FormPreset } from '../workbench.types';
+import { useCompileConsole } from '../../../workbench/composables/useCompileConsole';
 
 defineOptions({ name: 'ComponentFormPane' });
 
@@ -118,9 +121,18 @@ const submitting = ref(false);
 const detailLoading = ref(false);
 const formRef = ref<FormInstance>();
 
-/** 当前激活 tab 与校验不过的 tab 集合（红点 + 自动跳转） */
+/** 当前激活 tab 与校验不过的 tab 集合（卡头分段红点 + 自动跳转） */
 const activeTab = ref<TabName>('basic');
 const invalidTabs = ref<Set<TabName>>(new Set());
+
+/** 卡头分段控件条目：name 与各子 Tab 的 el-tab-pane 一一对应（nav 上移后此处是唯一标签源） */
+const FORM_TABS: { name: TabName; title: string }[] = [
+  { name: 'basic', title: '基础' },
+  { name: 'appearance', title: '外观' },
+  { name: 'params', title: '参数' },
+  { name: 'script', title: '执行体' },
+  { name: 'advanced', title: '高级' }
+];
 
 const form = ref<ComponentFormModel>(defaultForm());
 
@@ -132,6 +144,17 @@ const hasScriptArtifact = ref(false);
 const scriptTabRef = ref<InstanceType<typeof ScriptTab>>();
 
 const isEdit = computed(() => form.value.id != null);
+
+/**
+ * 编译控制台跳行：目标指向本组件时切到执行体 tab（否则编辑器跳了行用户也看不见）。
+ * 本 watch 在 FormPane setup 注册、先于 ScriptTab 内的消费 watch 执行；行内跳转由 ScriptTab 完成。
+ */
+const { revealTarget } = useCompileConsole();
+watch([revealTarget, () => form.value.id], ([target]) => {
+  if (target && form.value.id === target.componentId) {
+    activeTab.value = 'script';
+  }
+});
 
 const rules: FormRules<DatabusComponentForm> = {
   componentCode: [
@@ -434,6 +457,20 @@ defineExpose({ reload });
     flex: 1;
   }
 
+  &__seg {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    flex-shrink: 0;
+    /* 外圆角 = 内胶囊圆角 + 轨道内衬，形成同心的细轨 */
+    border-radius: 8px;
+    /* Safari 轨道：浅灰半透明 + 磨砂（与工作台 tab 条同款 token） */
+    background: var(--wb-tab-track-bg);
+    backdrop-filter: blur(16px) saturate(1.6);
+    -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  }
+
   &__dot {
     width: 9px;
     height: 9px;
@@ -476,21 +513,51 @@ defineExpose({ reload });
   }
 }
 
+/* Safari 分段（卡头）：细轨 + 无底胶囊，激活段白卡片浮起（macOS 原生观感，克制不肥） */
+.cf-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:hover {
+    background: var(--wb-tab-hover-bg);
+    color: var(--el-text-color-primary);
+  }
+
+  &.is-active {
+    background: var(--wb-tab-card-bg);
+    color: var(--el-text-color-primary);
+    font-weight: 600;
+    box-shadow: var(--wb-tab-card-shadow);
+  }
+
+  &__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--el-color-danger);
+  }
+}
+
 .cf-tabs {
+  /* 分段控件已上移卡头，内置 nav 整体隐藏：el-tabs 只保留 pane 注册与 v-show 缓存切换 */
   :deep(.el-tabs__header) {
-    margin: 0 0 10px;
-  }
-
-  :deep(.el-tabs__nav-wrap::after) {
-    height: 1px;
-    background-color: var(--el-border-color-lighter);
-  }
-
-  :deep(.el-tabs__item) {
-    height: 32px;
-    font-size: 13px;
-    font-weight: 500;
-    padding: 0 14px;
+    display: none;
   }
 
   :deep(.el-tab-pane) {

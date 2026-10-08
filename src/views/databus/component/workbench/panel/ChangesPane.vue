@@ -48,7 +48,7 @@
           <JavaCodeEditor
             :model-value="v.scriptBody"
             :readonly="true"
-            height="380px"
+            height="max(420px, calc(100vh - 390px))"
             :diagnostics="[]"
           />
         </div>

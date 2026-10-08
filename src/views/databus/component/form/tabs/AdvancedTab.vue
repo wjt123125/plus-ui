@@ -1,9 +1,6 @@
 <!-- ⑤ 高级 Tab：配置示例/输入输出 schema/文档/废弃标记/备注（JSON 列用 CodeMirror，输入输出默认折叠） -->
 <template>
   <el-tab-pane name="advanced">
-    <template #label>
-      <TabLabel title="高级" :invalid="invalid" />
-    </template>
     <el-form-item label="配置示例（JSON，可留空）">
       <JsonCodeEditor
         v-model="form.dataExample"
@@ -69,14 +66,12 @@
 import { ref } from 'vue';
 import JsonCodeEditor from '../../../editor/components/common/JsonCodeEditor.vue';
 import type { ComponentFormModel } from '../form.types';
-import TabLabel from './TabLabel.vue';
 
 defineOptions({ name: 'AdvancedTab' });
 
 defineProps<{
   form: ComponentFormModel;
   hasArtifact: boolean;
-  invalid?: boolean;
 }>();
 
 /** 输入输出折叠默认收起 */
