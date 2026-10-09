@@ -28,6 +28,20 @@ export function useChainTabs() {
     activeKey.value = key;
   }
 
+  /**
+   * 仅当链路画布 tab 已打开时刷新标题（重命名场景）；未打开不新建 tab——
+   * 用户只是改名，不该因此强塞一个画布 tab。
+   */
+  function refreshTitleIfOpen(
+    chainId: NonNullable<ChainTab['chainId']>,
+    title: string
+  ): void {
+    const tab = tabs.value.find(
+      (t) => t.chainId != null && String(t.chainId) === String(chainId)
+    );
+    if (tab) tab.title = title;
+  }
+
   /** 回写 tab 脏标记（画布 dirty-change 事件直达） */
   function setDirty(chainId: NonNullable<ChainTab['chainId']>, dirty: boolean): void {
     const tab = tabs.value.find((t) => t.chainId != null && String(t.chainId) === String(chainId));
@@ -56,5 +70,5 @@ export function useChainTabs() {
     activeKey.value = tabs.value[next].key;
   }
 
-  return { tabs, activeKey, activeTab, openCanvas, setDirty, close, cycle };
+  return { tabs, activeKey, activeTab, openCanvas, refreshTitleIfOpen, setDirty, close, cycle };
 }

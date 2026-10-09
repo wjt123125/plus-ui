@@ -16,19 +16,20 @@
 <script setup lang="ts">
 import { CopyDocument } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
-import { useElPreviewController } from '../../composables/useElPreview';
+import type { ElPreviewController } from '../../composables/useElPreview';
 
 defineOptions({ name: 'FlowElPreview' });
 
-const preview = useElPreviewController();
+// 右侧抽屉化后不再 inject：控制器由 EditorDrawer 从激活画布的名片端口透传
+const props = defineProps<{ preview: ElPreviewController }>();
 
 async function onCopy() {
-  if (!preview.elStr.value) {
+  if (!props.preview.elStr.value) {
     ElMessage.warning('暂无 EL 内容可复制');
     return;
   }
   try {
-    await navigator.clipboard.writeText(preview.elStr.value);
+    await navigator.clipboard.writeText(props.preview.elStr.value);
     ElMessage.success('已复制到剪贴板');
   } catch {
     ElMessage.warning('复制失败，请手动选择文本');

@@ -2,6 +2,7 @@
   <Panel position="top-right" class="flow-side-panel">
     <div class="flow-side-panel__body">
       <div class="flow-side-panel__buttons">
+        <FlowPreviewButton />
         <FlowLayoutButton />
       </div>
     </div>
@@ -11,13 +12,14 @@
 <script setup lang="ts">
 import { Panel } from '@vue-flow/core';
 import FlowLayoutButton from './FlowLayoutButton.vue';
+import FlowPreviewButton from './FlowPreviewButton.vue';
 
 defineOptions({ name: 'FlowSidePanel' });
 </script>
 
 <style scoped>
 /* 右缘让位：属性面板收起后的展开钮（26px，right:12）排在最右，
-   本面板（自动排列圆钮 24px）左移让出 46px = 12 + 26 + 8 间隔，中线对齐 */
+   本面板（试运行 + 自动排列两颗 24px 圆钮）左移让出 46px = 12 + 26 + 8 间隔，中线对齐 */
 .flow-side-panel.vue-flow__panel {
   margin-right: 46px;
 }

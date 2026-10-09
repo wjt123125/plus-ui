@@ -12,6 +12,16 @@
       <span class="chain-tree__title">链路</span>
       <span class="chain-tree__count">{{ chains.length }}</span>
       <span class="chain-tree__tools">
+        <el-tooltip content="新建链路" placement="bottom">
+          <button
+            v-hasPermi="['databus:editor:add']"
+            class="chain-tree__tool"
+            type="button"
+            @click="emit('add-chain', null)"
+          >
+            <SvgIcon icon-class="lucide:file-plus" />
+          </button>
+        </el-tooltip>
         <el-tooltip content="新建根目录" placement="bottom">
           <button
             v-hasPermi="['databus:chain:directory:add']"
@@ -156,7 +166,12 @@ import type { ChainDirectoryVo } from '@/api/databus/chainDirectory/types';
 import { listChain } from '@/api/databus/chain';
 import type { DatabusChainVo } from '@/api/databus/chain/types';
 import { useLucideSubset } from '../../../workbench/composables/useLucideSubset';
-import type { ChainTreeMenuCommand, ChainTreeMenuState, ChainTreeNode } from '../workbench.types';
+import type {
+  ChainTreeActionCommand,
+  ChainTreeMenuCommand,
+  ChainTreeMenuState,
+  ChainTreeNode
+} from '../workbench.types';
 import ChainTreeContextMenu from './ChainTreeContextMenu.vue';
 
 defineOptions({ name: 'ChainTree' });
@@ -168,6 +183,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'open', chainId: DatabusChainVo['id'], chainName: string): void;
+  /** 链路业务动作（编辑/复制/发布/下线/执行/删除/使用模板）：上抛工作台 index 处理 */
+  (e: 'chain-action', command: ChainTreeActionCommand, node: ChainTreeNode): void;
+  /** 新建链路（头部钮=null 未归组；目录右键=该目录 id）：工作台开 ChainForm 并预设归属 */
+  (e: 'add-chain', directoryId: string | number | null): void;
 }>();
 
 useLucideSubset();
@@ -178,6 +197,8 @@ const TREE_PROPS = { children: 'children', label: 'label' } as const;
 
 const directories = ref<ChainDirectoryVo[]>([]);
 const chains = ref<DatabusChainVo[]>([]);
+/** 精选模板（isTemplate=1，组树时挂树顶固定虚拟根；list 页废弃后模板库唯一入口） */
+const templates = ref<DatabusChainVo[]>([]);
 const loading = ref(false);
 const keyword = ref('');
 
@@ -198,12 +219,14 @@ const treeRef = ref<TreeInstance>();
 async function reload() {
   loading.value = true;
   try {
-    const [dirRes, chainRes] = await Promise.all([
+    const [dirRes, chainRes, tplRes] = await Promise.all([
       listChainDirectory(),
-      listChain({ pageNum: 1, pageSize: 9999, isTemplate: '0' })
+      listChain({ pageNum: 1, pageSize: 9999, isTemplate: '0' }),
+      listChain({ pageNum: 1, pageSize: 9999, isTemplate: '1' })
     ]);
     directories.value = dirRes.data ?? [];
     chains.value = chainRes.data?.rows ?? [];
+    templates.value = tplRes.data?.rows ?? [];
   } catch {
     /* 拦截器已提示 */
   } finally {
@@ -283,6 +306,43 @@ const treeData = computed<ChainTreeNode[]>(() => {
       children: ungrouped
     });
   }
+
+  // 精选模板：树顶固定虚拟根（不可删/不可拖/不可移动），模板按 templateSort 升序、
+  // 空排序值沉底后按名称；list 页废弃后模板库唯一入口。
+  if (templates.value.length) {
+    const tplNodes: ChainTreeNode[] = templates.value
+      .toSorted((a, b) => {
+        const sa = a.templateSort;
+        const sb = b.templateSort;
+        if (sa == null && sb == null) {
+          return a.chainName.localeCompare(b.chainName, 'zh-CN');
+        }
+        if (sa == null) return 1;
+        if (sb == null) return -1;
+        return sa !== sb
+          ? sa - sb
+          : a.chainName.localeCompare(b.chainName, 'zh-CN');
+      })
+      .map((c) => ({
+        id: `tpl:${c.id}`,
+        type: 'template' as const,
+        label: c.chainName,
+        directoryId: null,
+        chainId: c.id,
+        chainCode: c.chainCode,
+        status: c.status,
+        templateDesc: c.templateDesc ?? undefined,
+        children: []
+      }));
+    roots.unshift({
+      id: 'templates',
+      type: 'template-root',
+      label: '精选模板',
+      directoryId: null,
+      chainId: '',
+      children: tplNodes
+    });
+  }
   return roots;
 });
 
@@ -300,7 +360,12 @@ function onNodeClick(data: ChainTreeNode) {
     emit('open', data.chainId, data.label);
     return;
   }
-  // 目录/未归组：手动 toggle 展开（expand-on-click-node=false，点击不与选中冲突）
+  if (data.type === 'template') {
+    // 模板叶子单击 = 使用模板（复制副本并开画布），与链路叶子单击开画布同级语义
+    emit('chain-action', 'use-template', data);
+    return;
+  }
+  // 目录/未归组/模板根：手动 toggle 展开（expand-on-click-node=false，点击不与选中冲突）
   const tn = treeRef.value?.getNode(data.id);
   if (tn) {
     tn.expanded ? tn.collapse() : tn.expand();
@@ -320,13 +385,15 @@ watch(
 
 const menu = ref<ChainTreeMenuState>({ visible: false, x: 0, y: 0, node: null });
 
-/** 菜单尺寸估值，贴边夹取（树在最右栏，不夹取会溢出视口） */
+/** 菜单尺寸估值，贴边夹取（树在最右栏，不夹取会溢出视口）。
+ *  链路叶子菜单含五操作下沉项，已发布态最多 8 项 + 3 分隔，约 280px */
 const MENU_W = 176;
-const MENU_H = 200;
+const MENU_H = 288;
 
 function onNodeContextMenu(event: MouseEvent, data: ChainTreeNode) {
   event.preventDefault();
-  if (data.type === 'ungrouped') return; // 虚拟节点无目录操作
+  // 虚拟分组节点无操作（未归组、精选模板根）
+  if (data.type === 'ungrouped' || data.type === 'template-root') return;
   const x = Math.max(8, Math.min(event.clientX, window.innerWidth - MENU_W - 8));
   const y = Math.max(8, Math.min(event.clientY, window.innerHeight - MENU_H - 8));
   menu.value = { visible: true, x, y, node: data };
@@ -352,12 +419,19 @@ function onMenuCommand(command: ChainTreeMenuCommand, node: ChainTreeNode) {
     case 'add-child':
       openDirectoryDialog('add', node.directoryId);
       break;
+    case 'add-chain':
+      // 目录右键新建挂本目录；头部钮不经菜单直接 emit(null)（未归组）
+      emit('add-chain', node.type === 'directory' ? (node.directoryId ?? null) : null);
+      break;
     case 'rename':
       openDirectoryDialog('edit', node.directoryId);
       break;
     case 'remove-directory':
       removeDirectory(node);
       break;
+    default:
+      // 链路业务动作（编辑/复制/发布/下线/执行/删除/使用模板）树不闭环，上抛工作台
+      emit('chain-action', command, node);
   }
 }
 
@@ -555,6 +629,12 @@ function iconOf(data: ChainTreeNode): string {
   if (data.type === 'chain') {
     return 'lucide:spline';
   }
+  if (data.type === 'template') {
+    return 'lucide:sparkles';
+  }
+  if (data.type === 'template-root') {
+    return 'lucide:star';
+  }
   if (data.type === 'ungrouped') {
     return 'lucide:boxes';
   }
@@ -573,9 +653,17 @@ function dotClass(data: ChainTreeNode): string {
 }
 
 function tipOf(data: ChainTreeNode): string {
-  return data.type === 'chain' && data.chainCode
-    ? `${data.label}（${data.chainCode}）`
-    : data.label;
+  if (data.type === 'template-root') {
+    return '精选模板：基于模板复制副本快速编排';
+  }
+  if ((data.type === 'chain' || data.type === 'template') && data.chainCode) {
+    const base = `${data.label}（${data.chainCode}）`;
+    // 模板悬停补显运营说明（树行无第二行描述位）
+    return data.type === 'template' && data.templateDesc
+      ? `${base}\n${data.templateDesc}`
+      : base;
+  }
+  return data.label;
 }
 
 defineExpose({ reload });

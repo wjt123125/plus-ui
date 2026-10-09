@@ -48,8 +48,9 @@ export function getChain(id: number | string): AxiosPromise<DatabusChainVo> {
 /**
  * 新增链路草稿
  * POST /databus/chain（权限 databus:editor:add）
+ * @returns 新链路主键（雪花 id 序列化为字符串）；工作台树新建成功后据此打开画布 tab
  */
-export function addChain(data: DatabusChainBo) {
+export function addChain(data: DatabusChainBo): AxiosPromise<number | string> {
   return request({
     url: '/databus/chain',
     method: 'post',

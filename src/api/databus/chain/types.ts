@@ -115,6 +115,9 @@ export interface DatabusChainBo {
   inputParams?: ChainInputParam[];
   /** 备注 */
   remark?: string;
+  /** 归属目录 id（仅新建生效：工作台树右键新建直挂；null=未归组。
+   *  编辑时不更新此字段——归属变更走 move-chain 端点） */
+  directoryId?: string | number | null;
 }
 
 /**

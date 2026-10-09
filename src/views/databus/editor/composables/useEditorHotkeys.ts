@@ -18,7 +18,10 @@ export interface EditorHotkeyActions {
   selectAll: () => void;
   copy: () => void;
   paste: () => void;
-  saveAsEl: () => void;
+  /** 保存当前链路（IDE 范式：Ctrl+S＝保存文档） */
+  saveChain: () => void | Promise<void>;
+  /** 生成 EL（IDE「另存/导出」位：Ctrl+Shift+S） */
+  saveAsEl: () => void | Promise<void>;
 }
 
 function isEditableTarget(el: EventTarget | null): boolean {
@@ -84,9 +87,13 @@ export function useEditorHotkeys(actions: EditorHotkeyActions, isEnabled?: () =>
         actions.paste();
         break;
       case 's':
-        // Ctrl+S 不避让输入框：保存/生成 EL 动作本身不写文本，全局拦截
+        // Ctrl+S/Ctrl+Shift+S 不避让输入框：保存/生成动作本身不写文本，全局拦截
         e.preventDefault();
-        actions.saveAsEl();
+        if (e.shiftKey) {
+          void actions.saveAsEl();
+        } else {
+          void actions.saveChain();
+        }
         break;
     }
   }

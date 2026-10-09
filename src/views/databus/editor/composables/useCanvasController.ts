@@ -76,6 +76,9 @@ export interface CanvasController {
   picker: PickerState;
   menu: MenuState;
   select: (id: string | null) => void;
+  /** 选中并在画布居中定位（大纲/布尔操作数跳转）；视图操作收口在控制器内，
+   *  右侧抽屉等 Pane 组件树外的调用方无需接触 vue-flow 实例 */
+  revealNode: (id: string) => void;
   /** 左侧面板拖拽落画布 */
   insertNodeAt: (type: string, x: number, y: number) => void;
   /** 悬浮操作组/右键菜单/边「+」触发的四类结构操作入口 */
@@ -127,8 +130,17 @@ export const CANVAS_CTRL_KEY = Symbol('canvas-controller') as InjectionKey<Canva
 
 export function createCanvasController(options: CreateControllerOptions): CanvasController {
   const { treeModel, pushHistory, autoLayout: runAutoLayout } = options;
-  const { getNodes, getEdges, findNode, findEdge, setNodes, setEdges, addSelectedNodes, getIntersectingNodes } =
-    useVueFlow();
+  const {
+    getNodes,
+    getEdges,
+    findNode,
+    findEdge,
+    setNodes,
+    setEdges,
+    addSelectedNodes,
+    setCenter,
+    getIntersectingNodes
+  } = useVueFlow();
 
   const selectedId = ref<string | null>(null);
   const clipboard = ref<ClipboardItem[] | null>(null);
@@ -156,6 +168,19 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
 
   function select(id: string | null) {
     selectedId.value = id;
+  }
+
+  /** 单选节点并居中（300ms 动画）；画布外调用方（右侧抽屉）经控制器间接操作视图 */
+  function revealNode(id: string) {
+    deselect();
+    select(id);
+    const target = findNode(id);
+    if (target) {
+      addSelectedNodes([target]);
+      const w = target.dimensions?.width || 150;
+      const h = target.dimensions?.height || 56;
+      setCenter(target.position.x + w / 2, target.position.y + h / 2, { duration: 300 });
+    }
   }
 
   /**
@@ -907,8 +932,9 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     nodeId?: string | null;
     edgeId?: string | null;
   }) {
-    const maxX = window.innerWidth - 180;
-    const maxY = window.innerHeight - 220;
+    // 空白场景 10 项 + 2 分隔约 340px 高，夹取下界要按最长菜单预留，否则向下溢出视口
+    const maxX = window.innerWidth - 210;
+    const maxY = window.innerHeight - 360;
     menu.visible = true;
     menu.x = Math.max(8, Math.min(payload.x, maxX));
     menu.y = Math.max(8, Math.min(payload.y, maxY));
@@ -1004,6 +1030,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
     picker,
     menu,
     select,
+    revealNode,
     insertNodeAt,
     openPicker,
     closePicker,

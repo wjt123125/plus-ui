@@ -84,9 +84,12 @@
         </button>
       </div>
 
-      <!-- 记录表 -->
-      <div class="table-card" v-loading="loading">
-        <el-table :data="recordList" @row-click="openDetail">
+      <!-- 记录表：首屏用骨架屏占位，翻页/筛选仍走表格遮罩 loading -->
+      <div class="table-card">
+        <div v-if="loading && recordList.length === 0" class="table-skeleton">
+          <el-skeleton animated :rows="9" />
+        </div>
+        <el-table v-else v-loading="loading" :data="recordList" @row-click="openDetail">
           <el-table-column prop="chainCode" label="链路编码" min-width="180" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="mono">#{{ row.chainCode }}</span>
@@ -97,13 +100,13 @@
               <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="开始时间" width="172">
+          <el-table-column label="开始时间" width="172" class-name="num-cell">
             <template #default="{ row }">{{ formatTime(row.startTime) }}</template>
           </el-table-column>
-          <el-table-column label="结束时间" width="172">
+          <el-table-column label="结束时间" width="172" class-name="num-cell">
             <template #default="{ row }">{{ formatTime(row.endTime) }}</template>
           </el-table-column>
-          <el-table-column label="总耗时" width="100" align="right">
+          <el-table-column label="总耗时" width="100" align="right" class-name="num-cell">
             <template #default="{ row }">{{ formatDuration(row.duration) }}</template>
           </el-table-column>
           <el-table-column prop="errorMsg" label="错误信息" min-width="200" show-overflow-tooltip>
@@ -428,9 +431,9 @@ onMounted(() => {
 
 .page-title {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--app-font-size-title, 22px);
   font-weight: 700;
-  color: var(--el-text-color-primary, #1d2129);
+  color: var(--app-text-title, #1f2937);
 }
 
 .page-subtitle {
@@ -450,18 +453,30 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   padding: 10px 18px;
-  border-radius: 9999px;
+  border-radius: var(--app-radius-md, 10px);
   border: 1px solid var(--el-color-danger-light-5, #fde2e2);
   background: var(--el-bg-color, #fff);
   color: var(--el-color-danger);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.25s ease;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
 
   &:hover:not(:disabled) {
     border-color: var(--el-color-danger);
     background: var(--el-color-danger-light-9, #fef0f0);
+  }
+
+  &:active:not(:disabled) {
+    border-color: var(--el-color-danger);
+    background: var(--el-color-danger-light-8, #fde2e2);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--el-color-danger);
+    outline-offset: 2px;
   }
 
   &:disabled {
@@ -476,22 +491,25 @@ onMounted(() => {
   gap: 6px;
   padding: 10px 20px;
   border: none;
-  border-radius: 9999px;
-  background: linear-gradient(
-    135deg,
-    var(--el-color-primary) 0%,
-    var(--el-color-primary-light-3) 100%
-  );
+  border-radius: var(--app-radius-md, 10px);
+  background: var(--el-color-primary);
   color: #fff;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.3);
-  transition: all 0.25s ease;
+  transition: background-color 0.2s ease;
 
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.4);
+    background: var(--el-color-primary-light-3);
+  }
+
+  &:active {
+    background: var(--el-color-primary-dark-2);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--el-color-primary);
+    outline-offset: 2px;
   }
 }
 
@@ -507,7 +525,7 @@ onMounted(() => {
   max-width: 100%;
 
   :deep(.el-select__wrapper) {
-    border-radius: 12px;
+    border-radius: var(--app-radius-md, 10px);
     min-height: 40px;
     box-shadow: 0 0 0 1.5px var(--el-border-color, #e8eaec) inset;
     transition: box-shadow 0.2s ease;
@@ -542,20 +560,25 @@ onMounted(() => {
 
 .filter-tab {
   padding: 6px 16px;
-  border-radius: 9999px;
+  border-radius: var(--app-radius-md, 10px);
   border: 1px solid var(--el-border-color, #e8eaec);
   background: var(--el-bg-color, #fff);
   color: var(--el-text-color-regular, #363b41);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  transition: all 0.2s ease;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease;
 
   &:hover {
     border-color: var(--el-color-primary);
     color: var(--el-color-primary);
-    box-shadow: 0 2px 6px rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.1);
+  }
+
+  &:active:not(.active) {
+    background: var(--el-fill-color-light, #f5f7fa);
   }
 
   &.active {
@@ -563,14 +586,27 @@ onMounted(() => {
     border-color: var(--el-color-primary);
     color: #fff;
   }
+
+  &:focus-visible {
+    outline: 2px solid var(--el-color-primary);
+    outline-offset: 2px;
+  }
 }
 
 .table-card {
-  background: var(--el-bg-color, #fff);
-  border: 1px solid var(--el-border-color, #e2e8f0);
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+  background: var(--app-surface-bg, #fff);
+  border: 1px solid var(--app-surface-border, #e5e7eb);
+  border-radius: var(--app-radius-lg, 14px);
   padding: 8px;
+}
+
+.table-skeleton {
+  padding: 16px 16px 8px;
+}
+
+/* 时间/耗时等数字列：等宽数字，翻页时列宽不抖动 */
+:deep(.num-cell) {
+  font-variant-numeric: tabular-nums;
 }
 
 .mono {

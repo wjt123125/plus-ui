@@ -109,8 +109,18 @@ import TemplateMarkDialog from './TemplateMarkDialog.vue';
  * 编辑回显走 GET /{id} 重拉详情（与连接页同范式）。
  */
 
+/** 提交成功载荷：新建携带新主键（工作台树据此直接打开画布 tab） */
+export interface ChainFormSuccessPayload {
+  /** 链路主键（新增取接口返回，编辑取表单原值） */
+  id: number | string;
+  chainName: string;
+  /** true=编辑既有链路（重命名场景）；false=新建 */
+  isEdit: boolean;
+}
+
 const emit = defineEmits<{
-  (e: 'success'): void;
+  // payload 仅表单新增/编辑提交时携带；模板运营区的标记/取消只触发树 reload
+  (e: 'success', payload?: ChainFormSuccessPayload): void;
 }>();
 
 const visible = ref(false);
@@ -130,7 +140,9 @@ const buildInitFormData = (): DatabusChainBo => ({
   chainCode: '',
   chainName: '',
   logLevel: 'BASIC',
-  remark: ''
+  remark: '',
+  // 归属仅新建时随表单提交；树头部新建为 null（未归组），目录右键新建预填目录 id
+  directoryId: null
 });
 
 const form = ref<DatabusChainBo>(buildInitFormData());
@@ -205,11 +217,23 @@ const rules = {
   logLevel: [{ required: true, message: '请选择执行记录档位', trigger: 'change' }]
 };
 
-/** 新增:openDialog();编辑:openDialog(id)(按主键拉详情回显) */
-async function openDialog(id?: number | string) {
+/** 新建预设（树目录右键新建时携带归属目录；头部新建不传＝未归组） */
+export interface ChainFormPreset {
+  directoryId?: string | number | null;
+}
+
+/**
+ * 新增:openDialog() 或 openDialog(undefined, { directoryId });
+ * 编辑:openDialog(id)（按主键拉详情回显）。
+ * 编辑态 directoryId 恒置 null：归属变更只走 move-chain 端点，通用编辑不写字段。
+ */
+async function openDialog(id?: number | string, preset?: ChainFormPreset) {
   form.value = buildInitFormData();
   templateMeta.value = buildInitTemplateMeta();
   const isEdit = id !== undefined && id !== null && id !== '';
+  if (!isEdit && preset?.directoryId !== undefined) {
+    form.value.directoryId = preset.directoryId;
+  }
   visible.value = true;
   if (!isEdit) {
     return;
@@ -217,7 +241,7 @@ async function openDialog(id?: number | string) {
   detailLoading.value = true;
   try {
     const { data } = await getChain(id);
-    form.value = { ...buildInitFormData(), ...data };
+    form.value = { ...buildInitFormData(), ...data, directoryId: null };
     syncTemplateMeta(data);
   } catch {
     visible.value = false;
@@ -237,11 +261,17 @@ function handleSubmit() {
       if (isEdit) {
         await updateChain(form.value);
       } else {
-        await addChain(form.value);
+        // 新主键随响应返回（Long 序列化为字符串），供树新建后直接打开画布 tab
+        const { data: newId } = await addChain(form.value);
+        form.value.id = newId ?? form.value.id;
       }
       modal.msgSuccess(isEdit ? '修改成功' : '新增成功');
       visible.value = false;
-      emit('success');
+      emit('success', {
+        id: form.value.id as number | string,
+        chainName: form.value.chainName,
+        isEdit
+      });
     } finally {
       submitting.value = false;
     }

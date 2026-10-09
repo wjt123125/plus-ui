@@ -31,7 +31,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { ArrowRight } from '@element-plus/icons-vue';
-import { useVueFlow } from '@vue-flow/core';
 import { ElFormItem, ElIcon } from 'element-plus';
 import { summarizeCondition, type ElNode } from '../../../composables/useElTreeModel';
 import { useCanvasController } from '../../../composables/useCanvasController';
@@ -73,19 +72,9 @@ const arityHint = computed(() => {
   return filled < 2 ? `至少需要 2 个操作数，当前已挂 ${filled} 个` : '';
 });
 
-/** 点操作数：选中并居中跳到那颗条件豆子（与大纲定位同款：单选 + addSelectedNodes + setCenter） */
-const { findNode: findCanvasNode, addSelectedNodes, setCenter } = useVueFlow();
-
+/** 点操作数：选中并居中跳到那颗条件豆子（视图操作收口在 ctrl，面板不直接碰 vue-flow 实例） */
 function onJump(nodeId: string) {
-  ctrl.deselect();
-  ctrl.select(nodeId);
-  const target = findCanvasNode(nodeId);
-  if (target) {
-    addSelectedNodes([target]);
-    const w = target.dimensions?.width || 150;
-    const h = target.dimensions?.height || 56;
-    setCenter(target.position.x + w / 2, target.position.y + h / 2, { duration: 300 });
-  }
+  ctrl.revealNode(nodeId);
 }
 </script>
 

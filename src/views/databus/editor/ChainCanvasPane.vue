@@ -8,28 +8,8 @@
       'is-embedded': host === 'workbench'
     }"
   >
-    <!-- 顶部工具栏（display:contents 三段直接落网格列轨道） -->
-    <EditorToolbar
-      v-model:chain-id="chainId"
-      :host="host"
-      :editing-id="editingId"
-      :chain-name="chainName"
-      :can-undo="canUndo"
-      :can-redo="canRedo"
-      :chain-saving="chainSaving"
-      :saving="saving"
-      @back="backToList"
-      @undo="undo"
-      @redo="redo"
-      @reset="resetCanvas"
-      @open-input-params="inputParamsVisible = true"
-      @open-preview="openPreview"
-      @save-chain="handleSaveChain"
-      @save-as-el="saveAsEl"
-      @select="onChainSelect"
-    />
-
-    <!-- 三栏：组件面板 / 画布 / 参数表单 -->
+    <!-- 三栏：组件面板 / 画布 / 参数表单（IDE 化后无顶栏，网格单行，画布吃满高度；
+         文档动作收口到画布空白右键菜单 + 快捷键 + 右上浮钮，见 useEditorActions） -->
     <div class="databus-editor__body">
       <div class="databus-editor__palette">
         <CmpPalette @collapse="setPaletteCollapsed(true)" />
@@ -41,6 +21,14 @@
           @select="ctrl.select($event)"
           @drop-node="onDropNode"
         />
+        <!-- 全屏宿主身份卡：返回 + 链路名 + 脏点；workbench 宿主由 tab 承载身份 -->
+        <EditorIdentityCard
+          v-if="host === 'editor'"
+          :chain-name="chainName"
+          :dirty="dirty"
+          :collapsed="paletteCollapsed"
+          @back="backToList"
+        />
         <button
           v-if="paletteCollapsed"
           type="button"
@@ -50,24 +38,28 @@
         >
           <el-icon><Expand /></el-icon>
         </button>
+        <!-- 浮动展开钮仅全屏编辑器宿主：工作台宿主的抽屉在 Pane 外，开合由工作台开关管 -->
         <button
-          v-if="propsCollapsed"
+          v-if="host === 'editor' && propsCollapsed"
           type="button"
           class="databus-editor__props-expand"
-          title="展开属性面板"
+          title="展开右侧面板"
           @click="setPropsCollapsed(false)"
         >
           <el-icon><Expand /></el-icon>
         </button>
       </div>
-      <EditorPropsPanel
-        :node="selectedNode"
-        :edge="selectedEdge"
-        :collapsed="propsCollapsed"
-        @fold="setPropsCollapsed(true)"
-        @delete="ctrl.requestDeleteNode($event)"
-        @data-change="onPropsChange"
-      />
+      <!-- 右抽屉槽仅全屏编辑器宿主挂 Pane 内（名片本地直传，无链路树 tab）；
+           工作台宿主的抽屉在工作台级（Pane 外），经 activePort 单例读取名片 -->
+      <div
+        v-if="host === 'editor'"
+        class="databus-editor__drawer"
+        :class="{ 'is-collapsed': propsCollapsed }"
+      >
+        <div class="databus-editor__drawer-inner">
+          <EditorDrawer :port="drawerPort" :collapsed="propsCollapsed" @fold="setPropsCollapsed(true)" />
+        </div>
+      </div>
     </div>
 
     <!-- EL 生成结果 -->
@@ -103,15 +95,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useVueFlow, type Node, type Edge } from '@vue-flow/core';
 import { Expand } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { generateEl } from '@/api/databus/el';
 import CmpPalette from './components/palette/CmpPalette.vue';
 import FlowCanvas from './components/canvas/FlowCanvas.vue';
-import EditorToolbar from './components/shell/EditorToolbar.vue';
-import EditorPropsPanel from './components/panels/EditorPropsPanel.vue';
+import EditorIdentityCard from './components/shell/EditorIdentityCard.vue';
+import EditorDrawer from './components/drawer/EditorDrawer.vue';
 import ElResultDialog from './components/dialogs/ElResultDialog.vue';
 import InputParamsDialog from './components/dialogs/InputParamsDialog.vue';
 import PreviewInputDialog from './components/dialogs/PreviewInputDialog.vue';
@@ -121,11 +113,19 @@ import { type CmpNodeData } from './composables/useElTreeModel';
 import { useFlowHistory } from './composables/useFlowHistory';
 import { provideCanvasController } from './composables/useCanvasController';
 import { provideEditorFullscreen } from './composables/useEditorFullscreen';
-import { provideElPreview } from './composables/useElPreview';
+import { useElPreview } from './composables/useElPreview';
 import { provideElTreeModel } from './composables/useElTreeModel';
+import {
+  nextDrawerPortUid,
+  setActiveDrawerPort,
+  useActiveDrawerPort,
+  type DrawerPort
+} from './composables/useDrawerPort';
+import { useOutlineItems } from './composables/useOutlineItems';
 import { useAutoLayout } from './composables/useAutoLayout';
 import { useCanvasGuards } from './composables/useCanvasGuards';
 import { useChainDocument } from './composables/useChainDocument';
+import { provideEditorActions } from './composables/useEditorActions';
 import { useEditorHotkeys } from './composables/useEditorHotkeys';
 import { usePanelCollapse } from './composables/usePanelCollapse';
 import { usePreviewRun } from './composables/usePreviewRun';
@@ -161,25 +161,20 @@ const treeModel = provideElTreeModel();
 // 初始画布：project 空树 → 仅 start 虚拟节点
 const initial = treeModel.project();
 
-// 物料区 / 属性面板收起态：图标触发、画布浮动展开钮、localStorage 记忆（逻辑下沉 composable）
+// 物料区收起态两宿主通用；右侧抽屉收起态仅全屏编辑器宿主接 Pane 内第三列
+// （工作台宿主的抽屉在 Pane 外，开合由工作台自己管；key 与工作台抽屉合一）
 const { collapsed: paletteCollapsed, setCollapsed: setPaletteCollapsed } =
   usePanelCollapse('databus.palette.collapsed');
-const { collapsed: propsCollapsed, setCollapsed: setPropsCollapsed } =
-  usePanelCollapse('databus.props.collapsed');
+const { collapsed: drawerCollapsedRef, setCollapsed: setPropsCollapsed } =
+  usePanelCollapse('databus.drawer.collapsed');
+const propsCollapsed = props.host === 'editor' ? drawerCollapsedRef : computed(() => false);
 
-// 编辑器整体全屏（工具栏/物料/画布/属性区一同进入），供画布控制条按钮 inject 调用
+// 编辑器整体全屏（浮层/物料/画布/属性区一同进入），供画布控制条按钮 inject 调用
 const rootRef = ref<HTMLElement | null>(null);
 provideEditorFullscreen(rootRef);
 
 // 在父组件创建 Vue Flow store 实例并注入子树，FlowCanvas 通过 useVueFlow() 拿到同一实例
-const {
-  getNodes,
-  getEdges,
-  setNodes,
-  setEdges,
-  fitView,
-  onNodeDragStop
-} = useVueFlow();
+const { getNodes, getEdges, setNodes, setEdges, fitView, onNodeDragStop } = useVueFlow();
 
 // ELK 自动排列：提升到顶层，供 canvasController（结构变更后）调用
 const { autoLayout: runAutoLayout } = useAutoLayout(treeModel);
@@ -190,8 +185,9 @@ const { undo, redo, canUndo, canRedo, push, reset } = useFlowHistory(
   { onRestored: () => runAutoLayout({ fitView: false }) }
 );
 
-// 实时 EL 预览：直接从模型树序列化 CmpProperty，结构变更由控制器 commit 回调触发
-const elPreview = provideElPreview(treeModel);
+// 实时 EL 预览：直接从模型树序列化 CmpProperty，结构变更由控制器 commit 回调触发。
+// 实例经抽屉名片透传给右侧 FlowElPreview（工作台抽屉在 Pane 外，不再走 provide/inject）
+const elPreview = useElPreview(treeModel);
 
 // 画布操作控制器：改树→重投影→入栈→EL 预览刷新
 const ctrl = provideCanvasController({
@@ -233,6 +229,46 @@ function onDropNode(payload: { type: string; x: number; y: number }) {
   ctrl.insertNodeAt(payload.type, payload.x, payload.y);
 }
 
+// ── 右侧抽屉名片（DrawerPort）────────────────────────────────────────────
+// 全屏编辑器：Pane 内 EditorDrawer 直传；工作台：watch(active) 上报工作台级单例。
+// treeModel/controller 随名片携带，供抽屉内属性子组件经 DrawerPortBridge 桥接 inject。
+const outlineItems = useOutlineItems(treeModel);
+
+const drawerPort: DrawerPort = {
+  uid: nextDrawerPortUid(),
+  treeModel,
+  controller: ctrl,
+  selectedNode,
+  selectedEdge,
+  deleteNode: (id) => ctrl.requestDeleteNode(id),
+  commit: onPropsChange,
+  elPreview,
+  outline: {
+    items: outlineItems,
+    selectedId: ctrl.selectedId,
+    locate: (id) => ctrl.revealNode(id)
+  }
+};
+
+if (props.host === 'workbench') {
+  // 激活画布递名片（immediate：v-for 中仅激活 Pane 上报）；切走停 EL 后台刷新省请求。
+  // 切 tab 时新激活 Pane 立即覆盖名片；卸载时若名片仍指向自己（全部关光）才清空。
+  watch(
+    () => props.active,
+    (active) => {
+      if (active) {
+        setActiveDrawerPort(drawerPort);
+      } else {
+        elPreview.active.value = false;
+      }
+    },
+    { immediate: true }
+  );
+  onBeforeUnmount(() => {
+    if (useActiveDrawerPort().value === drawerPort) setActiveDrawerPort(null);
+  });
+}
+
 // 保存链路 / 生成 EL / 试运行共用的画布前置校验与清空（逻辑下沉 composable）
 const { resetCanvas, ensureCanvasHasNodes, ensureDataSpacesValid } = useCanvasGuards({
   treeModel,
@@ -253,8 +289,8 @@ const {
   onInputParamsSave,
   loadChainToEditor,
   saveChain,
-  onChainSelect,
   backToList,
+  redirectToChainList,
   initFromRoute
 } = useChainDocument({
   treeModel,
@@ -335,6 +371,23 @@ const {
   ensureDataSpacesValid
 });
 
+// 文档动作注入：画布空白右键菜单/右上浮层 inject（IDE 化后顶栏已删，命令统一收口于此）
+provideEditorActions({
+  canUndo,
+  canRedo,
+  undo,
+  redo,
+  reset: resetCanvas,
+  save: handleSaveChain,
+  preview: openPreview,
+  openInputParams: () => {
+    inputParamsVisible.value = true;
+  },
+  saveAsEl,
+  chainSaving,
+  previewRunning
+});
+
 // 键盘快捷键：动作注入，window 绑定/解绑在 composable 内自理。
 // workbench 多 canvas tab 共存时，非激活实例短路（undo/Delete 不串台）
 useEditorHotkeys(
@@ -346,6 +399,7 @@ useEditorHotkeys(
     selectAll: () => ctrl.selectAll(),
     copy: () => ctrl.copy(),
     paste: () => ctrl.paste(),
+    saveChain: handleSaveChain,
     saveAsEl
   },
   () => props.active
@@ -356,11 +410,13 @@ onMounted(() => {
   void useComponentOptions()
     .ensureOptions()
     .then(() => ctrl.reproject());
-  // 建立历史基线，保证撤销按钮初始禁用且首次编辑可撤销
+  // 建立历史基线，保证撤销菜单初始禁用且首次编辑可撤销
   nextTick(reset);
   if (props.host === 'editor') {
-    // 从链路列表「编排」跳入：query.id 指定已保存链路，异步加载替换空画布
-    initFromRoute();
+    // 从链路列表「编排」跳入：query.id 指定已保存链路；无 id 直访（实验模式已废弃）立即送走
+    if (!initFromRoute()) {
+      redirectToChainList();
+    }
   } else if (props.loadChainId != null) {
     // 工作台宿主：v-show 保活 mount 一次即加载；同链单例保证 loadChainId 不再变化
     void loadChainToEditor(props.loadChainId);
@@ -371,20 +427,15 @@ onMounted(() => {
 <style scoped>
 /* 尺寸只定义一次：--palette-size/--props-size 是常量；
    --palette-w/--props-w 是网格实际列宽，折叠时置 0。
-   工具栏与主体共用同一组列轨道，竖分隔线即列分界，天然不错开。 */
+   IDE 化去顶栏后只有单行网格（物料/画布/属性），不再有 48px 工具栏行。 */
 .databus-editor {
   --palette-size: 248px;
   --props-size: 300px;
   --palette-w: var(--palette-size);
   --props-w: var(--props-size);
-  /* 工具栏中段两侧预留位：展开时仅 12px 呼吸间隙；折叠时原位悬浮的左段
-     （链路编码 248）/右段（链路切换器 300）仍占着画布上方空间，内边距等量
-     让出，防止中段按钮随 1fr 列加宽滑入悬浮区遮住它们 */
-  --toolbar-pl: 12px;
-  --toolbar-pr: 12px;
 
   display: grid;
-  grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   grid-template-columns: var(--palette-w) minmax(0, 1fr) var(--props-w);
 
   /* 跟随 plus-ui 满高页面惯例（workflow 设计器/AI 聊天页同值） */
@@ -394,22 +445,20 @@ onMounted(() => {
   transition: grid-template-columns 0.2s ease;
 }
 
-/* 工作台内嵌宿主：高度交给工作台 tab 面板容器（其自身已处理满高滚动） */
+/* 工作台内嵌宿主：高度交给工作台 tab 面板容器（其自身已处理满高滚动）；
+   右抽屉在 Pane 外，网格只留物料/画布两列（身份卡仅 editor 宿主渲染） */
 .databus-editor.is-embedded {
   height: 100%;
+  grid-template-columns: var(--palette-w) minmax(0, 1fr);
 }
 
-/* 折叠只改列宽变量；轨道收缩，画布自然外扩。
-   同步加大中段工具栏同侧预留（常量宽 + 12px 呼吸间隙），
-   与 grid-template-columns 的 0.2s 过渡等速，按钮绝对位置钉住不动 */
+/* 折叠只改列宽变量；轨道收缩，画布自然外扩（浮层控件 absolute 在画布 wrap 内，不受影响） */
 .databus-editor.is-palette-collapsed {
   --palette-w: 0px;
-  --toolbar-pl: calc(var(--palette-size) + 12px);
 }
 
 .databus-editor.is-props-collapsed {
   --props-w: 0px;
-  --toolbar-pr: calc(var(--props-size) + 12px);
 }
 
 /* 全屏态脱离 RuoYi 外壳后需撑满整个屏幕（否则底部露出 123px 空带）；
@@ -419,15 +468,12 @@ onMounted(() => {
   background-color: var(--el-bg-color);
 }
 
-/* 工具栏三段由 EditorToolbar 以 display:contents 直接落入第一行网格轨道 */
-
-/* body 容器让位：物料 / 画布 / 属性直接成为第二行网格条目 */
+/* body 容器让位：物料 / 画布 / 属性直接成为网格条目（单行三列/两列） */
 .databus-editor__body {
   display: contents;
 }
 
 .databus-editor__palette {
-  grid-row: 2;
   grid-column: 1;
   min-width: 0;
   min-height: 0;
@@ -448,7 +494,6 @@ onMounted(() => {
 
 .databus-editor__canvas-wrap {
   position: relative;
-  grid-row: 2;
   grid-column: 2;
   min-width: 0;
   min-height: 0;
@@ -479,7 +524,25 @@ onMounted(() => {
   border-color: var(--el-color-primary-light-5);
 }
 
-/* 属性面板容器/折叠竖边/页签样式整体迁入 EditorPropsPanel */
+/* 右抽屉槽（仅 editor 宿主渲染）：占第三列轨道，折叠时轨道收 0；
+   inner 固定 300 不参与挤压回流（与原属性面板同策略） */
+.databus-editor__drawer {
+  grid-column: 3;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--el-border-color-lighter);
+  transition: border-left-color 0.2s ease;
+}
+
+.databus-editor__drawer.is-collapsed {
+  border-left-color: transparent;
+}
+
+.databus-editor__drawer-inner {
+  width: var(--props-size);
+  height: 100%;
+}
 
 /* 收起后画布右上角展开钮：与物料区展开钮同款（26×26 白底卡片）。
    位于最右缘（right:12），自动排列圆钮在其左侧（FlowSidePanel margin-right:46 让位），

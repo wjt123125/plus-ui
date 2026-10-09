@@ -1,104 +1,40 @@
-<!-- 大纲：直接遍历 ElNode 模型树，无需从画布重建拓扑 -->
+<!-- 大纲：纯展示组件。数据扁平化（useOutlineItems）与居中定位（locate）
+     由 ChainCanvasPane 经 DrawerPort 提供，组件自身不碰模型树与 vue-flow 实例 -->
 <template>
   <div class="flow-outline">
     <div class="flow-outline__list">
       <div
-        v-for="item in outlineItems"
+        v-for="item in items"
         :key="item.id"
         class="flow-outline__item"
-        :class="{ 'is-active': item.id === ctrl.selectedId.value }"
+        :class="{ 'is-active': item.id === selectedId }"
         :style="{ paddingLeft: `${8 + item.depth * 16}px` }"
-        @click="locate(item)"
+        @click="emit('locate', item.id)"
       >
         <span class="flow-outline__dot" :style="{ backgroundColor: item.color }" />
         <span class="flow-outline__label">{{ item.label }}</span>
         <span class="flow-outline__sub">{{ item.sub }}</span>
       </div>
-      <div v-if="outlineItems.length === 0" class="flow-outline__empty">暂无真实组件，从左侧拖入</div>
+      <div v-if="items.length === 0" class="flow-outline__empty">暂无真实组件，从左侧拖入</div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import { useVueFlow } from '@vue-flow/core';
-import { useElTreeModelInject, type ElNode } from '../../composables/useElTreeModel';
-import { useCanvasController } from '../../composables/useCanvasController';
-import { getDef, materialTick } from '../../cmp-defs';
+import type { OutlineItem } from '../../composables/useOutlineItems';
 
 defineOptions({ name: 'FlowOutline' });
 
-const NODE_W = 150;
-const NODE_H = 56;
+defineProps<{
+  items: OutlineItem[];
+  /** 当前选中 id（node/edge 统一） */
+  selectedId: string | null;
+}>();
 
-const { findNode, setCenter, addSelectedNodes } = useVueFlow();
-const treeModel = useElTreeModelInject();
-const ctrl = useCanvasController();
-
-interface OutlineItem {
-  id: string;
-  label: string;
-  sub: string;
-  color: string;
-  depth: number;
-}
-
-/** 递归遍历 ElNode 树，扁平化为带缩进层级的列表 */
-function traverse(node: ElNode, depth: number, items: OutlineItem[]) {
-  const def = getDef(node.type);
-  if (def?.operator) {
-    // 算子节点
-    items.push({
-      id: node.id,
-      label: def.label,
-      sub: node.type,
-      color: def.color,
-      depth
-    });
-    // condition 在 children 之前展示
-    if (node.condition) {
-      traverse(node.condition, depth + 1, items);
-    }
-    if (node.children) {
-      // 稀疏空洞跳过；撤销快照 JSON 往返后空洞变 null，同样跳过（THEN 尾部空槽不进大纲）
-      node.children.forEach((c) => c && traverse(c, depth + 1, items));
-    }
-  } else {
-    // 业务叶子：componentCode 是注册名（查物料），cmpId 是数据空间名（右侧副标）；
-    // virtual（start/end）没有 componentCode，用 type 自身查
-    const leafDef = getDef(node.componentCode ?? node.type);
-    items.push({
-      id: node.id,
-      label: leafDef?.label ?? node.componentCode ?? node.type,
-      sub: node.cmpId ?? '',
-      color: leafDef?.color ?? '#909399',
-      depth
-    });
-  }
-}
-
-const outlineItems = computed<OutlineItem[]>(() => {
-  // 依赖 materialTick：合流改写 label/color 后大纲同步刷新
-  materialTick.value;
-  const root = treeModel.root.value;
-  if (!root) return [];
-  const items: OutlineItem[] = [];
-  traverse(root, 0, items);
-  return items;
-});
-
-/** 点击大纲项：单选该节点并居中 */
-function locate(item: OutlineItem) {
-  ctrl.deselect();
-  ctrl.select(item.id);
-  const target = findNode(item.id);
-  if (target) {
-    addSelectedNodes([target]);
-    const w = target.dimensions?.width || NODE_W;
-    const h = target.dimensions?.height || NODE_H;
-    setCenter(target.position.x + w / 2, target.position.y + h / 2, { duration: 300 });
-  }
-}
+const emit = defineEmits<{
+  /** 点击大纲项：父级负责选中节点并在画布居中 */
+  (e: 'locate', id: string): void;
+}>();
 </script>
 
 <style scoped>

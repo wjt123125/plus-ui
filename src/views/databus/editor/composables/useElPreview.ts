@@ -5,9 +5,11 @@
  * - schedule() 由控制器在编辑动作完成后显式调用（不订阅 Vue Flow 事件——
  *   节点拖拽只改 cachedPosition 坐标缓存，不改树结构，无需刷新 EL）
  * - 后端 ExpressGenerator 权威生成，与保存路径同源
- * - active 由父组件控制（未选中节点时 true 才刷新，避免浪费请求）
+ * - active 由右侧抽屉按 tab 可见性控制（EL tab 不可见时不刷新，省请求）
+ *
+ * 右侧抽屉化后实例经 DrawerPort.elPreview 透传给 FlowElPreview（不再 provide/inject）。
  */
-import { inject, onBeforeUnmount, provide, ref, type InjectionKey, type Ref } from 'vue';
+import { onBeforeUnmount, ref, type Ref } from 'vue';
 import { generateEl } from '@/api/databus/el';
 import type { ElTreeModel } from './useElTreeModel';
 
@@ -15,7 +17,7 @@ export interface ElPreviewController {
   elStr: Ref<string>;
   loading: Ref<boolean>;
   error: Ref<string | null>;
-  /** 是否激活刷新：父组件按选中状态控制 */
+  /** 是否激活刷新：右侧抽屉按 EL tab 可见性 + 画布激活态控制 */
   active: Ref<boolean>;
   schedule: () => void;
   refresh: () => Promise<void>;
@@ -71,21 +73,4 @@ export function useElPreview(treeModel: ElTreeModel, options: UseElPreviewOption
   });
 
   return { elStr, loading, error, active, schedule, refresh };
-}
-
-export const EL_PREVIEW_KEY = Symbol('el-preview') as InjectionKey<ElPreviewController>;
-
-/** index.vue 创建并 provide；右侧预览组件 inject 同一实例 */
-export function provideElPreview(treeModel: ElTreeModel, options?: UseElPreviewOptions): ElPreviewController {
-  const controller = useElPreview(treeModel, options);
-  provide(EL_PREVIEW_KEY, controller);
-  return controller;
-}
-
-export function useElPreviewController(): ElPreviewController {
-  const controller = inject(EL_PREVIEW_KEY);
-  if (!controller) {
-    throw new Error('useElPreviewController 必须在 provideElPreview 之后使用');
-  }
-  return controller;
 }
