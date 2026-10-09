@@ -58,6 +58,8 @@ export interface DatabusChainVo {
   createTime?: string;
   /** 更新时间 */
   updateTime?: string;
+  /** 归属目录 id（null=未归组） */
+  directoryId?: string | number | null;
 }
 
 /**
@@ -127,6 +129,8 @@ export interface DatabusChainQuery extends PageQuery {
   status?: string;
   /** 是否精选模板（0我的链路 1精选模板，双 tab 必传其一；不传则不过滤） */
   isTemplate?: string;
+  /** 归属目录 id 精确过滤（工作台链树按目录拉链路用；「未归组」语义由前端拉全量自行分组） */
+  directoryId?: string | number;
 }
 
 /**

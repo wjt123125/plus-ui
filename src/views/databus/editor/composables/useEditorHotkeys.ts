@@ -5,6 +5,10 @@ import { onBeforeUnmount, onMounted } from 'vue';
  * 编辑目标（INPUT/TEXTAREA/contenteditable）避让与 window 监听的绑定/解绑。
  *
  * 必须在 setup 同步上下文中调用（内部注册生命周期钩子）。
+ *
+ * @param actions 动作注入表
+ * @param isEnabled 可选启用门闸（多实例共存时由宿主注入，如工作台多 canvas tab
+ *   只有激活 tab 响应快捷键；返回 false 时本实例直接忽略按键）。不传恒启用。
  */
 export interface EditorHotkeyActions {
   deselect: () => void;
@@ -25,8 +29,10 @@ function isEditableTarget(el: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
 }
 
-export function useEditorHotkeys(actions: EditorHotkeyActions) {
+export function useEditorHotkeys(actions: EditorHotkeyActions, isEnabled?: () => boolean) {
   function onKeyDown(e: KeyboardEvent) {
+    // 多实例共存（工作台多 canvas tab）：非激活实例不响应，避免 undo/Delete 同时触发
+    if (isEnabled && !isEnabled()) return;
     const key = e.key.toLowerCase();
     const mod = e.ctrlKey || e.metaKey;
 

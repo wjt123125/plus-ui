@@ -3,8 +3,9 @@
     <!-- display:contents 让位：三段直接成为编辑器网格条目，共用列轨道 -->
     <!-- 左段：第一列，宽度与下方物料区共用同一变量，竖线即列分界 -->
     <div class="editor-toolbar__left">
+      <!-- back 按钮/链路切换器仅全屏编辑器宿主可见（工作台内嵌时无列表可返回） -->
       <el-button
-        v-if="editingId"
+        v-if="host === 'editor' && editingId"
         size="small"
         title="返回链路列表"
         @click="emit('back')"
@@ -57,7 +58,7 @@
       </el-button>
     </div>
     <!-- 左缘短竖线（伪元素）在列轨道分界上，与下方属性区左边缘天然对齐 -->
-    <div class="editor-toolbar__switcher">
+    <div v-if="host === 'editor'" class="editor-toolbar__switcher">
       <ChainSwitcher
         :current-id="editingId"
         :current-name="editingId ? chainName : ''"
@@ -72,15 +73,20 @@ import { ArrowLeft, Check, Delete, Operation, RefreshLeft, RefreshRight, Select,
 import ChainSwitcher from './ChainSwitcher.vue';
 import type { DatabusChainVo } from '@/api/databus/chain/types';
 
-defineProps<{
-  editingId: number | string | null;
-  chainId: string;
-  chainName: string;
-  canUndo: boolean;
-  canRedo: boolean;
-  chainSaving: boolean;
-  saving: boolean;
-}>();
+withDefaults(
+  defineProps<{
+    /** 宿主：'editor' 全屏编辑器（back/链路切换器可用）；'workbench' 链路工作台内嵌 */
+    host?: 'editor' | 'workbench';
+    editingId: number | string | null;
+    chainId: string;
+    chainName: string;
+    canUndo: boolean;
+    canRedo: boolean;
+    chainSaving: boolean;
+    saving: boolean;
+  }>(),
+  { host: 'editor' }
+);
 
 const emit = defineEmits<{
   'update:chainId': [value: string];
