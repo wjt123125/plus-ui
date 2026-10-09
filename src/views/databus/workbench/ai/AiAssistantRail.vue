@@ -1,8 +1,8 @@
 <template>
   <div v-if="!collapsed" class="ai-rail" :style="{ width: `${width}px` }">
     <!--
-      AI 对话栏（databus 工作台共享件，v1 空壳）：展开 260–360px 欢迎空态 + 禁用输入框。
-      宽度可拖拽、开合记 localStorage。**收起即宽度归零、不占位**——原 44px mini rail 形态与
+      AI 对话栏（databus 工作台共享件，v1 空壳）：欢迎空态 + 禁用输入框。
+      宽度可自由拖拽（不设上下限）、开合记 localStorage。**收起即宽度归零、不占位**——原 44px mini rail 形态与
       根 div 上的 @click 已废除（它是「点收起无反应」Bug 的载体），开合的唯一入口在顶部 header。
       预留 select 事件钩子：后续 AI 助手可驱动资源树选中/右栏开 tab，载荷语义由消费页面定义。
     -->

@@ -20,8 +20,10 @@ import { ref } from 'vue';
 const props = withDefaults(
   defineProps<{
     modelValue: number;
-    min: number;
-    max: number;
+    /** 下界（不传=不设下限，自由拖拽；仅兜底 0 防负宽度） */
+    min?: number;
+    /** 上界（不传=不设上限，可拖到任意宽） */
+    max?: number;
     /** 被调整宽度的栏在分隔条的哪一侧 */
     target?: 'prev' | 'next';
   }>(),
@@ -36,7 +38,15 @@ const emit = defineEmits<{
 const dragging = ref(false);
 
 function clamp(width: number): number {
-  return Math.min(props.max, Math.max(props.min, width));
+  // 默认不设上下限，自由拖拽；仅兜底 0（宽度不能为负）
+  let next = Math.max(0, width);
+  if (props.min != null) {
+    next = Math.max(props.min, next);
+  }
+  if (props.max != null) {
+    next = Math.min(props.max, next);
+  }
+  return next;
 }
 
 function startDrag(event: PointerEvent) {

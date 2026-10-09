@@ -33,7 +33,7 @@
         welcome-desc="用自然语言查询组件、生成参数契约与排查脚本编译失败。"
         @select="onAiSelect"
       />
-      <Splitter v-if="!aiCollapsed" v-model="aiWidth" :min="AI_MIN" :max="AI_MAX" />
+      <Splitter v-if="!aiCollapsed" v-model="aiWidth" />
 
       <!-- 栏 2：工作面板（主内容区，常驻不可折叠） -->
       <WorkPanel
@@ -74,7 +74,7 @@
       </WorkPanel>
 
       <!-- 栏 3：组件树（可拖宽、可收起；「新建组件」入口在目录节点的右键菜单里） -->
-      <Splitter v-if="!treeCollapsed" v-model="treeWidth" :min="TREE_MIN" :max="TREE_MAX" target="next" />
+      <Splitter v-if="!treeCollapsed" v-model="treeWidth" target="next" />
       <ComponentTree
         v-if="!treeCollapsed"
         :rows="rows"
@@ -128,12 +128,6 @@ import { useRecentComponents } from './workbench/composables/useRecentComponents
 import type { ComponentSaved, ComponentTab, FormPreset, TreeScope } from './workbench/workbench.types';
 import { buildRegistry } from './model/registry';
 import type { ComponentRegistryRow, DefMeta } from './model/registry';
-
-/** 分栏尺寸约定（详见 docs/refactor-component-workbench.md） */
-const AI_MIN = 260;
-const AI_MAX = 360;
-const TREE_MIN = 180;
-const TREE_MAX = 320;
 
 const rows = ref<ComponentRegistryRow[]>([]);
 /** 库存脚本件运行时健康（启动期失败件用于列表顶部红条与树「异常件」节点） */
@@ -443,7 +437,6 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   height: calc(100vh - 123px);
-  min-height: 480px;
 }
 
 .cmpwb {

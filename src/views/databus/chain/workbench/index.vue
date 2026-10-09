@@ -23,7 +23,7 @@
         welcome-title="链路助手"
         welcome-desc="用自然语言定位链路、解释编排意图，辅助排查链路执行问题。"
       />
-      <Splitter v-if="!aiCollapsed" v-model="aiWidth" :min="AI_MIN" :max="AI_MAX" />
+      <Splitter v-if="!aiCollapsed" v-model="aiWidth" />
 
       <!-- 栏 2：工作面板（主内容区，常驻不可折叠） -->
       <ChainWorkPanel
@@ -34,7 +34,7 @@
       />
 
       <!-- 栏 3：链路树（可拖宽、可收起；点链路开画布 tab，右键管目录/移动归属） -->
-      <Splitter v-if="!treeCollapsed" v-model="treeWidth" :min="TREE_MIN" :max="TREE_MAX" target="next" />
+      <Splitter v-if="!treeCollapsed" v-model="treeWidth" target="next" />
       <ChainTree
         v-if="!treeCollapsed"
         :active-chain-id="activeTab?.chainId ?? null"
@@ -54,12 +54,6 @@ import AiAssistantRail from '../../workbench/ai/AiAssistantRail.vue';
 import ChainWorkPanel from './panel/ChainWorkPanel.vue';
 import ChainTree from './tree/ChainTree.vue';
 import { useChainTabs } from './composables/useChainTabs';
-
-/** 分栏尺寸约定（与组件工作台一致） */
-const AI_MIN = 260;
-const AI_MAX = 360;
-const TREE_MIN = 180;
-const TREE_MAX = 320;
 
 const wb = useChainTabs();
 const { tabs, activeKey, activeTab } = wb;
@@ -102,7 +96,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   display: flex;
   flex-direction: column;
   height: calc(100vh - 123px);
-  min-height: 480px;
 }
 
 .chainwb {
