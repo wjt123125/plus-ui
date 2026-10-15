@@ -19,6 +19,15 @@ export const ALERT_RULE_TYPE_OPTIONS = [
 ] as const;
 
 /**
+ * 通知渠道选项（与后端 AlertNotifyTypeEnum 对齐）。
+ */
+export const ALERT_NOTIFY_TYPE_OPTIONS = [
+  { value: 'EMAIL', label: '邮件' },
+  { value: 'WEBHOOK', label: 'Webhook' },
+  { value: 'CHAIN', label: '通知链路' }
+] as const;
+
+/**
  * 分页查询告警规则
  * GET /databus/alert/rule/list（权限 databus:alert:query）
  */

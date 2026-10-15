@@ -7,7 +7,7 @@
   tab 状态缓存在这里（v-show 切换不销毁），切走草稿保留；关闭带脏圆点的 tab 弹确认，
   这是全站唯一模态。Ctrl+PageDown/PageUp 循环切 tab（焦点在输入区/编辑器内不抢键）。
 -->
-    <div class="work-panel__strip">
+    <div v-if="tabs.length" class="work-panel__strip">
       <div class="work-panel__tabs">
         <div
           v-for="tab in tabs"
@@ -212,8 +212,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 42px;
-  margin: 8px 8px 4px;
+  /* 34px + 无上外边距：tab 条与顶部 header、AI 栏头、组件树头齐成一条线 */
+  height: 34px;
+  margin: 0 8px 4px;
   padding: 0 4px;
   border-radius: var(--app-radius-lg, 14px);
   /* Safari 轨道：浅灰半透明 + 磨砂（工作台专属 token，暗色主题自动适配） */
@@ -232,7 +233,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   scrollbar-width: thin;
   min-width: 0;
   /* 滚动容器会按 overflow 裁剪投影，用上下内边距把激活卡片的投影留在裁剪盒内 */
-  padding: 5px 0 7px;
+  padding: 3px 0;
 }
 
 .wb-tab {
@@ -240,7 +241,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-  height: 28px;
+  height: 24px;
   padding: 0 6px 0 10px;
   max-width: 200px;
   border-radius: var(--app-radius-md, 10px);

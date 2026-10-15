@@ -111,7 +111,13 @@
               </template>
             </el-table-column>
             <el-table-column label="#" type="index" width="44" align="center" />
-            <el-table-column prop="tag" label="tag（数据空间）" min-width="140" show-overflow-tooltip />
+            <el-table-column prop="tag" label="tag（数据空间）" min-width="140" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span class="node-cell" :style="{ paddingLeft: depthPx(row) }" :title="ownerTip(row)">
+                  <span v-if="row.depth" class="node-subchain">↳ </span>{{ row.tag }}
+                </span>
+              </template>
+            </el-table-column>
             <el-table-column prop="nodeType" label="节点类型" min-width="110" show-overflow-tooltip />
             <el-table-column label="分支" min-width="120" show-overflow-tooltip>
               <template #default="{ row }">
@@ -234,6 +240,13 @@ const pretty = (raw?: string | null) => {
     return raw;
   }
 };
+
+/** 子链行缩进：depth×16px（主链 0/null 顶格，与试运行明细同一视觉规则） */
+const depthPx = (row: { depth?: number | null }) => `${(row.depth ?? 0) * 16}px`;
+
+/** 子链行悬停提示所属链；主链行无提示 */
+const ownerTip = (row: { depth?: number | null; ownerChain?: string | null }) =>
+  row.depth ? `所属子链：${row.ownerChain ?? '-'}` : undefined;
 </script>
 
 <style lang="scss" scoped>
@@ -313,5 +326,15 @@ const pretty = (raw?: string | null) => {
 
 .text-muted {
   color: var(--el-text-color-placeholder);
+}
+
+.node-cell {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.node-subchain {
+  color: var(--el-color-primary);
+  font-weight: 600;
 }
 </style>

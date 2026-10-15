@@ -73,14 +73,18 @@
         </li>
       </template>
 
-      <!-- 模板叶子：使用模板（复制副本开画布）· 编辑（含取消精选等模板运营）· 复制编码 · 删除 -->
+      <!-- 模板叶子：打开画布（同普通链路，单击同效）· 从模板创建链路（复制副本）·
+           编辑（含取消精选等模板运营）· 复制编码 · 删除 -->
       <template v-else-if="menu.node.type === 'template'">
+        <li class="chain-tree-ctx__item" @click="onCommand('open-chain')">
+          <SvgIcon icon-class="lucide:spline" /><span>打开画布</span>
+        </li>
         <li
           v-hasPermi="['databus:editor:add']"
           class="chain-tree-ctx__item"
           @click="onCommand('use-template')"
         >
-          <SvgIcon icon-class="lucide:sparkles" /><span>使用模板</span>
+          <SvgIcon icon-class="lucide:sparkles" /><span>从模板创建链路…</span>
         </li>
         <li
           v-hasPermi="['databus:editor:edit']"

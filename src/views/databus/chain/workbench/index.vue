@@ -2,7 +2,9 @@
   <div class="chainwb-page">
     <!--
       链路工作台（三栏推拉布局，无遮罩抽屉，与组件工作台同构）：
-        AI 助手栏 / 工作面板（链路画布多 tab，主内容区常驻） / 链路树（目录 + 链路 + 精选模板）
+        会话历史栏 / AI 助手栏 / 工作面板（链路画布多 tab，主内容区常驻） / 链路树（目录 + 链路 + 精选模板）
+      会话历史是 AI 助手左边的兄弟栏，独立拖宽；AI 栏收起或拖到最窄时历史栏单向连带收起，
+      展开历史栏仍走顶部 header（反向不自动弹回）。
       tab 身份 = 链路（canvas:{chainId}，同链单例），v-show 切换不销毁，切走草稿保留；
       关闭脏 tab 弹确认。分栏宽度与开合状态记 localStorage。
       高度由 wrapper 吃 calc(100vh - 123px)、header flex-shrink:0、.chainwb flex:1 三段式分配。
@@ -11,6 +13,7 @@
       菜单只负责派发 chain-action；本组件统一承接弹窗、API 调用、tab 联动与执行终端写入。
     -->
     <WorkbenchHeader
+      v-model:history-collapsed="historyCollapsed"
       v-model:ai-collapsed="aiCollapsed"
       v-model:nav-collapsed="drawerCollapsed"
       v-model:console-open="consoleOpen"
@@ -21,7 +24,11 @@
     />
 
     <div class="chainwb">
-      <!-- 栏 1：AI 助手（v1 空壳预留，点击建议无动作） -->
+      <!-- 栏 1：会话历史（AI 助手的兄弟栏，v1 无会话后端，列表走空态） -->
+      <AiHistoryRail :collapsed="historyCollapsed" :width="historyWidth" />
+      <Splitter v-if="!historyCollapsed" v-model="historyWidth" :min="180" />
+
+      <!-- 栏 2：AI 助手（v1 空壳预留，点击建议无动作） -->
       <AiAssistantRail
         :collapsed="aiCollapsed"
         :width="aiWidth"
@@ -29,17 +36,27 @@
         welcome-title="链路助手"
         welcome-desc="用自然语言定位链路、解释编排意图，辅助排查链路执行问题。"
       />
-      <Splitter v-if="!aiCollapsed" v-model="aiWidth" />
+      <!-- min=AI_MIN_WIDTH：再窄对话区无可用宽度；拖到下限即联动收起历史栏 -->
+      <Splitter v-if="!aiCollapsed" v-model="aiWidth" :min="AI_MIN_WIDTH" />
 
-      <!-- 栏 2：工作面板（主内容区，常驻不可折叠） -->
-      <ChainWorkPanel
-        v-model:active-key="activeKey"
-        :tabs="tabs"
-        @close="wb.close"
-        @dirty-change="wb.setDirty"
-      />
+      <!-- 栏 3：中栏容器 = 工作面板（多 tab 主内容区）+ 底部执行终端。
+           终端放进中栏而不是整页 flex 兄弟：宽度只吃中栏，AI 栏展开时不再被它压高度，
+           右抽屉折叠时中栏变宽、终端跟着变宽，天然满足「按左右栏状态自适应」 -->
+      <div class="chainwb__center">
+        <ChainWorkPanel
+          v-model:active-key="activeKey"
+          :tabs="tabs"
+          @close="wb.close"
+          @dirty-change="wb.setDirty"
+          @open-chain="wb.openCanvas"
+        />
 
-      <!-- 栏 3：右侧抽屉（TRAE 式 header 四 tab：链路树/属性/EL预览/大纲）。
+        <!-- 底部执行控制台：树右键「执行」结果汇入（Trae terminal 范式），跑完自动弹出；
+             展开时中栏内 flex:1 的面板自动让位，无需重算高度 -->
+        <ExecuteConsole />
+      </div>
+
+      <!-- 栏 4：右侧抽屉（TRAE 式 header 四 tab：链路树/属性/EL预览/大纲）。
            折叠不收边销毁（宽度收 0 + overflow 裁剪），tab 停留位、树展开/搜索态全部保活；
            属性/EL/大纲的数据读当前激活画布上报的名片（activePort） -->
       <Splitter v-if="!drawerCollapsed" v-model="drawerWidth" target="next" />
@@ -63,10 +80,6 @@
         </EditorDrawer>
       </div>
     </div>
-
-    <!-- 底部执行控制台：树右键「执行」结果汇入（Trae terminal 范式），跑完自动弹出；
-         作为 .chainwb 的 flex 兄弟节点插入，展开时 .chainwb flex:1 自动让位，无需重算高度 -->
-    <ExecuteConsole />
 
     <!-- 链路新增/编辑（树头部/目录右键新建与叶子编辑共用；成功后刷树，新建连画布 tab 一起开） -->
     <ChainForm ref="chainFormRef" @success="onChainFormSaved" />
@@ -96,6 +109,8 @@ import WorkbenchHeader from '../../workbench/components/WorkbenchHeader.vue';
 import ExecuteConsole from '../../workbench/components/ExecuteConsole.vue';
 import { useExecuteConsole } from '../../workbench/composables/useExecuteConsole';
 import AiAssistantRail from '../../workbench/ai/AiAssistantRail.vue';
+import AiHistoryRail from '../../workbench/ai/AiHistoryRail.vue';
+import { useAiSessionHistory } from '../../workbench/ai/useAiSessionHistory';
 import ChainForm, { type ChainFormSuccessPayload } from '../ChainForm.vue';
 import ChainCopyDialog from '../ChainCopyDialog.vue';
 import ManualExecuteDialog from '@/views/databus/execution/ManualExecuteDialog.vue';
@@ -117,6 +132,13 @@ const { open: consoleOpen, errorCount: consoleErrorCount, append: appendExecuteL
 /** 前端偏好：AI 栏开合与宽度；右侧抽屉开合（'1'/'0'，与全屏编辑器同一 key）、宽度（默认 300） */
 const aiCollapsed = usePersisted('databus.chainwb.aiCollapsed', true);
 const aiWidth = usePersisted('databus.chainwb.aiWidth', 300);
+/** AI 栏最小宽度：再窄对话区无可用宽度，同时作为「拖到最窄=收起历史栏」的阈值 */
+const AI_MIN_WIDTH = 220;
+/** 会话历史栏（AI 助手左边的兄弟栏）：开合与宽度两个工作台共享同一单例，切页不跳变；
+ *  AI 收起/拖到最窄时单向连带收起历史栏（反向不自动弹回） */
+const { collapsed: historyCollapsed, width: historyWidth, bindHistoryToAi } =
+  useAiSessionHistory();
+bindHistoryToAi(aiCollapsed, aiWidth, AI_MIN_WIDTH);
 const { collapsed: drawerCollapsed, setCollapsed: setDrawerCollapsed } =
   usePanelCollapse('databus.drawer.collapsed');
 const drawerWidth = usePersisted('databus.drawer.width', 300);
@@ -303,6 +325,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   background: var(--el-bg-color, #fff);
   border: 1px solid var(--el-border-color-lighter, #ebeef5);
   border-radius: 8px;
+}
+
+/* 中栏：工作面板（flex:1）+ 执行终端纵向排布，宽度 = 三栏分配后的余量，
+   终端因此只占中栏宽，不再横跨左右两栏 */
+.chainwb__center {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 右侧抽屉槽：折叠时宽度收 0（不 v-if，保活 tab 停留位与链路树状态）；

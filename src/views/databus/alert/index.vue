@@ -11,7 +11,7 @@
         <div class="page-title-wrap">
           <h2 class="page-title">告警管理</h2>
           <p class="page-subtitle">
-            每分钟扫描启用规则，命中即触发并邮件通知，恢复即自动收线；持续触发不重复通知。
+            每分钟扫描启用规则，命中即按渠道通知（邮件/Webhook/通知链路），恢复即自动收线；持续触发不重复通知。
           </p>
         </div>
         <div class="header-actions">
@@ -98,7 +98,19 @@
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="notifyEmails" label="通知邮箱" min-width="180" show-overflow-tooltip />
+              <el-table-column label="通知渠道" min-width="150">
+                <template #default="{ row }">
+                  <el-tag
+                    v-for="t in notifyTypeList(row.notifyType)"
+                    :key="t"
+                    size="small"
+                    effect="plain"
+                    class="channel-tag"
+                  >
+                    {{ notifyTypeLabel(t) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
               <el-table-column label="操作" width="130" align="center" fixed="right">
                 <template #default="{ row }">
                   <el-button
@@ -202,7 +214,13 @@
               <el-table-column prop="message" label="告警摘要" min-width="200" show-overflow-tooltip />
               <el-table-column label="通知" width="100" align="center">
                 <template #default="{ row }">
-                  <span :class="notifyCls(row.notifyStatus)">{{ notifyLabel(row.notifyStatus) }}</span>
+                  <el-tooltip
+                    :content="notifyDetailText(row.notifyDetail)"
+                    :disabled="!row.notifyDetail"
+                    placement="top"
+                  >
+                    <span :class="notifyCls(row.notifyStatus)">{{ notifyLabel(row.notifyStatus) }}</span>
+                  </el-tooltip>
                 </template>
               </el-table-column>
               <el-table-column label="触发时间" width="170" class-name="num-cell">
@@ -236,6 +254,7 @@
 import { Bell, Plus } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
+  ALERT_NOTIFY_TYPE_OPTIONS,
   ALERT_RULE_TYPE_OPTIONS,
   delAlertRule,
   evaluateAlert,
@@ -419,15 +438,41 @@ const ruleConditionText = (row: DatabusAlertRuleVo) => {
 
 const notifyLabel = (status?: string | null) => {
   if (status === 'SUCCESS') return '已发送';
+  if (status === 'PARTIAL') return '部分成功';
+  if (status === 'DISPATCHED') return '已投递';
   if (status === 'FAILED') return '发送失败';
   if (status === 'SKIPPED') return '未配置';
   return '-';
 };
 
 const notifyCls = (status?: string | null) => {
-  if (status === 'SUCCESS') return 'notify-ok';
+  if (status === 'SUCCESS' || status === 'DISPATCHED') return 'notify-ok';
   if (status === 'FAILED') return 'notify-bad';
+  if (status === 'PARTIAL') return 'notify-warn';
   return '';
+};
+
+/** 规则行通知渠道标签（逗号串 → 数组） */
+const notifyTypeList = (notifyType?: string | null) =>
+  (notifyType ?? '')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+const notifyTypeLabel = (type: string) =>
+  ALERT_NOTIFY_TYPE_OPTIONS.find((item) => item.value === type)?.label ?? type;
+
+/** 逐渠道通知明细（JSON → 可读文本，tooltip 展示） */
+const notifyDetailText = (detail?: string | null) => {
+  if (!detail) return '';
+  try {
+    const parsed = JSON.parse(detail) as Record<string, string>;
+    return Object.entries(parsed)
+      .map(([channel, status]) => `${notifyTypeLabel(channel)}：${status}`)
+      .join('\n');
+  } catch {
+    return detail;
+  }
 };
 
 const formatTime = (t?: string | null) => {
@@ -568,7 +613,15 @@ onMounted(() => {
   color: var(--el-color-success);
 }
 
+.notify-warn {
+  color: var(--el-color-warning);
+}
+
 .notify-bad {
   color: var(--el-color-danger);
+}
+
+.channel-tag {
+  margin-right: 4px;
 }
 </style>

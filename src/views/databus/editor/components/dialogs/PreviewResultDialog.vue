@@ -57,10 +57,14 @@
         <el-table :data="result.steps ?? []" size="small" border style="margin-bottom: 10px">
           <el-table-column type="index" label="#" width="42" />
           <el-table-column label="数据空间" prop="tag" min-width="120" show-overflow-tooltip />
-          <el-table-column label="节点标题" min-width="130">
+          <el-table-column label="节点标题" min-width="160">
             <template #default="{ row }">
-              <div class="preview-result__step-nodeid">{{ row.nodeId }}</div>
-              <div class="preview-result__step-title">{{ resolveStepTitle(row) }}</div>
+              <div class="preview-result__step-cell" :style="{ paddingLeft: depthPx(row) }">
+                <div class="preview-result__step-nodeid" :title="row.depth ? `所属子链：${row.ownerChain ?? ''}` : ''">
+                  <span v-if="row.depth" class="preview-result__step-subchain">↳ </span>{{ row.nodeId }}
+                </div>
+                <div class="preview-result__step-title">{{ resolveStepTitle(row) }}</div>
+              </div>
             </template>
           </el-table-column>
           <el-table-column label="结果" width="70">
@@ -155,6 +159,12 @@ function stepResultText(row: NodeStep): string {
   }
   return row.summary || '完成';
 }
+
+/** 步骤行缩进：主链 depth=0 不缩进，每深一层 +16px，上限 5 层防止表格被撑爆 */
+function depthPx(row: NodeStep): string {
+  const d = Math.min(row.depth ?? 0, 5);
+  return d * 16 + 'px';
+}
 </script>
 
 <style scoped>
@@ -208,6 +218,11 @@ function stepResultText(row: NodeStep): string {
   color: var(--el-text-color-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.preview-result__step-subchain {
+  color: var(--el-color-primary);
+  font-weight: 600;
 }
 
 .preview-result__step-title {

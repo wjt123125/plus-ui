@@ -65,6 +65,10 @@ export interface DatabusExecutionNodeVo {
   duration?: number | null;
   /** 分支标记（IF=true/false、SWITCH=<nodeId>、LOOP=<轮次>，多段分号拼接） */
   branchInfo?: string | null;
+  /** 链路嵌套深度：主链步骤=0，子链步骤按层级递增（旧数据为 null，按 0 处理） */
+  depth?: number | null;
+  /** 该步所属链的 chainCode（子链步骤标明归属） */
+  ownerChain?: string | null;
   createTime?: string;
 }
 

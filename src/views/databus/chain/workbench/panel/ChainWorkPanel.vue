@@ -6,7 +6,7 @@
       pane 即 ChainCanvasPane 的 workbench 宿主（v-show 切换不销毁，切走草稿与画布布局保留）。
       关闭带脏圆点的 tab 弹确认（全站唯一模态）；Ctrl+PageDown/PageUp 循环切 tab。
     -->
-    <div class="chain-work-panel__strip">
+    <div v-if="tabs.length" class="chain-work-panel__strip">
       <div class="chain-work-panel__tabs">
         <div
           v-for="tab in tabs"
@@ -38,6 +38,7 @@
           :load-chain-id="tab.chainId"
           :active="tab.key === activeKey"
           @dirty-change="(dirty) => emit('dirty-change', tab.chainId, dirty)"
+          @open-chain="(chainId, title) => emit('open-chain', chainId, title)"
         />
       </div>
     </div>
@@ -64,6 +65,7 @@ const emit = defineEmits<{
   (e: 'update:activeKey', key: string): void;
   (e: 'close', key: string): void;
   (e: 'dirty-change', chainId: ChainTab['chainId'], dirty: boolean): void;
+  (e: 'open-chain', chainId: number | string, title: string): void;
 }>();
 
 /** 关闭请求：脏 tab 先确认（全站唯一模态），其余直接关 */
@@ -147,8 +149,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 42px;
-  margin: 8px 8px 4px;
+  /* 34px + 无上外边距：tab 条与顶部 header、AI 栏头、链路树头齐成一条线（与 WorkPanel 同构） */
+  height: 34px;
+  margin: 0 8px 4px;
   padding: 0 4px;
   border-radius: var(--app-radius-lg, 14px);
   background: var(--wb-tab-track-bg);
@@ -165,7 +168,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   overflow-y: hidden;
   scrollbar-width: thin;
   min-width: 0;
-  padding: 5px 0 7px;
+  padding: 3px 0;
 }
 
 .wb-tab {
@@ -173,7 +176,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-  height: 28px;
+  height: 24px;
   padding: 0 6px 0 10px;
   max-width: 200px;
   border-radius: var(--app-radius-md, 10px);

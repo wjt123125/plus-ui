@@ -24,6 +24,14 @@ export interface MonitorOverviewVo {
   successRate?: number | string | null;
   /** 当前窗口加权平均耗时（毫秒）；无样本为 null */
   avgDuration?: number | null;
+  /** 当前窗口 P95 耗时（毫秒）。小时桶分位不可跨桶加权，取窗口内各链路-小时桶的最劣值；无样本为 null */
+  p95Duration?: number | null;
+  /** 当前窗口 P99 耗时（毫秒，口径同 P95）；无样本为 null */
+  p99Duration?: number | null;
+  /** 当前窗口有执行的链路数（活跃链路） */
+  activeChainCount?: number | null;
+  /** 当前处于 FIRING 状态的告警数（时点值，非窗口统计，无环比） */
+  firingAlertCount?: number | null;
   /** 上一窗口总执行次数 */
   prevTotalCount: number;
   /** 上一窗口成功次数 */
@@ -34,6 +42,12 @@ export interface MonitorOverviewVo {
   prevSuccessRate?: number | string | null;
   /** 上一窗口加权平均耗时（毫秒）；无样本为 null */
   prevAvgDuration?: number | null;
+  /** 上一窗口 P95 耗时（毫秒，口径同当前窗口）；无样本为 null */
+  prevP95Duration?: number | null;
+  /** 上一窗口 P99 耗时（毫秒）；无样本为 null */
+  prevP99Duration?: number | null;
+  /** 上一窗口有执行的链路数 */
+  prevActiveChainCount?: number | null;
 }
 
 /**
@@ -52,6 +66,34 @@ export interface MonitorTrendPointVo {
   successRate?: number | string | null;
   /** 该小时加权平均耗时（毫秒）；无样本为 null */
   avgDuration?: number | null;
+  /** 该小时 P95 耗时（毫秒）。桶内多链路的 P95 不可跨链加权合并，取桶内各链路的最劣值 */
+  p95Duration?: number | null;
+  /** 该小时 P99 耗时（毫秒，口径同 P95） */
+  p99Duration?: number | null;
+  /** 该小时最长单次执行耗时（毫秒） */
+  maxDuration?: number | null;
+  /** 该小时有执行的链路数（活跃链路） */
+  chainCount?: number | null;
+}
+
+/**
+ * 链路健康行：窗口内每个有执行的链路一行的量质速度全景。
+ */
+export interface ChainHealthVo {
+  /** 链路编码 */
+  chainCode: string;
+  /** 窗口内总执行次数 */
+  totalCount: number;
+  /** 窗口内成功次数 */
+  successCount: number;
+  /** 窗口内失败次数 */
+  failedCount: number;
+  /** 窗口内成功率（百分比，两位）；无样本为 null */
+  successRate?: number | string | null;
+  /** 窗口内加权平均耗时（毫秒）；无样本为 null */
+  avgDuration?: number | null;
+  /** 窗口内 P95 耗时（毫秒，各小时桶最劣值）；无样本为 null */
+  p95Duration?: number | null;
 }
 
 /**

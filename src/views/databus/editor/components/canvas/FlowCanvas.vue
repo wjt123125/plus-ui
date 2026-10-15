@@ -69,6 +69,7 @@ defineProps<{
 const emit = defineEmits<{
   (e: 'select', id: string | null): void;
   (e: 'drop-node', payload: { type: string; x: number; y: number }): void;
+  (e: 'node-dblclick', node: Node<CmpNodeData>): void;
 }>();
 
 // 节点类型注册：业务节点 cmp 与 gateway/junction/placeholder 三种结构节点平级
@@ -90,6 +91,7 @@ const {
   screenToFlowCoordinate,
   addEdges,
   onNodeClick,
+  onNodeDoubleClick,
   onEdgeClick,
   onPaneClick,
   onConnect
@@ -133,6 +135,8 @@ function onDrop(event: DragEvent) {
 }
 
 onNodeClick(({ node }) => emit('select', node.id));
+// 双击节点：当前仅 CHAIN 引用节点消费（打开子链路画布），其他节点忽略
+onNodeDoubleClick(({ node }) => emit('node-dblclick', node as Node<CmpNodeData>));
 onEdgeClick(({ edge }) => emit('select', edge.id));
 onPaneClick(() => emit('select', null));
 </script>

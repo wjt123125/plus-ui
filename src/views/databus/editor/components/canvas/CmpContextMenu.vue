@@ -24,6 +24,11 @@
         <li class="cmp-ctx-menu__item is-danger" @click="onDeleteNode">
           <el-icon><Delete /></el-icon><span>删除节点</span>
         </li>
+        <li class="cmp-ctx-menu__divider" />
+        <!-- 文档级动作在节点菜单也留入口（入参登记跟链路走，不依赖选中哪个节点） -->
+        <li class="cmp-ctx-menu__item" @click="onInputParams">
+          <el-icon><Operation /></el-icon><span>入参登记</span>
+        </li>
       </template>
 
       <template v-else-if="ctrl.menu.scene === 'edge'">

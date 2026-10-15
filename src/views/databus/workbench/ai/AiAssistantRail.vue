@@ -2,13 +2,21 @@
   <div v-if="!collapsed" class="ai-rail" :style="{ width: `${width}px` }">
     <!--
       AI 对话栏（databus 工作台共享件，v1 空壳）：欢迎空态 + 禁用输入框。
-      宽度可自由拖拽（不设上下限）、开合记 localStorage。**收起即宽度归零、不占位**——原 44px mini rail 形态与
-      根 div 上的 @click 已废除（它是「点收起无反应」Bug 的载体），开合的唯一入口在顶部 header。
+      宽度可自由拖拽、开合记 localStorage。**收起即宽度归零、不占位**——原 44px mini rail 形态与
+      根 div 上的 @click 已废除（它是「点收起无反应」Bug 的载体），整栏开合的唯一入口在顶部 header。
+      「会话历史」是本栏左边的兄弟栏（AiHistoryRail 共享件），不再内嵌于此；本栏收起或被拖到最窄时
+      历史栏会单向连带收起（联动在宿主的 bindHistoryToAi 里），历史栏自身展开仍走 header。
       预留 select 事件钩子：后续 AI 助手可驱动资源树选中/右栏开 tab，载荷语义由消费页面定义。
     -->
+    <!-- 头部 30px：与工作台顶部 header、会话历史栏头、右栏抽屉 tab、资源树头同一条水平线 -->
     <div class="ai-rail__head">
       <el-icon class="ai-rail__spark"><MagicStick /></el-icon>
       <span class="ai-rail__title">{{ title }}</span>
+      <el-tooltip content="新会话" placement="bottom">
+        <button type="button" class="ai-rail__head-btn" @click="emit('new-session')">
+          <SvgIcon icon-class="lucide:message-square-plus" />
+        </button>
+      </el-tooltip>
     </div>
 
     <div class="ai-rail__body">
@@ -46,9 +54,11 @@ withDefaults(
   }
 );
 
-defineEmits<{
+const emit = defineEmits<{
   /** 预留：AI 选中某个业务对象（编码 / 链路 id），宿主做树联动 + 开 tab */
   (e: 'select', payload: string): void;
+  /** 点了「新会话」，宿主负责开一轮空白对话 */
+  (e: 'new-session'): void;
 }>();
 </script>
 
@@ -72,15 +82,44 @@ defineEmits<{
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 12px 12px 10px;
-    border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5);
+    /* 34px：与顶部 header / 右栏抽屉 tab / 资源树头齐平（point 4） */
+    height: 34px;
     flex-shrink: 0;
+    padding: 0 8px 0 12px;
+    border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5);
   }
 
   &__title {
-    font-size: 14px;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
     font-weight: 700;
     color: var(--el-text-color-primary, #1d2129);
+  }
+
+  &__head-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: var(--app-radius-sm);
+    background: none;
+    cursor: pointer;
+    color: var(--el-text-color-secondary);
+    font-size: 15px;
+    transition: all 0.2s;
+
+    &:hover {
+      background: var(--el-fill-color-light, #f5f7fa);
+      color: var(--el-color-primary);
+    }
   }
 
   &__body {

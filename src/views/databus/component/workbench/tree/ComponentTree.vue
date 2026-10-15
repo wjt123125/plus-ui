@@ -13,7 +13,6 @@
     -->
     <div class="cmp-tree__head">
       <span class="cmp-tree__title">组件</span>
-      <span class="cmp-tree__count">{{ rows.length }}</span>
     </div>
     <div v-loading="loading || taxonomyLoading" class="cmp-tree__body">
       <el-tree
@@ -26,11 +25,15 @@
         :default-expanded-keys="expandedKeys"
         :expand-on-click-node="false"
         highlight-current
+        draggable
+        :allow-drag="allowDrag"
+        :allow-drop="allowDrop"
         class="cmp-tree__el"
         @node-click="onNodeClick"
         @node-contextmenu="onNodeContextMenu"
         @node-expand="onNodeExpand"
         @node-collapse="onNodeCollapse"
+        @node-drop="onNodeDrop"
       >
         <template #default="{ data }">
           <span class="tree-node" :title="data.tip">
@@ -106,6 +109,8 @@ const emit = defineEmits<{
   (e: 'toggle', row: ComponentRegistryRow, enabled: boolean): void;
   (e: 'delete', row: ComponentRegistryRow): void;
   (e: 'add', preset?: FormPreset): void;
+  /** 拖拽换业务域：树上不闭环写库，把目标域交给宿主 PUT（含域 label 供提示） */
+  (e: 'move-domain', row: ComponentRegistryRow, domain: string, domainLabel: string): void;
 }>();
 
 useLucideSubset();
@@ -243,20 +248,27 @@ function countLeaves(nodes: ComponentTreeNode[]): number {
   return nodes.reduce((n, c) => n + (c.children ? countLeaves(c.children) : 1), 0);
 }
 
-/** business 组下钻三层：分段全部来自域字典，前端无本地分段表（§2.2） */
+/**
+ * business 组下钻三层：分段全部来自域字典，前端无本地分段表（§2.2）。
+ * 空域也照常渲染——拖拽换域时空域必须是合法落点，否则组件无法被移入新域。
+ */
 function businessNode(rows: ComponentRegistryRow[]): ComponentTreeNode {
-  const children = domains.value
-    .map((d) => {
-      // domain 为空的件归兜底域；slot 域由后端按 node_type 派生，前端只按字符串分桶
-      const bucket = rows.filter((r) => (r.domain || defaultDomainKey.value) === d.key);
-      return bucket.length
-        ? dirNode(`d:${d.key}`, d.label, 'domain', sortLeaves(bucket.map(leafOf)), {
-            group: 'business',
-            domain: d.key
-          })
-        : undefined;
-    })
-    .filter((n): n is ComponentTreeNode => !!n);
+  const children = domains.value.map((d) => {
+    // domain 为空的件归兜底域；slot 域由后端按 node_type 派生，前端只按字符串分桶
+    const bucket = rows.filter((r) => (r.domain || defaultDomainKey.value) === d.key);
+    const node = dirNode(
+      `d:${d.key}`,
+      d.label,
+      'domain',
+      sortLeaves(bucket.map(leafOf)),
+      { group: 'business', domain: d.key }
+    );
+    // 空域不挂「0」徽标（行尾保持干净），节点本身保留
+    if (node.badge === 0) {
+      node.badge = undefined;
+    }
+    return node;
+  });
   return dirNode('g:business', groupLabel('business'), 'group', children, { group: 'business' });
 }
 
@@ -337,6 +349,68 @@ function onNodeClick(data: ComponentTreeNode) {
   } else if (data.id === 'recent') {
     emit('update:scope', { kind: 'recent' });
   }
+}
+
+/* ---------------- 拖拽换业务域（Trae 式） ---------------- */
+
+/**
+ * el-tree 拖拽回调给的是内部 Node，其 data 宽类型为 Record<string, any>（Element 的 TreeNodeData）；
+ * 这里按 FakeNode 同构只取 data，函数内一次性断言成业务节点——不 import Element 内部 Node 类型。
+ */
+interface DragNode {
+  data: Record<string, any>;
+}
+
+/**
+ * 可拖：business 组下、有 DB 治理行的组件叶子。
+ * SYSTEM 纯内置无 db 行，换域无从落库；非 business 组没有域层级，均不开放。
+ */
+function allowDrag(node: DragNode): boolean {
+  const data = node.data as ComponentTreeNode;
+  const row = data.row;
+  return data.kind === 'leaf' && !!row && row.group === 'business' && !!row.db;
+}
+
+/**
+ * 落点规则：只允许 inner（不做同级排序）且落点必须是业务域节点，
+ * 且目标域 ≠ 当前域（当前域空值按兜底域口径，与分桶逻辑一致）。
+ */
+function allowDrop(
+  dragging: DragNode,
+  target: DragNode,
+  type: 'prev' | 'inner' | 'next'
+): boolean {
+  if (type !== 'inner') {
+    return false;
+  }
+  const dragData = dragging.data as ComponentTreeNode;
+  const targetData = target.data as ComponentTreeNode;
+  if (targetData.kind !== 'domain') {
+    return false;
+  }
+  const row = dragData.row;
+  const targetDomain = targetData.domain;
+  if (!row || !row.db || !targetDomain) {
+    return false;
+  }
+  return (row.domain || defaultDomainKey.value) !== targetDomain;
+}
+
+/**
+ * 落定只上抛宿主写库，树内不闭环：el-tree 已就地挪动 data，
+ * 宿主 PUT 后 getList → props.rows 变化 → treeData 重算，节点自动回正为后端真值
+ * （PUT 失败时同理会弹回原域，无需手动回滚）。
+ */
+function onNodeDrop(dragging: DragNode, dropNode: DragNode) {
+  const dragData = dragging.data as ComponentTreeNode;
+  const targetData = dropNode.data as ComponentTreeNode;
+  const row = dragData.row;
+  const domainKey = targetData.kind === 'domain' ? targetData.domain : undefined;
+  if (!row || !row.db || !domainKey) {
+    return;
+  }
+  const label = domains.value.find((d) => d.key === domainKey)?.label ?? domainKey;
+  emit('move-domain', row, domainKey, label);
 }
 
 /* ---------------- 右键菜单（§2.3） ---------------- */
@@ -462,7 +536,9 @@ watch(
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 8px 8px 14px;
+    /* 34px：与顶部 header、AI 栏头、tab 条齐成一条水平线 */
+    height: 34px;
+    padding: 0 8px 0 14px;
     flex-shrink: 0;
   }
 
@@ -470,11 +546,6 @@ watch(
     font-size: 13px;
     font-weight: 700;
     color: var(--el-text-color-primary, #1d2129);
-  }
-
-  &__count {
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
   }
 
   &__body {

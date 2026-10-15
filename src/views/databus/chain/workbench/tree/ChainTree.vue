@@ -10,7 +10,6 @@
     -->
     <div class="chain-tree__head">
       <span class="chain-tree__title">链路</span>
-      <span class="chain-tree__count">{{ chains.length }}</span>
       <span class="chain-tree__tools">
         <el-tooltip content="新建链路" placement="bottom">
           <button
@@ -59,14 +58,28 @@
         :expand-on-click-node="false"
         :filter-node-method="filterNode"
         highlight-current
+        draggable
+        :allow-drag="allowDrag"
+        :allow-drop="allowDrop"
         class="chain-tree__el"
         @node-click="onNodeClick"
         @node-contextmenu="onNodeContextMenu"
+        @node-drop="onNodeDrop"
       >
         <template #default="{ data }">
           <span class="tree-node" :title="tipOf(data)">
-            <SvgIcon class="tree-node__icon" :icon-class="iconOf(data)" />
+            <!-- 链路/模板叶子统一用确定性字母头像（chainCode 哈希配色）：
+                 叶子无 icon 字段，同图标会让整棵树失去辨识度；模板靠「精选模板」分组区分身份 -->
+            <span
+              v-if="data.type === 'chain' || data.type === 'template'"
+              class="tree-node__avatar"
+              :style="avatarStyle(data)"
+            >
+              {{ avatarLetter(data) }}
+            </span>
+            <SvgIcon v-else class="tree-node__icon" :icon-class="iconOf(data)" />
             <span class="tree-node__label">{{ data.label }}</span>
+            <span v-if="data.badge" class="tree-node__badge">{{ data.badge }}</span>
             <span v-if="data.type === 'chain'" class="tree-node__tail">
               <span class="tree-node__dot" :class="dotClass(data)" />
             </span>
@@ -153,7 +166,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch, type CSSProperties } from 'vue';
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus';
 import {
   addChainDirectory,
@@ -343,8 +356,22 @@ const treeData = computed<ChainTreeNode[]>(() => {
       children: tplNodes
     });
   }
+
+  // 统计挂到目录/虚拟根右侧（树头不再有全局计数）：后序遍历一次算完下辖链路数
+  roots.forEach(assignBadge);
   return roots;
 });
+
+/** 后序统计下辖叶子数（chain/template 计 1），写入容器节点的 badge */
+function assignBadge(node: ChainTreeNode): number {
+  if (node.type === 'chain' || node.type === 'template') return 1;
+  let sum = 0;
+  for (const child of node.children) {
+    sum += assignBadge(child);
+  }
+  node.badge = sum;
+  return sum;
+}
 
 /* ---------------- 交互 ---------------- */
 
@@ -356,13 +383,9 @@ function filterNode(value: string, data: ChainTreeNode): boolean {
 watch(keyword, (v) => treeRef.value?.filter(v));
 
 function onNodeClick(data: ChainTreeNode) {
-  if (data.type === 'chain') {
+  // 链路/模板叶子单击 = 直接开画布（模板本身也是可编辑链路，复制副本收入右键菜单）
+  if (data.type === 'chain' || data.type === 'template') {
     emit('open', data.chainId, data.label);
-    return;
-  }
-  if (data.type === 'template') {
-    // 模板叶子单击 = 使用模板（复制副本并开画布），与链路叶子单击开画布同级语义
-    emit('chain-action', 'use-template', data);
     return;
   }
   // 目录/未归组/模板根：手动 toggle 展开（expand-on-click-node=false，点击不与选中冲突）
@@ -372,11 +395,16 @@ function onNodeClick(data: ChainTreeNode) {
   }
 }
 
-// 外部（中栏关 tab）变化时同步树高亮
+// 外部（中栏关 tab/开模板画布）变化时同步树高亮：模板节点 key 是 tpl:{id}，普通链路是 chain:{id}
 watch(
   () => props.activeChainId,
   (id) => {
-    treeRef.value?.setCurrentKey(id == null ? null : `chain:${String(id)}`);
+    if (id == null) {
+      treeRef.value?.setCurrentKey(null);
+      return;
+    }
+    const isTemplate = templates.value.some((t) => String(t.id) === String(id));
+    treeRef.value?.setCurrentKey(`${isTemplate ? 'tpl' : 'chain'}:${String(id)}`);
   },
   { immediate: true }
 );
@@ -623,15 +651,73 @@ async function submitMove() {
   }
 }
 
+/* ---------------- 拖拽换归属（Trae 式） ---------------- */
+
+/**
+ * el-tree 拖拽回调给的是内部 Node，其 data 宽类型为 Record<string, any>（Element 的 TreeNodeData）；
+ * 这里按 FakeNode 同构只取 data，函数内一次性断言成业务节点——不 import Element 内部 Node 类型。
+ */
+interface DragNode {
+  data: Record<string, any>;
+}
+
+/** 可拖：真实链路叶子（换目录）与目录（换父）；模板/虚拟根不可拖 */
+function allowDrag(node: DragNode): boolean {
+  const data = node.data as ChainTreeNode;
+  return data.type === 'chain' || data.type === 'directory';
+}
+
+/**
+ * 落点规则：只允许 inner（不做同级排序，排序仍由目录 sort 字段管），
+ * 链路 → 目录/未归组；目录 → 别的目录，且目标不得在自己的子树内（前端先拦，
+ * 后端 updateChainDirectory 也做环校验，省一次必然失败的请求）。
+ */
+function allowDrop(dragging: DragNode, target: DragNode, type: 'prev' | 'inner' | 'next'): boolean {
+  if (type !== 'inner') return false;
+  const dragData = dragging.data as ChainTreeNode;
+  const targetData = target.data as ChainTreeNode;
+  const targetDirId = targetData.directoryId;
+  if (dragData.type === 'chain') {
+    if (targetData.type === 'ungrouped') return dragData.directoryId != null;
+    if (targetData.type !== 'directory') return false;
+    return String(dragData.directoryId) !== String(targetDirId);
+  }
+  if (targetData.type !== 'directory') return false;
+  if (String(dragData.directoryId) === String(targetDirId)) return false;
+  return !subtreeIds(String(dragData.directoryId)).has(String(targetDirId));
+}
+
+/** 落定即提交后端，成败都 reload：el-tree 已就地改过 data，用后端真值覆盖回视觉 */
+async function onNodeDrop(dragging: DragNode, target: DragNode) {
+  const dragData = dragging.data as ChainTreeNode;
+  const targetData = target.data as ChainTreeNode;
+  const directoryId = targetData.type === 'ungrouped' ? null : targetData.directoryId;
+  try {
+    if (dragData.type === 'chain') {
+      await moveChainToDirectory({ chainId: dragData.chainId, directoryId });
+      ElMessage.success('链路归属已更新');
+    } else {
+      const dir = directories.value.find((d) => String(d.id) === String(dragData.directoryId));
+      if (!dir) return;
+      await updateChainDirectory({
+        id: dir.id,
+        parentId: directoryId ?? 0,
+        directoryName: dir.directoryName,
+        sort: dir.sort,
+        remark: dir.remark
+      });
+      ElMessage.success('目录已移动');
+    }
+  } catch {
+    /* 拦截器已提示（后端环校验/重名等） */
+  } finally {
+    await reload();
+  }
+}
+
 /* ---------------- 渲染辅助 ---------------- */
 
 function iconOf(data: ChainTreeNode): string {
-  if (data.type === 'chain') {
-    return 'lucide:spline';
-  }
-  if (data.type === 'template') {
-    return 'lucide:sparkles';
-  }
   if (data.type === 'template-root') {
     return 'lucide:star';
   }
@@ -639,6 +725,32 @@ function iconOf(data: ChainTreeNode): string {
     return 'lucide:boxes';
   }
   return 'lucide:folder';
+}
+
+/**
+ * 链路字母头像（n8n/飞书范式）：chainCode 哈希 → 量化色相 → HSL 底色 + 名称首字。
+ * 同一链路永远同色，树与别处可交叉识别；无需后端加 icon 字段，也不给用户选择负担。
+ * 将来若上「用户自选图标」，头像作为未设置时的兜底渲染即可平滑演进。
+ */
+const AVATAR_HUE_STEPS = 12;
+
+function hashOf(text: string): number {
+  let h = 0;
+  for (let i = 0; i < text.length; i++) {
+    h = (h * 31 + text.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+function avatarStyle(data: ChainTreeNode): CSSProperties {
+  const seed = String(data.chainCode || data.chainId || data.id);
+  const hue = (hashOf(seed) % AVATAR_HUE_STEPS) * (360 / AVATAR_HUE_STEPS);
+  return { background: `hsl(${hue}, 58%, 48%)` };
+}
+
+function avatarLetter(data: ChainTreeNode): string {
+  const first = data.label.trim().charAt(0);
+  return /[a-z]/.test(first) ? first.toUpperCase() : first || '?';
 }
 
 /** 链路状态色点：0草稿(橙) 1已发布(绿) 2已下线(灰蓝) */
@@ -684,7 +796,9 @@ defineExpose({ reload });
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 8px 8px 14px;
+    /* 34px：与顶部 header、AI 栏头、抽屉 tab 齐成一条水平线 */
+    height: 34px;
+    padding: 0 8px 0 14px;
     flex-shrink: 0;
   }
 
@@ -694,15 +808,18 @@ defineExpose({ reload });
     color: var(--el-text-color-primary, #1d2129);
   }
 
-  &__count {
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
-  }
-
   &__tools {
     margin-left: auto;
     display: flex;
     gap: 2px;
+    /* 默认隐身，hover 整棵树面板（含搜索框/列表区）或键盘聚焦到按钮时才淡入，保持树头干净 */
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  &:hover &__tools,
+  &:focus-within &__tools {
+    opacity: 1;
   }
 
   &__tool {
@@ -779,6 +896,35 @@ defineExpose({ reload });
     flex-shrink: 0;
     font-size: 14px;
     color: var(--el-text-color-secondary);
+  }
+
+  /* 链路字母头像：确定性配色（同码同色），18px 与图标同宽保持行内节奏 */
+  &__avatar {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    color: #fff;
+  }
+
+  /* 下辖链路数徽标（目录/未归组/精选模板根），与 ComponentTree 同款 */
+  &__badge {
+    margin-left: auto;
+    flex-shrink: 0;
+    min-width: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    font-size: 11px;
+    line-height: 16px;
+    text-align: center;
+    color: var(--el-text-color-secondary);
+    background: var(--el-fill-color, #f0f2f5);
   }
 
   &__label {

@@ -92,7 +92,8 @@ function onReveal(entry: CompileLogEntry, d: ScriptDiagnostic) {
   display: flex;
   flex-direction: column;
   height: 200px;
-  margin-top: 6px;
+  /* 宿主是中栏容器（工作面板下方）：左右 8px 与 tab strip 的内缩对齐，卡片不贴工作台边框 */
+  margin: 6px 8px 8px;
   border-radius: var(--app-radius-lg, 14px);
   background: var(--el-bg-color, #fff);
   box-shadow: var(--wb-tab-card-shadow);

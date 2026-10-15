@@ -3,7 +3,9 @@
   <div class="cmpwb-page">
     <!--
       组件管理工作台（三栏推拉布局，无遮罩抽屉，对标 Trae 客户端）：
-        AI 助手栏 / 工作面板（主内容区）/ 组件树
+        会话历史栏 / AI 助手栏 / 工作面板（主内容区）/ 组件树
+      会话历史是 AI 助手左边的兄弟栏，独立拖宽；AI 栏收起或拖到最窄时历史栏单向连带收起，
+      展开历史栏仍走顶部 header（反向不自动弹回）。
       「组件库」是工作面板里的一个普通 tab（卡片网格宿主），与其它 tab 一样可关闭；
       点树的目录节点打开/聚焦它，点叶节点或卡片开「查看」tab；编辑与代码变更各自独立 tab，
       tab 身份 = 组件 + 模式，会话仅存内存，离开路由即清空。分栏宽度与开合状态记 localStorage。
@@ -14,6 +16,7 @@
       calc(100vh - 123px)、header flex-shrink:0、.cmpwb flex:1 + min-height:0 三段式分配，不再硬算。
     -->
     <WorkbenchHeader
+      v-model:history-collapsed="historyCollapsed"
       v-model:ai-collapsed="aiCollapsed"
       v-model:nav-collapsed="treeCollapsed"
       v-model:console-open="consoleOpen"
@@ -24,7 +27,11 @@
     />
 
     <div class="cmpwb">
-      <!-- 栏 1：AI 助手 -->
+      <!-- 栏 1：会话历史（AI 助手的兄弟栏，v1 无会话后端，列表走空态） -->
+      <AiHistoryRail :collapsed="historyCollapsed" :width="historyWidth" />
+      <Splitter v-if="!historyCollapsed" v-model="historyWidth" :min="180" />
+
+      <!-- 栏 2：AI 助手 -->
       <AiAssistantRail
         :collapsed="aiCollapsed"
         :width="aiWidth"
@@ -33,47 +40,57 @@
         welcome-desc="用自然语言查询组件、生成参数契约与排查脚本编译失败。"
         @select="onAiSelect"
       />
-      <Splitter v-if="!aiCollapsed" v-model="aiWidth" />
+      <!-- min=AI_MIN_WIDTH：再窄对话区无可用宽度；拖到下限即联动收起历史栏 -->
+      <Splitter v-if="!aiCollapsed" v-model="aiWidth" :min="AI_MIN_WIDTH" />
 
-      <!-- 栏 2：工作面板（主内容区，常驻不可折叠） -->
-      <WorkPanel
-        v-model:active-key="activeKey"
-        :tabs="tabs"
-        :rows="rows"
-        :tag-suggestions="tagPool"
-        :refresh-tokens="refreshTokens"
-        @close="wb.close"
-        @dirty-change="wb.setDirty"
-        @saved="handleSaved"
-        @rolled="handleRolled"
-        @open-changes="handleOpenChanges"
-        @edit="handleEdit"
-        @delete="handleDelete"
-        @changes="handleChanges"
-      >
-        <template #grid>
-          <ComponentGrid
-            :rows="scopedRows"
-            :scope="scope"
-            :unhealthy="unhealthy"
-            :loading="loading"
-            :toggling-code="togglingCode"
-            :active-code="activeCode"
-            @open="openDetail"
-            @edit="handleEdit"
-            @delete="handleDelete"
-            @toggle="toggleEnabled"
-          >
-            <template #meta>
-              <span class="cmpwb__counts">
-                内置 {{ builtinCount }} · 治理覆盖 {{ overlayCount }} · 库存脚本件 {{ customCount }}
-              </span>
-            </template>
-          </ComponentGrid>
-        </template>
-      </WorkPanel>
+      <!-- 栏 3：中栏容器 = 工作面板（多 tab 主内容区）+ 底部编译终端。
+           终端放进中栏而不是整页 flex 兄弟：宽度只吃中栏，AI 栏展开时不再被它压高度，
+           组件树收起时中栏变宽、终端跟着变宽，天然满足「按左右栏状态自适应」 -->
+      <div class="cmpwb__center">
+        <WorkPanel
+          v-model:active-key="activeKey"
+          :tabs="tabs"
+          :rows="rows"
+          :tag-suggestions="tagPool"
+          :refresh-tokens="refreshTokens"
+          @close="wb.close"
+          @dirty-change="wb.setDirty"
+          @saved="handleSaved"
+          @rolled="handleRolled"
+          @open-changes="handleOpenChanges"
+          @edit="handleEdit"
+          @delete="handleDelete"
+          @changes="handleChanges"
+        >
+          <template #grid>
+            <ComponentGrid
+              :rows="scopedRows"
+              :scope="scope"
+              :unhealthy="unhealthy"
+              :loading="loading"
+              :toggling-code="togglingCode"
+              :active-code="activeCode"
+              @open="openDetail"
+              @edit="handleEdit"
+              @delete="handleDelete"
+              @toggle="toggleEnabled"
+            >
+              <template #meta>
+                <span class="cmpwb__counts">
+                  内置 {{ builtinCount }} · 治理覆盖 {{ overlayCount }} · 库存脚本件 {{ customCount }}
+                </span>
+              </template>
+            </ComponentGrid>
+          </template>
+        </WorkPanel>
 
-      <!-- 栏 3：组件树（可拖宽、可收起；「新建组件」入口在目录节点的右键菜单里） -->
+        <!-- 底部编译控制台：脚本体发布/编译结果汇入（Trae terminal 范式），编译失败自动弹出；
+             展开时中栏内 flex:1 的面板自动让位，无需重算高度 -->
+        <CompileConsole />
+      </div>
+
+      <!-- 栏 4：组件树（可拖宽、可收起；「新建组件」入口在目录节点的右键菜单里，
+           叶子可拖到业务域节点上换归属） -->
       <Splitter v-if="!treeCollapsed" v-model="treeWidth" target="next" />
       <ComponentTree
         v-if="!treeCollapsed"
@@ -91,12 +108,9 @@
         @toggle="toggleEnabled"
         @delete="handleDelete"
         @add="handleAdd"
+        @move-domain="handleMoveDomain"
       />
     </div>
-
-    <!-- 底部编译控制台：脚本体发布/编译结果汇入（Trae terminal 范式），编译失败自动弹出；
-         作为 .cmpwb 的 flex 兄弟节点插入，展开时 .cmpwb flex:1 自动让位，无需重算高度 -->
-    <CompileConsole />
   </div>
 </template>
 
@@ -118,6 +132,8 @@ import Splitter from '../workbench/components/Splitter.vue';
 import WorkbenchHeader from '../workbench/components/WorkbenchHeader.vue';
 import CompileConsole from '../workbench/components/CompileConsole.vue';
 import AiAssistantRail from '../workbench/ai/AiAssistantRail.vue';
+import AiHistoryRail from '../workbench/ai/AiHistoryRail.vue';
+import { useAiSessionHistory } from '../workbench/ai/useAiSessionHistory';
 import { useComponentTaxonomy } from '../editor/composables/useComponentTaxonomy';
 import { usePhIcons } from '../editor/composables/usePhIcons';
 import ComponentGrid from './workbench/list/ComponentGrid.vue';
@@ -150,6 +166,13 @@ wb.openGrid();
 /** 前端偏好：AI 栏与组件树的开合与宽度（工作面板是主内容区，不参与折叠） */
 const aiCollapsed = usePersisted('databus.cmpwb.aiCollapsed', true);
 const aiWidth = usePersisted('databus.cmpwb.aiWidth', 300);
+/** AI 栏最小宽度：再窄对话区无可用宽度，同时作为「拖到最窄=收起历史栏」的阈值 */
+const AI_MIN_WIDTH = 220;
+/** 会话历史栏（AI 助手左边的兄弟栏）：开合与宽度两个工作台共享同一单例，切页不跳变；
+ *  AI 收起/拖到最窄时单向连带收起历史栏（反向不自动弹回） */
+const { collapsed: historyCollapsed, width: historyWidth, bindHistoryToAi } =
+  useAiSessionHistory();
+bindHistoryToAi(aiCollapsed, aiWidth, AI_MIN_WIDTH);
 const treeCollapsed = usePersisted('databus.cmpwb.treeCollapsed', false);
 const treeWidth = usePersisted('databus.cmpwb.treeWidth', 240);
 
@@ -373,6 +396,25 @@ async function toggleEnabled(row: ComponentRegistryRow, val: boolean) {
   }
 }
 
+/**
+ * 组件树拖拽换业务域：只有治理行（有 db）能改归属，PUT 全量后重取台账
+ * ——与卡片启停同一范式，不手改本地 rows，一律以后端回读为准（树与网格同源自动跟随）。
+ */
+async function handleMoveDomain(row: ComponentRegistryRow, domain: string, domainLabel: string) {
+  if (!row.db || (row.domain || defaultDomainKey.value) === domain) {
+    return;
+  }
+  try {
+    await updateComponent({ ...row.db, domain });
+    modal.msgSuccess(`已将「${row.name}」移入业务域「${domainLabel}」`);
+  } catch {
+    /* 拦截器已 toast：不额外提示 */
+  } finally {
+    // el-tree 已就地挪动节点，成败都重取台账，让树回到后端真值（失败=视觉弹回原域）
+    await getList();
+  }
+}
+
 /** AI 助手选中某组件（v1 空壳预留）：等价于在树上点该叶子 */
 function onAiSelect(payload: string) {
   const row = rowByCode(payload);
@@ -448,6 +490,15 @@ onBeforeUnmount(() => {
   background: var(--el-bg-color, #fff);
   border: 1px solid var(--el-border-color-lighter, #ebeef5);
   border-radius: 8px;
+}
+
+/* 中栏：工作面板（flex:1）+ 编译终端纵向排布，宽度 = 三栏分配后的余量，
+   终端因此只占中栏宽，不再横跨左右两栏 */
+.cmpwb__center {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .cmpwb__counts {

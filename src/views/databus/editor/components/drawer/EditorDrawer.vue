@@ -146,17 +146,17 @@ watch(
   padding: 0 8px;
 }
 
-/* 页签样式与左侧物料区保持一致（12px 字号、30px 高、1px 细底线）；
-   四 tab 共存时压缩左右内边距防溢出 */
+/* 页签样式与左侧物料区保持一致（12px 字号、34px 高、1px 细底线）；
+   四 tab 共存时压缩左右内边距防溢出。34px 是工作台 header 统一线高度 */
 .editor-drawer__tabs :deep(.el-tabs__nav-wrap::after) {
   height: 1px;
 }
 
 .editor-drawer__tabs :deep(.el-tabs__item) {
-  height: 30px;
+  height: 34px;
   padding: 0 8px;
   font-size: 12px;
-  line-height: 30px;
+  line-height: 34px;
 }
 
 .editor-drawer__tabs :deep(.el-tabs__content) {

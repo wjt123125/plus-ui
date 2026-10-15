@@ -2,12 +2,30 @@
   <header class="wb-header">
     <!--
       工作台顶部 header（共享壳，§2.0）：侧栏开关的**唯一入口**。
-      只放左右两个常设开关，不放标题/面包屑/全局操作——避免长成第二条工具栏，页面标题由外层框架提供。
-      底部面板开关是 opt-in 第三块拼图：仅在 consoleOpen 属性传入时渲染（undefined 视为该页面
-      不提供底部面板），保持共享壳对其它使用方零影响。图标用 lucide 的 panel-* 侧栏语义图形
-      （DArrowLeft/Right 语义是「翻页」，不是「侧栏」），经 useLucideSubset 离线注入，不触发 iconify 联网取图。
+      只放侧栏开关，不放标题/面包屑/全局操作——避免长成第二条工具栏，页面标题由外层框架提供。
+      会话历史（AI 栏左边的兄弟栏）与底部面板开关都是 opt-in：仅在对应属性传入时渲染
+      （undefined 视为该页面不提供），保持共享壳对其它使用方零影响。图标用 lucide 的 panel-*
+      侧栏语义图形（DArrowLeft/Right 语义是「翻页」，不是「侧栏」），经 useLucideSubset
+      离线注入，不触发 iconify 联网取图。
     -->
     <div class="wb-header__side">
+      <!-- 会话历史栏开关（opt-in）：历史栏在 AI 助手左边，按钮也排在 AI 开关左边。
+           用 history 语义图形而不是再放一颗 panel-left，避免两个同形侧栏钮分不清 -->
+      <el-tooltip
+        v-if="historyCollapsed !== undefined"
+        :content="`${historyCollapsed ? '展开' : '收起'}${historyLabel}`"
+        placement="bottom"
+        :show-after="300"
+      >
+        <button
+          type="button"
+          class="wb-header__btn"
+          :aria-expanded="!historyCollapsed"
+          @click="emit('update:historyCollapsed', !historyCollapsed)"
+        >
+          <SvgIcon icon-class="lucide:history" />
+        </button>
+      </el-tooltip>
       <el-tooltip :content="`${aiCollapsed ? '展开' : '收起'}${aiLabel}${aiHotkey ? `（${aiHotkey}）` : ''}`" placement="bottom" :show-after="300">
         <button
           type="button"
@@ -60,6 +78,10 @@ defineOptions({ name: 'WorkbenchHeader' });
 
 withDefaults(
   defineProps<{
+    /** 会话历史栏（AI 助手左边的兄弟栏）是否收起；undefined = 该页面不提供历史栏，不渲染开关 */
+    historyCollapsed?: boolean;
+    /** 会话历史栏名称，进 tooltip 文案 */
+    historyLabel?: string;
     /** 左栏（对话栏）是否收起 */
     aiCollapsed: boolean;
     /** 右栏（资源树）是否收起 */
@@ -77,10 +99,17 @@ withDefaults(
     /** 面板收起时的错误角标数（>0 显示红点数字，>99 显示 99+） */
     consoleCount?: number;
   }>(),
-  { aiLabel: 'AI 助手', navLabel: '资源树', aiHotkey: 'Ctrl+U', consoleLabel: '编译输出' }
+  {
+    historyLabel: '会话历史',
+    aiLabel: 'AI 助手',
+    navLabel: '资源树',
+    aiHotkey: 'Ctrl+U',
+    consoleLabel: '编译输出'
+  }
 );
 
 const emit = defineEmits<{
+  (e: 'update:historyCollapsed', value: boolean): void;
   (e: 'update:aiCollapsed', value: boolean): void;
   (e: 'update:navCollapsed', value: boolean): void;
   (e: 'update:consoleOpen', value: boolean): void;
@@ -95,7 +124,8 @@ useLucideSubset();
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 30px;
+  /* 34px：与 AI 栏头、tab 条、资源树头、抽屉 tab 齐成一条水平线 */
+  height: 34px;
   padding: 0 4px;
 
   &__side {

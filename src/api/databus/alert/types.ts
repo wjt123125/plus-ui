@@ -15,9 +15,46 @@ export type AlertRuleType = 'CONSECUTIVE_FAILURE' | 'SUCCESS_RATE';
 export type AlertStatus = 'FIRING' | 'RECOVERED';
 
 /**
- * 通知结果（与后端 AlertNotifyStatusEnum 对齐）。
+ * 通知渠道类型（与后端 AlertNotifyTypeEnum 对齐）。
  */
-export type AlertNotifyStatus = 'SUCCESS' | 'FAILED' | 'SKIPPED';
+export type AlertNotifyType = 'EMAIL' | 'WEBHOOK' | 'CHAIN';
+
+/**
+ * 通知总结果（与后端 AlertNotifyStatusEnum 对齐；DISPATCHED 为 CHAIN 渠道专属=已投递异步执行）。
+ */
+export type AlertNotifyStatus = 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'SKIPPED' | 'DISPATCHED';
+
+/**
+ * 各渠道参数（notify_config 里本渠道键对应的对象）。
+ */
+export interface AlertEmailChannelConfig {
+  /** 收件邮箱（多个用逗号分隔） */
+  emails: string;
+}
+
+export interface AlertWebhookChannelConfig {
+  /** 回调地址（POST JSON） */
+  url: string;
+  /** 签名密钥（可选，配置后请求带 X-Databus-Signature = HMAC-SHA256(body, secret)） */
+  secret?: string;
+}
+
+export interface AlertChainChannelConfig {
+  /** 通知链路编码（告警时异步执行，入参=告警事件 JSON + params 补空位） */
+  chainCode: string;
+  /**
+   * 执行参数（可选）：JSON 对象，putIfAbsent 合并进告警事件根部（事件字段优先，只补空位）；
+   * 值支持 {{ $.路径 }} 模板对事件求值。借此既有链路（如 sendMail 自测链）可直接复用为通知链。
+   */
+  params?: Record<string, unknown>;
+}
+
+/** 渠道参数集合（键为渠道类型） */
+export type AlertNotifyConfig = Partial<{
+  EMAIL: AlertEmailChannelConfig;
+  WEBHOOK: AlertWebhookChannelConfig;
+  CHAIN: AlertChainChannelConfig;
+}>;
 
 /**
  * 告警规则 VO，与后端 DatabusAlertRuleVo 对齐。
@@ -37,8 +74,10 @@ export interface DatabusAlertRuleVo {
   thresholdCount?: number | null;
   /** 成功率下限百分比（SUCCESS_RATE 用，0-100） */
   thresholdRate?: number | string | null;
-  /** 通知邮箱（多个用逗号或分号分隔） */
-  notifyEmails: string;
+  /** 通知渠道（EMAIL/WEBHOOK/CHAIN，多选逗号分隔） */
+  notifyType: string;
+  /** 各渠道参数 JSON（键为渠道类型） */
+  notifyConfig?: string | null;
   /** 是否启用（Y/N） */
   enabled?: string;
   /** 备注 */
@@ -86,10 +125,12 @@ export interface DatabusAlertRecordVo {
   status: string;
   /** 告警摘要 */
   message?: string | null;
-  /** 通知对象（触发时快照） */
-  notifyEmails?: string | null;
-  /** 通知结果（SUCCESS / FAILED / SKIPPED） */
+  /** 通知渠道（触发时快照，逗号分隔） */
+  notifyType?: string | null;
+  /** 通知总结果（SUCCESS / PARTIAL / FAILED / SKIPPED） */
   notifyStatus?: string | null;
+  /** 各渠道结果 JSON（{"EMAIL":"SUCCESS","WEBHOOK":"FAILED: ..."}） */
+  notifyDetail?: string | null;
   /** 触发时间 */
   triggerTime?: string;
   /** 恢复时间（FIRING 时为空） */

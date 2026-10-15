@@ -42,6 +42,9 @@ export interface ChainTreeNode {
   status?: string;
   /** 模板说明（仅 template；悬停 title 展示） */
   templateDesc?: string;
+  /** 下辖链路数（仅 directory/ungrouped/template-root；0 不渲染徽标）——
+   *  统计挂在各目录右侧而不是树头全局计数，避免「链路 19」这类悬空数字 */
+  badge?: number;
   /** 子节点（目录树 + 目录下链路；ungrouped 挂未归组链路；template-root 挂精选模板） */
   children: ChainTreeNode[];
 }

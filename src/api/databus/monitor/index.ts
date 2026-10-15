@@ -1,6 +1,7 @@
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
+  ChainHealthVo,
   MetricAggregateVo,
   MonitorErrorStreamVo,
   MonitorOverviewVo,
@@ -62,6 +63,20 @@ export function monitorErrorStream(limit = 20): AxiosPromise<MonitorErrorStreamV
     url: '/databus/monitor/error-stream',
     method: 'get',
     params: { limit }
+  });
+}
+
+/**
+ * 链路健康：窗口内每个有执行的链路一行的调用量/成功率/失败/平均/P95 全景
+ * GET /databus/monitor/chain-health（权限 databus:monitor:query）
+ *
+ * @param hours 窗口小时数，默认 24、上限 720
+ */
+export function monitorChainHealth(hours = 24): AxiosPromise<ChainHealthVo[]> {
+  return request({
+    url: '/databus/monitor/chain-health',
+    method: 'get',
+    params: { hours }
   });
 }
 

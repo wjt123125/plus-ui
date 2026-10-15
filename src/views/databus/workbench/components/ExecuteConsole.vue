@@ -1,12 +1,15 @@
-<!--
-  执行控制台（链路工作台底部抽屉，Node-RED debug sidebar / IDE terminal 范式）：
-  - 开合由 WorkbenchHeader 的 panel-bottom 开关控制（useExecuteConsole 单例，执行完自动弹出）；
-  - 日志行 = 时间 + 链路编码 + 成败概要（成功带耗时，失败带错误消息）；
-  - 有总账记录（recordId）时行尾可点「查看记录」跳执行记录详情。
-  视觉对齐编译控制台：14px 圆角卡片 + mono 字体日志 + 尾部自动滚动。
--->
+
 <template>
-  <section v-if="open" class="ec-console" aria-label="执行输出">
+  <div class="ec-root">
+    <!--
+      执行控制台（链路工作台底部抽屉，Node-RED debug sidebar / IDE terminal 范式）：
+      - 开合由 WorkbenchHeader 的 panel-bottom 开关控制（useExecuteConsole 单例，执行完自动弹出）；
+      - 日志行 = 时间 + 链路编码 + 成败概要（成功带耗时，失败带错误消息）；
+      - 有总账记录（recordId）时行尾可点「查看记录」，就地打开执行详情抽屉（不跳离工作台）。
+      视觉对齐编译控制台：14px 圆角卡片 + mono 字体日志 + 尾部自动滚动。
+    -->
+    <!-- 外层 transition 要求单根：wrapper 用 display:contents 不生成布局盒，section 仍是原 flex 子项 -->
+    <section v-if="open" class="ec-console" aria-label="执行输出">
     <header class="ec-console__head">
       <span class="ec-console__title">执行记录</span>
       <span v-if="errorCount" class="ec-console__count">最近一次失败</span>
@@ -43,7 +46,7 @@
               type="button"
               class="ec-console__record"
               title="查看执行记录详情"
-              @click="gotoRecord(entry.recordId)"
+              @click="openRecord(entry)"
             >
               查看记录
             </button>
@@ -52,22 +55,33 @@
         </div>
       </div>
     </div>
-  </section>
+    </section>
+    <ExecutionDetailDrawer
+      v-model:visible="detailVisible"
+      :record-id="detailRecordId"
+      @rerun="handleRerunDone"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
+import ExecutionDetailDrawer from '@/views/databus/execution/ExecutionDetailDrawer.vue';
+import type { DatabusExecutionResult } from '@/api/databus/execution/types';
 import { useLucideSubset } from '../composables/useLucideSubset';
 import { useExecuteConsole, type ExecuteLogEntry } from '../composables/useExecuteConsole';
 
 defineOptions({ name: 'ExecuteConsole' });
 
-const { open, entries, errorCount, clear } = useExecuteConsole();
-const router = useRouter();
+const { open, entries, errorCount, clear, append } = useExecuteConsole();
 
 const bodyRef = ref<HTMLElement>();
+
+/** 详情抽屉状态：点「查看记录」就地打开，不离开工作台 */
+const detailVisible = ref(false);
+const detailRecordId = ref<ExecuteLogEntry['recordId']>(null);
+/** 当前详情所属日志行：重跑补日志时回填链路信息 */
+const detailEntry = ref<ExecuteLogEntry>();
 
 useLucideSubset();
 
@@ -82,24 +96,42 @@ watch(
   }
 );
 
-/** 跳执行记录详情（路由由后端动态菜单注册，path 以 /databus/execution 结尾） */
-function gotoRecord(recordId: NonNullable<ExecuteLogEntry['recordId']>) {
-  const target = router.getRoutes().find((r) => r.path.endsWith('/execution') && r.path.includes('databus'));
-  if (!target) {
-    ElMessage.error('未找到执行记录页面，请确认该菜单已加载（重新登录后重试）');
-    return;
+/** 打开执行记录详情抽屉（就地查看，不跳路由） */
+function openRecord(entry: ExecuteLogEntry) {
+  detailEntry.value = entry;
+  detailRecordId.value = entry.recordId;
+  detailVisible.value = true;
+}
+
+/** 抽屉内重跑完成：补一条执行日志（与手动执行同一反馈通道）+ 详情切到新记录 */
+function handleRerunDone(result: DatabusExecutionResult) {
+  append({
+    level: result.success ? 'success' : 'error',
+    chainId: result.chainId ?? detailEntry.value?.chainId,
+    chainCode: detailEntry.value?.chainCode ?? String(result.chainId ?? ''),
+    text: result.message ?? '',
+    costTime: result.costTime,
+    recordId: result.recordId ?? null
+  });
+  if (result.recordId) {
+    detailRecordId.value = result.recordId;
   }
-  router.push({ path: target.path, query: { recordId: String(recordId) } });
 }
 </script>
 
 <style lang="scss" scoped>
+/* 单根容器：不生成布局盒，子项直接参与宿主 flex 布局 */
+.ec-root {
+  display: contents;
+}
+
 .ec-console {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   height: 200px;
-  margin-top: 6px;
+  /* 宿主是中栏容器（工作面板下方）：左右 8px 与 tab strip 的内缩对齐，卡片不贴工作台边框 */
+  margin: 6px 8px 8px;
   border-radius: var(--app-radius-lg, 14px);
   background: var(--el-bg-color, #fff);
   box-shadow: var(--wb-tab-card-shadow);

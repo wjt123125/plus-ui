@@ -20,6 +20,7 @@
           :edges="initial.edges"
           @select="ctrl.select($event)"
           @drop-node="onDropNode"
+          @node-dblclick="onNodeDblClick"
         />
         <!-- 全屏宿主身份卡：返回 + 链路名 + 脏点；workbench 宿主由 tab 承载身份 -->
         <EditorIdentityCard
@@ -96,6 +97,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { useVueFlow, type Node, type Edge } from '@vue-flow/core';
 import { Expand } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
@@ -130,6 +132,7 @@ import { useEditorHotkeys } from './composables/useEditorHotkeys';
 import { usePanelCollapse } from './composables/usePanelCollapse';
 import { usePreviewRun } from './composables/usePreviewRun';
 import { useComponentOptions } from './composables/useComponentOptions';
+import { useChainOptions } from './composables/useChainOptions';
 
 defineOptions({ name: 'ChainCanvasPane' });
 
@@ -152,7 +155,10 @@ const props = withDefaults(
   { host: 'editor', loadChainId: null, active: true }
 );
 
-const emit = defineEmits<{ 'dirty-change': [dirty: boolean] }>();
+const emit = defineEmits<{
+  'dirty-change': [dirty: boolean];
+  'open-chain': [chainId: number | string, title: string];
+}>();
 
 // ElNode 模型树是唯一数据源，画布是它的投影
 const treeModel = provideElTreeModel();
@@ -227,6 +233,43 @@ function onPropsChange() {
 
 function onDropNode(payload: { type: string; x: number; y: number }) {
   ctrl.insertNodeAt(payload.type, payload.x, payload.y);
+}
+
+// 双击 CHAIN 引用节点 → 打开子链路画布。
+// - workbench 宿主：emit open-chain 由工作台新开 tab（同链单例，不影响当前未保存画布）
+// - editor 宿主：新浏览器窗口打开（与 ChainSelect.openable 同口径，独立窗口隔离）
+// 子链 chainCode 存在节点 cmpId（projectChain 写入），从共享链路选项缓存里解析出 id/名称。
+const chainOpts = useChainOptions(() => ({ pageNum: 1, pageSize: 1000, isTemplate: '0' }));
+const router = useRouter();
+
+async function onNodeDblClick(node: Node<CmpNodeData>) {
+  const data = node.data;
+  if (!data || data.defType !== 'CHAIN') return;
+  const code = data.cmpId;
+  if (!code) {
+    ElMessage.warning('该子流程未选择引用的链路');
+    return;
+  }
+  const rows = await chainOpts.ensure();
+  const target = rows.find((c) => c.chainCode === code);
+  if (!target || !target.id) {
+    ElMessage.warning(`子流程「${code}」不存在或不可打开`);
+    return;
+  }
+  const title = target.chainName || code;
+  if (props.host === 'workbench') {
+    emit('open-chain', target.id, title);
+  } else {
+    const editorRoute = router
+      .getRoutes()
+      .find((r) => r.path.endsWith('/editor') && r.path.includes('databus'));
+    if (!editorRoute) {
+      ElMessage.error('未找到编辑器路由，请确认编辑器隐藏菜单已加载');
+      return;
+    }
+    const href = router.resolve({ path: editorRoute.path, query: { id: String(target.id) } }).href;
+    window.open(href, `databus_chain_${code}`);
+  }
 }
 
 // ── 右侧抽屉名片（DrawerPort）────────────────────────────────────────────

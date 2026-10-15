@@ -32,16 +32,20 @@
         <SvgIcon :icon-class="iconName" />
       </div>
       <div class="cmp-node__body">
-        <div class="cmp-node__label">{{ data.label }}</div>
-        <div v-if="showTitle" ref="titleRef" class="cmp-node__title">{{ data.title }}</div>
+        <div class="cmp-node__label">
+          {{ data.label }}
+          <span v-if="isChain" class="cmp-node__status-dot" :style="{ background: statusDotColor }" />
+        </div>
+        <div v-if="showTitleOverride" ref="titleRef" class="cmp-node__title">{{ displayTitle }}</div>
       </div>
       <Handle v-if="data.defType !== 'end'" type="source" :position="Position.Right" />
+      <span v-if="isChain && hover" class="cmp-node__open-hint" title="双击打开子流程">↗</span>
     </div>
     <template #content>
       <div class="cmp-tip">
-        <div v-if="showTipTitle" class="cmp-tip__title">{{ data.title }}</div>
+        <div v-if="showTipTitle" class="cmp-tip__title">{{ displayTitle }}</div>
         <div v-if="!data.virtual && data.cmpId" class="cmp-tip__space" :class="{ 'is-first': !showTipTitle }">
-          <span class="cmp-tip__space-k">数据空间</span>
+          <span class="cmp-tip__space-k">{{ isChain ? '子链编码' : '数据空间' }}</span>
           {{ data.cmpId }}
         </div>
       </div>
@@ -54,6 +58,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { Handle, Position, type NodeProps } from '@vue-flow/core';
 import type { CmpNodeData } from '../../composables/useElTreeModel';
 import { getDef, materialTick } from '../../cmp-defs';
+import { useChainOptions } from '../../composables/useChainOptions';
 import CmpContextPad from './CmpContextPad.vue';
 
 const props = defineProps<NodeProps<CmpNodeData>>();
@@ -92,11 +97,54 @@ const checkTruncation = () => {
   isTitleTruncated.value = !!el && el.scrollWidth > el.clientWidth;
 };
 
-watch([showTitle, () => props.data.title], () => nextTick(checkTruncation));
+// ── CHAIN 子流程卡片专属：中文名 + 状态色点 ──
+// cmpId 存的是子链 chainCode，从共享链路选项缓存解析出名称/状态；
+// 列表未加载时降级显示 chainCode，加载后响应式刷新（无需主动 ensure，
+// 链路树/ChainSelect 任意一处拉过即命中模块级缓存）。
+const isChain = computed(() => props.data.defType === 'CHAIN');
+const chainOpts = useChainOptions(() => ({ pageNum: 1, pageSize: 1000, isTemplate: '0' }));
+const chainInfo = computed(() => {
+  if (!isChain.value) return null;
+  const code = props.data.cmpId;
+  if (!code) return null;
+  return chainOpts.chains.value.find((c) => c.chainCode === code) ?? null;
+});
+
+/** 卡片次行：CHAIN 显示子链中文名（兜底编码），其他组件显示业务标题 */
+const displayTitle = computed(() => {
+  if (isChain.value) return chainInfo.value?.chainName || props.data.cmpId || '';
+  return props.data.title?.trim() || '';
+});
+
+/** 状态色点色值：已发布绿、草稿灰、已下线橙；解析不到时灰色 */
+const statusDotColor = computed(() => {
+  if (!isChain.value) return '';
+  switch (chainInfo.value?.status) {
+    case '1':
+      return 'var(--el-color-success)';
+    case '2':
+      return 'var(--el-color-warning)';
+    default:
+      return 'var(--el-text-color-placeholder)';
+  }
+});
+
+/** showTitle 复用 displayTitle：CHAIN 只要选了子链就显中文名，未选时与 label 相同则隐藏 */
+const showTitleOverride = computed(() => {
+  if (!isChain.value) return showTitle.value;
+  const t = displayTitle.value;
+  if (!t) return false;
+  if (t === props.data.label?.trim()) return false;
+  return true;
+});
+
+// 标题截断检测：必须放在 showTitleOverride/displayTitle 声明之后（watch 注册时会立即读源收集依赖，
+// 放前面会命中 showTitleOverride 的暂时性死区抛 ReferenceError）
+watch([showTitleOverride, displayTitle], () => nextTick(checkTruncation));
 onMounted(() => nextTick(checkTruncation));
 
 /** 浮层中是否显示标题：仅当画布上被截断时才补全，避免与画布重复 */
-const showTipTitle = computed(() => showTitle.value && isTitleTruncated.value);
+const showTipTitle = computed(() => showTitleOverride.value && isTitleTruncated.value);
 
 /** 浮层显隐：有截断标题需补全 或 有数据空间需展示；两者皆无则不出浮层 */
 const tipVisible = computed(() => showTipTitle.value || (!props.data.virtual && !!props.data.cmpId));
@@ -218,6 +266,9 @@ const tipVisible = computed(() => showTipTitle.value || (!props.data.virtual && 
 
 /* 顶行：组件类型名，永远显。冷灰主文本色 + 微收字距，标题感更强 */
 .cmp-node__label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   overflow: hidden;
   font-size: 13px;
   font-weight: 600;
@@ -226,6 +277,27 @@ const tipVisible = computed(() => showTipTitle.value || (!props.data.virtual && 
   letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* CHAIN 子流程状态色点：绿=已发布 / 灰=草稿 / 橙=已下线，与 ChainSelect 徽标同色语义 */
+.cmp-node__status-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+/* 双击暗示：CHAIN 卡片 hover 时右上角浮出 ↗，提示可下钻；pointer-events:none 不挡连线 */
+.cmp-node__open-hint {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--el-text-color-secondary);
+  opacity: 0.7;
+  pointer-events: none;
+  user-select: none;
 }
 
 /* 次行：业务标题，品牌色压深（70% 品牌 + 30% 深灰保证 11px 小字对比度），
