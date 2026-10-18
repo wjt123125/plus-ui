@@ -6,8 +6,8 @@
   视觉对齐工作台 Safari 卡片语言：14px 圆角 + 浮起投影，mono 字体日志。
 -->
 <template>
-  <section v-if="open" class="cc-console" aria-label="编译输出">
-    <header class="cc-console__head">
+  <section v-if="bare || open" class="cc-console" :class="{ 'is-bare': bare }" aria-label="编译输出">
+    <header v-if="!bare" class="cc-console__head">
       <span class="cc-console__title">编译输出</span>
       <span v-if="errorCount" class="cc-console__count">{{ errorCount }} 处错误</span>
       <span class="cc-console__spacer" />
@@ -61,6 +61,9 @@ import { useCompileConsole, type CompileLogEntry } from '../composables/useCompi
 
 defineOptions({ name: 'CompileConsole' });
 
+/** bare=true：由工作区终端容器统一提供头部（tab 条 + 清空/收起），本组件只渲日志体 */
+withDefaults(defineProps<{ bare?: boolean }>(), { bare: false });
+
 const { open, entries, errorCount, clear, requestReveal } = useCompileConsole();
 
 const bodyRef = ref<HTMLElement>();
@@ -98,6 +101,15 @@ function onReveal(entry: CompileLogEntry, d: ScriptDiagnostic) {
   background: var(--el-bg-color, #fff);
   box-shadow: var(--wb-tab-card-shadow);
   overflow: hidden;
+
+  /* 容器内嵌（工作区终端双小 tab）：褪去独立卡片样式，填满容器正文区 */
+  &.is-bare {
+    flex: 1;
+    height: 100%;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
 
   &__head {
     flex-shrink: 0;

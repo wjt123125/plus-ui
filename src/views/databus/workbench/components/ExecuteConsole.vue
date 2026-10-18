@@ -9,8 +9,8 @@
       视觉对齐编译控制台：14px 圆角卡片 + mono 字体日志 + 尾部自动滚动。
     -->
     <!-- 外层 transition 要求单根：wrapper 用 display:contents 不生成布局盒，section 仍是原 flex 子项 -->
-    <section v-if="open" class="ec-console" aria-label="执行输出">
-    <header class="ec-console__head">
+    <section v-if="bare || open" class="ec-console" :class="{ 'is-bare': bare }" aria-label="执行输出">
+    <header v-if="!bare" class="ec-console__head">
       <span class="ec-console__title">执行记录</span>
       <span v-if="errorCount" class="ec-console__count">最近一次失败</span>
       <span class="ec-console__spacer" />
@@ -72,6 +72,9 @@ import { useLucideSubset } from '../composables/useLucideSubset';
 import { useExecuteConsole, type ExecuteLogEntry } from '../composables/useExecuteConsole';
 
 defineOptions({ name: 'ExecuteConsole' });
+
+/** bare=true：由工作区终端容器统一提供头部（tab 条 + 清空/收起），本组件只渲日志体 */
+withDefaults(defineProps<{ bare?: boolean }>(), { bare: false });
 
 const { open, entries, errorCount, clear, append } = useExecuteConsole();
 
@@ -136,6 +139,15 @@ function handleRerunDone(result: DatabusExecutionResult) {
   background: var(--el-bg-color, #fff);
   box-shadow: var(--wb-tab-card-shadow);
   overflow: hidden;
+
+  /* 容器内嵌（工作区终端双小 tab）：褪去独立卡片样式，填满容器正文区 */
+  &.is-bare {
+    flex: 1;
+    height: 100%;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
 
   &__head {
     flex-shrink: 0;

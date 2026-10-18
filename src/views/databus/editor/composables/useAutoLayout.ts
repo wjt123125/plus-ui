@@ -74,9 +74,6 @@ function getElk(): Promise<ELK> {
   return elkPromise;
 }
 
-/** 重入防护:每次排列递增序号,await 回来后序号过期则丢弃结果(连续编辑只认最后一次) */
-let runSeq = 0;
-
 /** 画布节点的 port 命名约定:ELK 边的 endpoint 引用 "节点id.portId"。
  *  普通节点单入单出;gateway 多出口 id 与 outlet.handle 一致;
  *  junction 多入口 id 与 targetHandle(=outlet.handle) 一致。 */
@@ -89,6 +86,11 @@ function portSide(side: 'WEST' | 'EAST'): Record<string, string> {
 
 export function useAutoLayout(treeModel: ElTreeModel) {
   const { getNodes, getEdges, setNodes, fitView, vueFlowRef } = useVueFlow();
+
+  /** 重入防护:每次排列递增序号,await 回来后序号过期则丢弃结果(连续编辑只认最后一次)。
+   *  必须是「每画布实例各自计数」而非模块级全局:多 tab 保活时各 pane 独立,
+   *  否则一个 pane 触发的排列会顶掉另一个 pane 的序号,把它的布局结果丢掉(多 tab 恢复时集体不排列)。 */
+  let runSeq = 0;
 
   async function autoLayout(options: AutoLayoutOptions = {}): Promise<void> {
     const { fitView: shouldFit = true } = options;

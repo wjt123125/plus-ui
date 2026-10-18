@@ -1,13 +1,15 @@
 <template>
   <div class="editor-drawer" :class="{ 'is-collapsed': collapsed }">
     <el-tabs v-model="activeTab" class="editor-drawer__tabs">
-      <!-- 链路树 tab 仅工作台宿主出现（全屏编辑器无跨链导航）；内容由宿主经 slot 注入 -->
-      <el-tab-pane v-if="showTreeTab" label="链路树" name="tree" lazy>
+      <!-- 资源树 tab 仅工作台宿主出现（全屏编辑器无跨资源导航）；内容由宿主经 slot 注入 -->
+      <el-tab-pane v-if="showTreeTab" label="资源" name="tree" lazy>
         <div class="editor-drawer__tree">
           <slot name="tree" />
         </div>
       </el-tab-pane>
-      <el-tab-pane label="属性" name="props" lazy>
+      <!-- 属性/EL/大纲三 tab 只在画布 kind 下露出：组件 kind（detail/form/changes）
+           时右抽屉只剩资源树，避免空态三 tab 占位误导 -->
+      <el-tab-pane v-if="showCanvasTabs" label="属性" name="props" lazy>
         <!-- 桥接子树：属性组件仍 inject treeModel/canvasController；key 随画布切换重建 -->
         <DrawerPortBridge v-if="port" :key="port.uid" :port="port">
           <CmpProps
@@ -18,20 +20,20 @@
           />
           <EdgeProps v-else :edge="selectedEdge" />
         </DrawerPortBridge>
-        <el-empty v-else :image-size="56" description="先从链路树打开一条链路" />
+        <el-empty v-else :image-size="56" description="先从资源树打开一条链路" />
       </el-tab-pane>
-      <el-tab-pane label="EL 预览" name="el" lazy>
+      <el-tab-pane v-if="showCanvasTabs" label="EL 预览" name="el" lazy>
         <FlowElPreview v-if="port" :preview="port.elPreview" />
-        <el-empty v-else :image-size="56" description="先从链路树打开一条链路" />
+        <el-empty v-else :image-size="56" description="先从资源树打开一条链路" />
       </el-tab-pane>
-      <el-tab-pane label="大纲" name="outline" lazy>
+      <el-tab-pane v-if="showCanvasTabs" label="大纲" name="outline" lazy>
         <FlowOutline
           v-if="port"
           :items="outlineItems"
           :selected-id="outlineSelectedId"
           @locate="port.outline.locate($event)"
         />
-        <el-empty v-else :image-size="56" description="先从链路树打开一条链路" />
+        <el-empty v-else :image-size="56" description="先从资源树打开一条链路" />
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -54,23 +56,42 @@ defineOptions({ name: 'EditorDrawer' });
 
 type DrawerTabKey = 'tree' | 'props' | 'el' | 'outline';
 
+/** 工作区当前激活 tab 的 kind：canvas 时四 tab 全露，其余只露资源树；none=无激活 tab */
+export type DrawerKind = 'canvas' | 'detail' | 'form' | 'changes' | 'none';
+
 const props = withDefaults(
   defineProps<{
     /** 当前激活画布的名片；无画布时属性/EL/大纲显示空态（树 tab 不受影响） */
     port: DrawerPort | null;
     collapsed?: boolean;
-    /** 是否显示链路树 tab：工作台 true、全屏编辑器 false */
+    /** 是否显示资源树 tab：工作台 true、全屏编辑器 false */
     showTreeTab?: boolean;
     /** 初始停留 tab：工作台 'tree'、编辑器 'el' */
     defaultTab?: DrawerTabKey;
+    /** 激活 tab 形态：canvas 显示属性/EL/大纲，其余（含默认）只显资源树 */
+    kind?: DrawerKind;
   }>(),
-  { collapsed: false, showTreeTab: false, defaultTab: 'el' }
+  { collapsed: false, showTreeTab: false, defaultTab: 'el', kind: 'canvas' }
 );
 
 const emit = defineEmits<{ fold: [] }>();
 
+/** 属性/EL/大纲三 tab 是否露出（仅画布 kind；全屏编辑器默认 canvas，行为不变） */
+const showCanvasTabs = computed(() => props.kind === 'canvas');
+
 // 抽屉壳单例，tab 状态只此一份；树/大纲手动停靠不被选中态抢走
 const activeTab = ref<DrawerTabKey>(props.defaultTab);
+
+// 非画布 kind：三画布 tab 不渲染，强制停在资源树，避免 v-model 指向不存在的 pane
+watch(
+  showCanvasTabs,
+  (show) => {
+    if (!show && activeTab.value !== 'tree') {
+      activeTab.value = 'tree';
+    }
+  },
+  { immediate: true }
+);
 
 // port 内字段多为 Ref，模板经普通对象访问不会自动解包，统一在这里显式解包
 const selectedNode = computed<Node<CmpNodeData> | null>(() => props.port?.selectedNode.value ?? null);
@@ -86,6 +107,7 @@ watch(
     return p ? !!(p.selectedNode.value || p.selectedEdge.value) : false;
   },
   (hasSel) => {
+    if (!showCanvasTabs.value) return;
     if (hasSel && activeTab.value === 'el') activeTab.value = 'props';
     else if (!hasSel && activeTab.value === 'props') activeTab.value = 'el';
   },

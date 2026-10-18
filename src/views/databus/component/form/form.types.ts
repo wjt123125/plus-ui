@@ -27,6 +27,7 @@ export const defaultForm = (): ComponentFormModel => ({
   category: 'DATA',
   groupName: 'business',
   domain: '',
+  directoryId: null,
   icon: '',
   color: '',
   sort: 100,

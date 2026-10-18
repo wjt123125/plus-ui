@@ -167,6 +167,8 @@ export interface DatabusComponentVo {
   groupName?: string | null;
   /** 业务叶子业务域（bpm/common；仅 business 组使用）【治理】 */
   domain?: string | null;
+  /** 归属目录 id（null=未归组；databus_directory 统一资源树，2026-10-17 增）【治理】 */
+  directoryId?: number | null;
   /** 图标（svg 名或 Iconify 名，如 ph:pencil-simple）【治理】 */
   icon?: string | null;
   /** 面板色值（如 #409eff）【治理】 */

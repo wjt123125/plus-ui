@@ -63,7 +63,7 @@ import { onMounted, ref, watch } from 'vue';
 import { listScriptVersions, rollbackScript } from '@/api/databus/component';
 import type { ScriptSaveResult, ScriptVersion } from '@/api/databus/component/types';
 import modal from '@/plugins/modal';
-import JavaCodeEditor from '../../form/JavaCodeEditor.vue';
+import JavaCodeEditor from '@/views/databus/component/form/JavaCodeEditor.vue';
 
 defineOptions({ name: 'ComponentChangesPane' });
 

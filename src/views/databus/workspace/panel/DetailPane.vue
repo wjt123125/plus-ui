@@ -233,9 +233,9 @@
 import { computed, ref, watch } from 'vue';
 import { Box, Clock, CopyDocument, Edit } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
-import SchemaFieldTree from '../../detail/SchemaFieldTree.vue';
-import JsonCodeEditor from '../../../editor/components/common/JsonCodeEditor.vue';
-import type { ComponentRegistryRow } from '../../model/registry';
+import SchemaFieldTree from '@/views/databus/component/detail/SchemaFieldTree.vue';
+import JsonCodeEditor from '@/views/databus/editor/components/common/JsonCodeEditor.vue';
+import type { ComponentRegistryRow } from '@/views/databus/component/model/registry';
 import {
   CATEGORY_OPTIONS,
   editorLabel,
@@ -243,7 +243,7 @@ import {
   nodeTypeLabel,
   parseSchemaFields,
   prettyJson
-} from '../../model/labels';
+} from '@/views/databus/component/model/labels';
 import type { EditorKind, NodeTypeKind, PropSchema } from '@/api/databus/component/types';
 
 defineOptions({ name: 'ComponentDetailPane' });

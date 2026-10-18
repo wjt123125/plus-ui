@@ -85,16 +85,16 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { addComponent, getComponent, updateComponent } from '@/api/databus/component';
 import type { DatabusComponentForm, ScriptSaveResult } from '@/api/databus/component/types';
 import modal from '@/plugins/modal';
-import { defaultForm, TAB_OF, type ComponentFormModel, type TabName } from '../../form/form.types';
-import { useFieldBuilder } from '../../form/useFieldBuilder';
-import { validateJsonColumn } from '../../form/validate';
-import AdvancedTab from '../../form/tabs/AdvancedTab.vue';
-import AppearanceTab from '../../form/tabs/AppearanceTab.vue';
-import BasicTab from '../../form/tabs/BasicTab.vue';
-import ParamsTab from '../../form/tabs/ParamsTab.vue';
-import ScriptTab from '../../form/tabs/ScriptTab.vue';
+import { defaultForm, TAB_OF, type ComponentFormModel, type TabName } from '@/views/databus/component/form/form.types';
+import { useFieldBuilder } from '@/views/databus/component/form/useFieldBuilder';
+import { validateJsonColumn } from '@/views/databus/component/form/validate';
+import AdvancedTab from '@/views/databus/component/form/tabs/AdvancedTab.vue';
+import AppearanceTab from '@/views/databus/component/form/tabs/AppearanceTab.vue';
+import BasicTab from '@/views/databus/component/form/tabs/BasicTab.vue';
+import ParamsTab from '@/views/databus/component/form/tabs/ParamsTab.vue';
+import ScriptTab from '@/views/databus/component/form/tabs/ScriptTab.vue';
 import type { ComponentSaved, FormPreset } from '../workbench.types';
-import { useCompileConsole } from '../../../workbench/composables/useCompileConsole';
+import { useCompileConsole } from '@/views/databus/workbench/composables/useCompileConsole';
 
 defineOptions({ name: 'ComponentFormPane' });
 
@@ -248,6 +248,10 @@ function applyPreset() {
     form.value.groupName = props.preset.group;
   }
   form.value.domain = props.preset.domain ?? null;
+  if (props.preset.directoryId !== undefined) {
+    // 表单治理列 directoryId 是数字列；目录 id 前端为 string|number，统一收窄为数字（空=未归组）
+    form.value.directoryId = props.preset.directoryId == null ? null : Number(props.preset.directoryId);
+  }
 }
 
 /** 拉详情并回填（首次挂载、宿主刷新与脚本回滚后复用） */
@@ -263,6 +267,7 @@ async function loadDetail(id: number) {
       category: data.category,
       groupName: data.groupName ?? '',
       domain: data.domain ?? null,
+      directoryId: data.directoryId ?? null,
       icon: data.icon ?? '',
       color: data.color ?? '',
       sort: data.sort ?? 100,
@@ -402,7 +407,7 @@ onMounted(reload);
 
 // 编辑对象切换 / 宿主请求刷新 / 新建预设换目录
 watch(
-  () => [props.dbId, props.refreshToken, props.preset?.group, props.preset?.domain],
+  () => [props.dbId, props.refreshToken, props.preset?.group, props.preset?.domain, props.preset?.directoryId],
   () => {
     // 新建表单已有草稿时只就地改预设，不清空用户输入
     if (props.dbId == null && dirty.value) {
