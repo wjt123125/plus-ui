@@ -1,5 +1,5 @@
 <!--
-  工作区中栏工作面板（单壳，常驻不可折叠）：四 kind tab 混排，pane 按 kind 分发（§2.1）。
+  工作区中栏工作面板（单壳，常驻不可折叠）：多 kind tab 混排，pane 按 kind 分发（§2.1）。
   - canvas：链路画布（ChainCanvasPane workbench 宿主，v-show 保活）
   - detail / form / changes：组件详情 / 编辑 / 代码变更（原 WorkPanel 三 pane 平移）
   tab 由宿主传入；v-show 切换不销毁（切走草稿保留）；关闭带脏圆点的 tab 弹确认（全站唯一模态）；
@@ -82,6 +82,17 @@
             "
             @installed="emit('market-installed')"
             @toggle-local="(id: string | number, enabled: boolean) => emit('market-toggle', id, enabled)"
+            @open-detail="(it: DatabusMarketItemVo) => emit('market-open-detail', it.id, it.name)"
+          />
+          <MarketItemPane
+            v-else-if="tab.kind === 'market-detail' && tab.marketItemId != null"
+            :item-id="tab.marketItemId"
+            @open-local="
+              (id: string | number, type: 'COMPONENT' | 'CHAIN', title: string) =>
+                emit('market-open', id, type, title)
+            "
+            @installed="emit('market-installed')"
+            @open-market="emit('market-open-market')"
           />
           <el-empty v-else description="资源已不在台账中" :image-size="80" />
         </div>
@@ -107,12 +118,14 @@ import type { ScriptSaveResult } from '@/api/databus/component/types';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import ChainCanvasPane from '@/views/databus/editor/ChainCanvasPane.vue';
 import type { ComponentRegistryRow } from '@/views/databus/component/model/registry';
+import type { DatabusMarketItemVo } from '@/api/databus/market/types';
 import type { ComponentSaved, TabMenuCommand, WorkspaceTab, WorkspaceTabKind } from '../workbench.types';
 import DetailPane from './DetailPane.vue';
 import FormPane from './FormPane.vue';
 import ChangesPane from './ChangesPane.vue';
 import TabContextMenu from './TabContextMenu.vue';
 import MarketPane from '../market/MarketPane.vue';
+import MarketItemPane from '../market/MarketItemPane.vue';
 
 defineOptions({ name: 'WorkspaceWorkPanel' });
 
@@ -122,7 +135,8 @@ const TAB_ICON: Record<WorkspaceTabKind, string> = {
   detail: 'lucide:file-text',
   form: 'lucide:file-pen',
   changes: 'lucide:file-diff',
-  market: 'lucide:store'
+  market: 'lucide:store',
+  'market-detail': 'lucide:package'
 };
 
 useLucideSubset();
@@ -153,6 +167,9 @@ const emit = defineEmits<{
   (e: 'market-open', localResourceId: string | number, resourceType: 'COMPONENT' | 'CHAIN', title: string): void;
   (e: 'market-installed'): void;
   (e: 'market-toggle', localResourceId: string | number, enabled: boolean): void;
+  /** 市场浏览卡片点主体：打开物料详情 tab；物料详情页请求回到市场 tab */
+  (e: 'market-open-detail', itemId: string | number, title: string): void;
+  (e: 'market-open-market'): void;
 }>();
 
 function rowOf(tab: WorkspaceTab): ComponentRegistryRow | undefined {

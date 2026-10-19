@@ -87,6 +87,8 @@ export interface MarketQuery {
   categoryId?: string | number;
   /** 名称 / 编码 / 标签（复用资源树过滤口径） */
   keyword?: string;
+  /** 作者登录名等值过滤（点卡片 @作者 筛选其作品；空=全部） */
+  ownerCode?: string;
   pageNum?: number;
   pageSize?: number;
 }

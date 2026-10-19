@@ -8,8 +8,8 @@ import type { DatabusChainVo } from '@/api/databus/chain/types';
 import type { WorkbenchTab } from '../workbench/workbench.types';
 import type { ComponentRegistryRow } from '../component/model/registry';
 
-/** 工作区 tab 形态：链路画布 / 组件详情 / 组件编辑 / 代码变更 / 物料市场（组件库 grid 已废 2026-10-18） */
-export type WorkspaceTabKind = 'canvas' | 'detail' | 'form' | 'changes' | 'market';
+/** 工作区 tab 形态：链路画布 / 组件详情 / 组件编辑 / 代码变更 / 物料市场 / 物料详情（组件库 grid 已废 2026-10-18） */
+export type WorkspaceTabKind = 'canvas' | 'detail' | 'form' | 'changes' | 'market' | 'market-detail';
 
 /** 新建组件 tab 的预设上下文（目录右键「新建组件」携带） */
 export interface FormPreset {
@@ -19,7 +19,7 @@ export interface FormPreset {
   directoryId?: string | number | null;
 }
 
-/** 工作区 tab（五 kind 混排，key 规则见 workbench-unification.md §2.1） */
+/** 工作区 tab（多 kind 混排，key 规则见 workbench-unification.md §2.1） */
 export interface WorkspaceTab extends WorkbenchTab {
   kind: WorkspaceTabKind;
   /** canvas：链路主键（同链单例判定） */
@@ -30,6 +30,8 @@ export interface WorkspaceTab extends WorkbenchTab {
   code: string;
   /** form/changes：组件 DB 行 id（编辑/代码变更必需） */
   dbId?: number;
+  /** market-detail：物料主键（同 id 单例；pane 自取数，不走台账。雪花 id 超 2^53，故用字符串防精度丢失） */
+  marketItemId?: string;
   /** changes：当前脚本版本 */
   version?: number | null;
   /** 仅新建 form tab 使用：表单初始分组/业务域/归属目录 */

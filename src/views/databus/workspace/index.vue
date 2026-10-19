@@ -57,6 +57,8 @@
           @market-open="onMarketOpen"
           @market-installed="onMarketInstalled"
           @market-toggle="onMarketToggle"
+          @market-open-detail="onMarketOpenDetail"
+          @market-open-market="onMarketOpenMarket"
         >
           <!-- tab 全关时的空白工作台：注入空态导航（打开/新建/树定位三类入口） -->
           <template #empty>
@@ -264,10 +266,10 @@ const refreshTokens = reactive<Record<string, number>>({});
 /* ---------------- tab 派生态 ---------------- */
 
 const activeTab = computed(() => tabs.value.find((t) => t.key === activeKey.value));
-/** 当前激活 tab 的 kind：驱动右抽屉露出几个 tab（仅 canvas 露四 tab，其余含 market 只显资源树） */
+/** 当前激活 tab 的 kind：驱动右抽屉露出几个 tab（仅 canvas 露四 tab，market / market-detail 只显资源树） */
 const drawerKind = computed<DrawerKind>(() => {
   const kind = activeTab.value?.kind;
-  return kind === 'market' ? 'none' : (kind ?? 'none');
+  return kind === 'market' || kind === 'market-detail' ? 'none' : (kind ?? 'none');
 });
 /** 树高亮：激活画布的链路 id */
 const activeChainId = computed(() =>
@@ -472,6 +474,16 @@ function onMarketToggle(localResourceId: string | number, enabled: boolean) {
   if (row) {
     void toggleEnabled(row, enabled);
   }
+}
+
+/** 市场浏览卡片点主体：打开物料详情 tab（kind market-detail，同 id 单例，pane 自取数） */
+function onMarketOpenDetail(itemId: string | number, title: string) {
+  wb.openMarketDetail(itemId, title);
+}
+
+/** 物料详情页请求回到市场 tab（作者筛选 / 已上架跳转，意图经 marketNavIntent 传给市场 pane 消费） */
+function onMarketOpenMarket() {
+  wb.openMarket();
 }
 
 /** AI 助手选中某组件（v1 空壳预留）：等价于在树上点该叶子 */

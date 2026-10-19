@@ -12,9 +12,12 @@
     <template v-if="view === 'browse'">
       <header class="mkt__head">
         <div class="mkt__titles">
-          <h2 class="mkt__title">物料市场</h2>
+          <h2 class="mkt__title">{{ ownerCode ? `@${ownerCode} 的作品` : '物料市场' }}</h2>
           <p class="mkt__sub">安装即 fork 到你的目录，上游改动不影响本地副本。</p>
         </div>
+        <el-button v-if="ownerCode" class="mkt__manage" size="small" @click="market.clearOwner()">
+          <SvgIcon icon-class="lucide:x" /><span>退出作者筛选</span>
+        </el-button>
         <el-button class="mkt__manage" @click="openManage">
           <SvgIcon icon-class="lucide:settings" /><span>管理</span>
         </el-button>
@@ -67,7 +70,7 @@
           :class="{ 'is-active': activeChip === 'RECOMMEND' }"
           @click="market.switchChip('RECOMMEND')"
         >
-          推荐
+          最新
         </button>
         <button
           v-if="mineCounts[activeType]"
@@ -111,7 +114,7 @@
         <template v-for="g in groups" :key="g.key">
           <div class="mkt__group-title">{{ g.label }}</div>
           <div class="mkt__grid">
-            <article v-for="it in g.items" :key="it.id" class="mkt-card">
+            <article v-for="it in g.items" :key="it.id" class="mkt-card" @click="emit('open-detail', it)">
               <SvgIcon
                 class="mkt-card__icon"
                 :icon-class="itemIcon(it)"
@@ -121,15 +124,29 @@
                 <div class="mkt-card__name" :title="it.name">{{ it.name }}</div>
                 <div class="mkt-card__summary" :title="it.summary">{{ it.summary || it.codeDisplay }}</div>
               </div>
-              <el-button v-if="it.installed" class="mkt-card__act" size="small" type="primary" @click="onUse(it)">
-                <span>使用</span>
-              </el-button>
-              <el-button v-else-if="it.mine" class="mkt-card__act" size="small" @click="goMyListings">
-                <SvgIcon icon-class="lucide:settings" /><span>已上架</span>
-              </el-button>
-              <el-button v-else class="mkt-card__act" size="small" @click="onInstall(it)">
-                <SvgIcon icon-class="lucide:download" /><span>安装</span>
-              </el-button>
+              <div class="mkt-card__aside">
+                <el-button v-if="it.installed" class="mkt-card__act" size="small" type="primary" @click.stop="onUse(it)">
+                  <span>使用</span>
+                </el-button>
+                <el-button v-else-if="it.mine" class="mkt-card__act" size="small" @click.stop="goMyListings">
+                  <SvgIcon icon-class="lucide:settings" /><span>已上架</span>
+                </el-button>
+                <el-button v-else class="mkt-card__act" size="small" @click.stop="onInstall(it)">
+                  <SvgIcon icon-class="lucide:download" /><span>安装</span>
+                </el-button>
+                <div class="mkt-card__sub">
+                  <button
+                    v-if="it.ownerCode"
+                    type="button"
+                    class="mkt-card__author"
+                    :class="{ 'is-active': ownerCode === it.ownerCode }"
+                    @click.stop="market.filterByOwner(it.ownerCode!)"
+                  >
+                    @{{ it.ownerCode }}
+                  </button>
+                  <span v-if="(it.installCount ?? 0) > 0" class="mkt-card__count">安装 {{ it.installCount }}</span>
+                </div>
+              </div>
             </article>
           </div>
         </template>
@@ -318,7 +335,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import modal from '@/plugins/modal';
 import { useUserStore } from '@/store/modules/user';
@@ -330,7 +347,7 @@ import type {
   MarketResourceType
 } from '@/api/databus/market/types';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
-import { useMarketData } from './useMarketData';
+import { useMarketData, marketNavIntent } from './useMarketData';
 import MarketInstallDialog from './MarketInstallDialog.vue';
 import MarketPublishDialog from './MarketPublishDialog.vue';
 
@@ -345,10 +362,13 @@ const emit = defineEmits<{
   (e: 'installed'): void;
   /** 启停本地组件副本：宿主调组件接口（组件行在台账，面板无 DB 行） */
   (e: 'toggle-local', localResourceId: string | number, enabled: boolean): void;
+  /** 点卡片主体：打开物料详情 tab（kind market-detail） */
+  (e: 'open-detail', item: DatabusMarketItemVo): void;
 }>();
 
 const market = useMarketData();
-const { categories, installed, mine, pending, loading, activeType, activeChip, groups, installedCounts, mineCounts } = market;
+const { categories, installed, mine, pending, loading, activeType, activeChip, ownerCode, groups, installedCounts, mineCounts } =
+  market;
 
 /** 视图开关：browse＝市场 / manage＝管理 */
 const view = ref<'browse' | 'manage'>('browse');
@@ -392,6 +412,28 @@ onMounted(async () => {
   }
 });
 
+/* 消费跨 pane 导航意图（物料详情页 → 市场 tab）：作者筛选 / 已上架跳转；消费后置空 */
+watch(
+  marketNavIntent,
+  async (intent) => {
+    if (!intent) {
+      return;
+    }
+    if (intent.kind === 'owner') {
+      view.value = 'browse';
+      scope.value = 'installed';
+      await market.filterByOwner(intent.ownerCode);
+    } else {
+      view.value = 'manage';
+      if (canPublish.value) {
+        await switchScope('mine');
+      }
+    }
+    marketNavIntent.value = null;
+  },
+  { immediate: true }
+);
+
 /* ---------------- 展示辅助 ---------------- */
 
 /** 物料图标：链路固定，组件取自带图标 */
@@ -416,8 +458,8 @@ function statusMeta(status: MarketItemStatus) {
   return STATUS_META[status] ?? { label: status, type: 'info' as const };
 }
 
-/** 市场空态是否由筛选造成（关键字 / 非「全部」chip） */
-const browseFiltered = computed(() => !!keyword.value.trim() || activeChip.value !== 'ALL');
+/** 市场空态是否由筛选造成（关键字 / 非「全部」chip / 作者过滤） */
+const browseFiltered = computed(() => !!keyword.value.trim() || activeChip.value !== 'ALL' || !!ownerCode.value);
 
 /** 管理视图标题/副标题随视角切换 */
 const manageTitle = computed(
@@ -901,6 +943,7 @@ async function onReject(row: DatabusMarketItemVo) {
   padding: 12px;
   border-radius: 10px;
   background: var(--el-fill-color-light, #f5f7fa);
+  cursor: pointer;
   transition: background-color 0.15s ease;
 
   &:hover {
@@ -933,6 +976,44 @@ async function onReject(row: DatabusMarketItemVo) {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  &__aside {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+
+  &__sub {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__author {
+    padding: 0;
+    font-size: 12px;
+    color: var(--el-text-color-placeholder);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+
+    &:hover {
+      color: var(--el-color-primary);
+      text-decoration: underline;
+    }
+
+    &.is-active {
+      color: var(--el-color-primary);
+      font-weight: 600;
+    }
+  }
+
+  &__count {
+    font-size: 12px;
+    color: var(--el-text-color-placeholder);
   }
 
   &__act {

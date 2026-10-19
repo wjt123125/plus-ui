@@ -27,11 +27,15 @@ import type {
 } from '@/api/databus/market/types';
 import { useLoading } from '@/hooks/async/useLoading';
 
-/** 分类 chips 的单选值：全部 / 推荐 / 我上架的 / 已安装 / 具体分类 id */
+/** 分类 chips 的单选值：全部 / 最新 / 我上架的 / 已安装 / 具体分类 id */
 export type MarketChip = 'ALL' | 'RECOMMEND' | 'MINE' | 'INSTALLED' | string | number;
 
-/** 推荐组容量（无 recommend 字段，按安装数取头部） */
+/** 「最新」组容量（无 recommend 字段，按上架时间取头部） */
 const RECOMMEND_SIZE = 6;
+
+/** 跨 pane 市场导航意图（物料详情页 → 市场 tab）：市场 tab 消费后置空（模块级共享单例） */
+export type MarketNavIntent = { kind: 'owner'; ownerCode: string } | { kind: 'mine' };
+export const marketNavIntent = ref<MarketNavIntent | null>(null);
 
 export function useMarketData() {
   const items = ref<DatabusMarketItemVo[]>([]);
@@ -49,24 +53,45 @@ export function useMarketData() {
   const keyword = ref('');
   /** 当前分类 chip */
   const activeChip = ref<MarketChip>('ALL');
+  /** 作者过滤（点卡片 @作者 / 详情页作者）：空=不过滤 */
+  const ownerCode = ref('');
 
-  /** chip 是否为「具体分类」（非全部 / 推荐 / 我的上架 / 已安装等哨兵） */
+  /** chip 是否为「具体分类」（非全部 / 最新 / 我的上架 / 已安装等哨兵） */
   function asCategoryId(chip: MarketChip): string | number | undefined {
     return typeof chip === 'string' && isNaN(Number(chip)) ? undefined : chip;
   }
 
-  /** 拉取市场列表（类型 + 搜索走服务端；「推荐」在客户端按安装数截取） */
+  /** 拉取市场列表（类型 + 搜索 + 作者过滤走服务端；「最新」在客户端按上架时间截取） */
   async function refresh(): Promise<void> {
     await withLoading(async () => {
       const { data } = await listMarketItems({
         resourceType: activeType.value,
         keyword: keyword.value || undefined,
         categoryId: asCategoryId(activeChip.value),
+        ownerCode: ownerCode.value || undefined,
         pageNum: 1,
         pageSize: 999
       });
       items.value = data?.rows ?? [];
     });
+  }
+
+  /** 按作者过滤（浏览卡片点 @作者 / 详情页作者）：再点同一作者即退出；切「@X 的作品」视图 */
+  async function filterByOwner(code: string): Promise<void> {
+    if (ownerCode.value === code) {
+      ownerCode.value = '';
+    } else {
+      ownerCode.value = code;
+      activeChip.value = 'ALL';
+      keyword.value = '';
+    }
+    await refresh();
+  }
+
+  /** 退出作者过滤（回「全部」） */
+  async function clearOwner(): Promise<void> {
+    ownerCode.value = '';
+    await refresh();
   }
 
   async function loadCategories(): Promise<void> {
@@ -135,17 +160,17 @@ export function useMarketData() {
     await Promise.all([refresh(), loadInstalled()]);
   }
 
-  /** 推荐组：按安装数降序取头部（同数按名称） */
+  /** 最新组：按上架时间降序取头部（确定口径；计数为异步缓存、初期不可信故不用安装数） */
   const recommended = computed(() =>
     items.value
-      .toSorted((a, b) => (b.installCount ?? 0) - (a.installCount ?? 0) || a.name.localeCompare(b.name, 'zh-CN'))
+      .toSorted((a, b) => String(b.createTime ?? '').localeCompare(String(a.createTime ?? '')) || b.id.toString().localeCompare(a.id.toString()))
       .slice(0, RECOMMEND_SIZE)
   );
 
-  /** 分组展示：chip=全部 时「推荐」组 + 各分类组；chip=推荐/我上架/已安装/具体分类 时单组 */
+  /** 分组展示：chip=全部 时「最新」组 + 各分类组；chip=最新/我上架/已安装/具体分类 时单组 */
   const groups = computed<{ key: string; label: string; items: DatabusMarketItemVo[] }[]>(() => {
     if (activeChip.value === 'RECOMMEND') {
-      return [{ key: 'RECOMMEND', label: '推荐', items: recommended.value }];
+      return [{ key: 'RECOMMEND', label: '最新', items: recommended.value }];
     }
     if (activeChip.value === 'MINE') {
       const members = items.value.filter((it) => it.mine);
@@ -159,8 +184,9 @@ export function useMarketData() {
       return [{ key: String(activeChip.value), label: chipLabel(activeChip.value), items: items.value }];
     }
     const result: { key: string; label: string; items: DatabusMarketItemVo[] }[] = [];
-    if (recommended.value.length) {
-      result.push({ key: 'RECOMMEND', label: '推荐', items: recommended.value });
+    // 作者过滤视图下不再叠加「最新」组（结果已按单一作者收窄）
+    if (recommended.value.length && !ownerCode.value) {
+      result.push({ key: 'RECOMMEND', label: '最新', items: recommended.value });
     }
     for (const c of categories.value) {
       const members = items.value.filter((it) => String(it.categoryId) === String(c.id));
@@ -194,17 +220,19 @@ export function useMarketData() {
     return found?.name ?? '全部';
   }
 
-  /** 切分段后清空 chip 与关键字并按新分段拉取 */
+  /** 切分段后清空 chip / 关键字 / 作者过滤并按新分段拉取 */
   async function switchType(type: MarketResourceType): Promise<void> {
     activeType.value = type;
     activeChip.value = 'ALL';
     keyword.value = '';
+    ownerCode.value = '';
     await refresh();
   }
 
-  /** 切换 chip 后重拉（服务端分类过滤 / 客户端推荐截取） */
+  /** 切换 chip 后重拉（服务端分类过滤 / 客户端最新截取）；作者过滤随之退出 */
   async function switchChip(chip: MarketChip): Promise<void> {
     activeChip.value = chip;
+    ownerCode.value = '';
     await refresh();
   }
 
@@ -218,11 +246,14 @@ export function useMarketData() {
     activeType,
     keyword,
     activeChip,
+    ownerCode,
     recommended,
     groups,
     installedCounts,
     mineCounts,
     refresh,
+    filterByOwner,
+    clearOwner,
     loadCategories,
     loadInstalled,
     loadMine,

@@ -1,9 +1,9 @@
 /**
  * 工作区单壳 tab 会话（useChainTabs + useComponentTabs 合流，2026-10-17 工作区融合）。
- * 五 kind 同容器混排，key 规则见 workbench-unification.md §2.1：
+ * 多 kind 同容器混排，key 规则见 workbench-unification.md §2.1：
  *   canvas:{chainId}（同链单例）/ component:detail:{code}
  *   / component:form:{id}（新建临时 component:form:new）/ component:changes:{id}
- *   / market（物料市场，全局单例）
+ *   / market（物料市场，全局单例）/ market-item:{id}（物料详情，同 id 单例）
  * 会话落 localStorage：刷新恢复上次打开的 tab（无历史=空白工作台）；重复打开只聚焦。
  */
 import { watch } from 'vue';
@@ -29,6 +29,9 @@ export function formKey(id?: number): string {
 }
 export function changesKey(id: number): string {
   return `component:changes:${id}`;
+}
+export function marketItemKey(itemId: number | string): string {
+  return `market-item:${itemId}`;
 }
 
 export function useWorkspaceTabs() {
@@ -104,6 +107,24 @@ export function useWorkspaceTabs() {
       kind: 'market',
       title: '物料市场',
       code: '',
+      dirty: false
+    });
+  }
+
+  /** 打开/聚焦物料详情 tab（同 id 单例；pane 自取数，不走台账） */
+  function openMarketDetail(itemId: number | string, title: string): string {
+    const id = String(itemId); // 雪花 id 超 2^53，勿转 Number（会丢精度）
+    const key = marketItemKey(id);
+    const existed = wb.tabs.value.find((t) => t.key === key);
+    if (existed) {
+      existed.title = title; // 物料可能已改名，聚焦时顺手刷新
+    }
+    return wb.open({
+      key,
+      kind: 'market-detail',
+      title,
+      code: '',
+      marketItemId: id,
       dirty: false
     });
   }
@@ -247,6 +268,7 @@ export function useWorkspaceTabs() {
     refreshTitleIfOpen,
     openDetail,
     openMarket,
+    openMarketDetail,
     openForm,
     openChanges,
     closeByCode,
