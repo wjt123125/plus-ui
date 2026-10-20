@@ -54,7 +54,9 @@ export const usePermissionStore = defineStore('permission', () => {
   };
   const generateRoutes = async (): Promise<RouteRecordRaw[]> => {
     const res = await getRouters();
-    const data = Array.isArray(res.data) ? res.data : [];
+    // 数据总线整枝剔除（§13.1）：把顶级 `/databus` 从路由源数据里切掉 —— 菜单显示与后台路由页同时消失。
+    // 只在 sidebar 过滤不算，必须在 generateRoutes() 这一层剔 data；工作台已由 constantRoutes 裸路由承载（§7）。
+    const data = (Array.isArray(res.data) ? res.data : []).filter((r) => r.path !== '/databus');
     const sdata = structuredClone(data);
     const rdata = structuredClone(data);
     const defaultData = structuredClone(data);

@@ -8,8 +8,25 @@ import type { DatabusChainVo } from '@/api/databus/chain/types';
 import type { WorkbenchTab } from '../workbench/workbench.types';
 import type { ComponentRegistryRow } from '../component/model/registry';
 
-/** 工作区 tab 形态：链路画布 / 组件详情 / 组件编辑 / 代码变更 / 物料市场 / 物料详情（组件库 grid 已废 2026-10-18） */
-export type WorkspaceTabKind = 'canvas' | 'detail' | 'form' | 'changes' | 'market' | 'market-detail';
+/**
+ * 工作区 tab 形态（2026-10-20 管理页 tab 化扩展，databus-workspace-tabs.md §4.1）：
+ * 链路画布 / 组件详情 / 组件编辑 / 代码变更 / 物料市场 / 物料详情（组件库 grid 已废 2026-10-18）
+ * + 连接列表/连接对象 / 执行列表/执行记录 / 监控大盘 / 告警记录 / 设置（七值，key 规则见 §4.1）
+ */
+export type WorkspaceTabKind =
+  | 'canvas'
+  | 'detail'
+  | 'form'
+  | 'changes'
+  | 'market'
+  | 'market-detail'
+  | 'connection-list'
+  | 'connection-form'
+  | 'execution-list'
+  | 'execution-record'
+  | 'monitor-overview'
+  | 'alert-record'
+  | 'settings';
 
 /** 新建组件 tab 的预设上下文（目录右键「新建组件」携带） */
 export interface FormPreset {
@@ -36,6 +53,16 @@ export interface WorkspaceTab extends WorkbenchTab {
   version?: number | null;
   /** 仅新建 form tab 使用：表单初始分组/业务域/归属目录 */
   preset?: FormPreset;
+  /** connection-form：连接主键（新建为 'new'） */
+  formId?: number | 'new';
+  /** execution-record：执行记录主键（雪花 id 超 2^53，故与 VO 同宽用字符串兜底） */
+  recordId?: number | string;
+}
+
+/** 连接表单保存回报（新增时后端不回填主键，宿主据 isNew 关对象 tab 并刷新连接列表） */
+export interface ConnectionSaved {
+  connectionName: string;
+  isNew: boolean;
 }
 
 /** 编辑面板保存/脚本发布后的回报载荷（新增时 id 由宿主按 code 从刷新后的台账解析） */
@@ -60,10 +87,25 @@ export type LauncherCommand =
   | 'new-component'
   | 'new-directory'
   | 'system'
-  | 'market';
+  | 'market'
+  // 空态管理页入口卡（§8 步骤8「同步补 launcher 卡」，开对应功能 tab，先立后破防功能失踪）
+  | 'admin-connection'
+  | 'admin-execution'
+  | 'admin-monitor'
+  | 'admin-alert'
+  | 'admin-settings';
 
-/** 工作面板 tab 右键菜单命令（WorkspaceWorkPanel 派发；关闭族语义由 useWorkspaceTabs 承接） */
-export type TabMenuCommand = 'close' | 'close-others' | 'close-left' | 'close-right' | 'close-all';
+/** 工作面板 tab 右键菜单命令（WorkspaceWorkPanel 派发；关闭族语义由 useWorkspaceTabs 承接，「窗口」族由宿主承接，§6.4） */
+export type TabMenuCommand =
+  | 'close'
+  | 'close-others'
+  | 'close-left'
+  | 'close-right'
+  | 'close-all'
+  // 窗口族（§6.4）：新窗体打开 / 浏览器级全屏 / 壳内专注最大化
+  | 'open-new'
+  | 'toggle-full'
+  | 'toggle-max';
 
 /** 最近访问条目（跨类型；localStorage，零后端） */
 export interface RecentResource {
@@ -155,6 +197,8 @@ export type ResourceMenuCommand =
   | 'changes-component'
   | 'toggle-component'
   | 'delete-component'
+  // 分享（链路/组件共用，复制只读分享链接）
+  | 'share-link'
   // 目录
   | 'add-chain'
   | 'add-component'

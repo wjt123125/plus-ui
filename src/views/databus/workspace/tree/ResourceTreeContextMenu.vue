@@ -56,6 +56,9 @@
         <li class="res-tree-ctx__item is-primary" @click="onCopy">
           <SvgIcon icon-class="lucide:copy" /><span>复制链路编码</span>
         </li>
+        <li class="res-tree-ctx__item is-primary" @click="onCommand('share-link')">
+          <SvgIcon icon-class="lucide:share" /><span>复制分享链接</span>
+        </li>
         <li class="res-tree-ctx__divider" />
         <li
           v-hasPermi="['databus:editor:remove']"
@@ -99,6 +102,9 @@
         <li class="res-tree-ctx__item is-primary" @click="onCopy">
           <SvgIcon icon-class="lucide:copy" /><span>复制组件编码</span>
         </li>
+        <li class="res-tree-ctx__item is-primary" @click="onCommand('share-link')">
+          <SvgIcon icon-class="lucide:share" /><span>复制分享链接</span>
+        </li>
         <li class="res-tree-ctx__divider" />
         <li
           v-hasPermi="['databus:component:remove']"
@@ -117,6 +123,9 @@
         <li class="res-tree-ctx__divider" />
         <li class="res-tree-ctx__item is-primary" @click="onCopy">
           <SvgIcon icon-class="lucide:copy" /><span>复制组件编码</span>
+        </li>
+        <li class="res-tree-ctx__item is-primary" @click="onCommand('share-link')">
+          <SvgIcon icon-class="lucide:share" /><span>复制分享链接</span>
         </li>
       </template>
 

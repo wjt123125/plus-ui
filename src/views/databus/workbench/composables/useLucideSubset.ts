@@ -142,6 +142,13 @@ const LUCIDE_SUBSET: IconifyJSON = {
     },
     'chevron-right': { body: `<path ${S} d="m9 18l6-6l-6-6"/>` },
     'chevron-left': { body: `<path ${S} d="m15 18l-6-6l6-6"/>` },
+    // 工作台 tab 右键「窗口」族（databus-workspace-tabs.md §6.4）：新窗体（external-link）、浏览器全屏（maximize）、专注收栏（focus）
+    maximize: {
+      body: `<g ${S}><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></g>`
+    },
+    focus: {
+      body: `<g ${S}><circle cx="12" cy="12" r="3"/><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/></g>`
+    },
     // 物料市场：市场 tab / launcher 卡（店铺）、管理入口（齿轮）、卡片「安装」（下载）
     store: {
       body: `<g ${S}><path d="M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5"/><path d="M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244"/><path d="M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05"/></g>`

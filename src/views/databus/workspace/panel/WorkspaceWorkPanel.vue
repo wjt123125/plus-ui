@@ -94,6 +94,40 @@
             @installed="emit('market-installed')"
             @open-market="emit('market-open-market')"
           />
+          <!-- 管理页 pane（2026-10-20 tab 化，§10 步骤2）：连接列表 / 连接对象 -->
+          <ConnectionPane
+            v-else-if="tab.kind === 'connection-list'"
+            :refresh-token="refreshTokens[tab.key] ?? 0"
+            @open="(id: number | 'new', title: string) => emit('open-connection', id, title)"
+          />
+          <ConnectionPane
+            v-else-if="tab.kind === 'connection-form'"
+            :form-id="tab.formId"
+            @saved="(payload: ConnectionSaved) => emit('connection-saved', tab, payload)"
+            @cancel="requestClose(tab.key)"
+            @dirty-change="(dirty: boolean) => emit('dirty-change', tab.key, dirty)"
+          />
+          <!-- 管理页 pane（2026-10-20 tab 化，§10 步骤3）：执行记录列表 / 单条记录 -->
+          <ExecutionPane
+            v-else-if="tab.kind === 'execution-list'"
+            :refresh-token="refreshTokens[tab.key] ?? 0"
+            @open="(id: number | string, title?: string) => emit('open-execution', id, title)"
+            @refresh="emit('execution-refresh')"
+          />
+          <ExecutionPane
+            v-else-if="tab.kind === 'execution-record'"
+            :record-id="tab.recordId"
+            @open="(id: number | string, title?: string) => emit('open-execution', id, title)"
+            @refresh="emit('execution-refresh')"
+          />
+          <!-- 管理页 pane（2026-10-20 tab 化，§10 步骤4）：监控大盘 / 告警记录 / 设置 -->
+          <MonitorPane
+            v-else-if="tab.kind === 'monitor-overview'"
+            :active="tab.key === activeKey"
+            @open-alert="emit('open-alert')"
+          />
+          <AlertPane v-else-if="tab.kind === 'alert-record'" />
+          <SettingsPane v-else-if="tab.kind === 'settings'" />
           <el-empty v-else description="资源已不在台账中" :image-size="80" />
         </div>
       </template>
@@ -105,6 +139,7 @@
       :y="tabMenu.y"
       :index="tabMenu.index"
       :total="tabs.length"
+      :can-open-new="tabMenuCanOpenNew"
       @close="tabMenu.visible = false"
       @command="onMenuCommand"
     />
@@ -119,10 +154,15 @@ import { useLucideSubset } from '@/views/databus/workbench/composables/useLucide
 import ChainCanvasPane from '@/views/databus/editor/ChainCanvasPane.vue';
 import type { ComponentRegistryRow } from '@/views/databus/component/model/registry';
 import type { DatabusMarketItemVo } from '@/api/databus/market/types';
-import type { ComponentSaved, TabMenuCommand, WorkspaceTab, WorkspaceTabKind } from '../workbench.types';
+import type { ComponentSaved, ConnectionSaved, TabMenuCommand, WorkspaceTab, WorkspaceTabKind } from '../workbench.types';
 import DetailPane from './DetailPane.vue';
 import FormPane from './FormPane.vue';
 import ChangesPane from './ChangesPane.vue';
+import ConnectionPane from './ConnectionPane.vue';
+import ExecutionPane from './ExecutionPane.vue';
+import MonitorPane from './MonitorPane.vue';
+import AlertPane from './AlertPane.vue';
+import SettingsPane from './SettingsPane.vue';
 import TabContextMenu from './TabContextMenu.vue';
 import MarketPane from '../market/MarketPane.vue';
 import MarketItemPane from '../market/MarketItemPane.vue';
@@ -136,7 +176,15 @@ const TAB_ICON: Record<WorkspaceTabKind, string> = {
   form: 'lucide:file-pen',
   changes: 'lucide:file-diff',
   market: 'lucide:store',
-  'market-detail': 'lucide:package'
+  'market-detail': 'lucide:package',
+  // 管理页 tab（2026-10-20 扩展，§4.1）；图标一律取自 lucide 子集现有 key（见 useLucideSubset）
+  'connection-list': 'lucide:external-link',
+  'connection-form': 'lucide:file-pen',
+  'execution-list': 'lucide:play',
+  'execution-record': 'lucide:history',
+  'monitor-overview': 'lucide:layout-grid',
+  'alert-record': 'lucide:circle-alert',
+  settings: 'lucide:settings'
 };
 
 useLucideSubset();
@@ -170,6 +218,14 @@ const emit = defineEmits<{
   /** 市场浏览卡片点主体：打开物料详情 tab；物料详情页请求回到市场 tab */
   (e: 'market-open-detail', itemId: string | number, title: string): void;
   (e: 'market-open-market'): void;
+  /** 连接管理：列表点卡片/新增开新对象 tab；对象保存回报宿主（关 tab / 刷列表 / 改标题） */
+  (e: 'open-connection', id: number | 'new', title: string): void;
+  (e: 'connection-saved', tab: WorkspaceTab, payload: ConnectionSaved): void;
+  /** 执行记录：列表/记录视图点「查看记录」开新记录 tab；重跑后请宿主刷新列表 tab */
+  (e: 'open-execution', recordId: number | string, title?: string): void;
+  (e: 'execution-refresh'): void;
+  /** 监控大盘「告警中」卡片：开告警记录 tab（路由壳下由宿主自己跳转，不在此 emit 语义内） */
+  (e: 'open-alert'): void;
 }>();
 
 function rowOf(tab: WorkspaceTab): ComponentRegistryRow | undefined {
@@ -200,7 +256,19 @@ function tabIcon(kind: WorkspaceTabKind): string {
 /** tab 滚动容器（.ws-panel__tabs）：滚轮横滚与激活入视的基准 */
 const tabsRef = ref<HTMLElement>();
 /** tab 右键菜单浮层状态（锚点 key 留宿主，菜单只收序号/总数） */
-const tabMenu = reactive({ visible: false, x: 0, y: 0, key: '', index: 0 });
+const tabMenu = reactive({ visible: false, x: 0, y: 0, key: '', index: 0, kind: '' as WorkspaceTabKind | '' });
+
+/** 是否有 standalone 逃生页（§6.4 七项全带；画布/组件编辑等编辑态 kind 无 path → 置灰「新窗体」） */
+const STANDALONE_KINDS: WorkspaceTabKind[] = [
+  'connection-list',
+  'connection-form',
+  'execution-list',
+  'execution-record',
+  'monitor-overview',
+  'alert-record',
+  'settings'
+];
+const tabMenuCanOpenNew = computed(() => STANDALONE_KINDS.includes(tabMenu.kind as WorkspaceTabKind));
 
 /** 滚轮横滚（VS Code/Trae 范式）：竖向 delta 折算进 scrollLeft，横向 delta 交浏览器原生处理 */
 function onTabsWheel(event: WheelEvent) {
@@ -218,6 +286,7 @@ function onTabContextMenu(tab: WorkspaceTab, event: MouseEvent) {
   tabMenu.y = event.clientY;
   tabMenu.key = tab.key;
   tabMenu.index = props.tabs.findIndex((t) => t.key === tab.key);
+  tabMenu.kind = tab.kind;
 }
 
 /** 菜单命令：关闭走本地脏确认；其余关闭族语义上抛宿主（useWorkspaceTabs 承接） */

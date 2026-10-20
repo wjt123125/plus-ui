@@ -68,7 +68,13 @@ const CARDS: LauncherCard[] = [
     perm: ['databus:directory:add']
   },
   { key: 'system', label: '系统组件', icon: 'lucide:boxes', color: '#94A3B8' },
-  { key: 'market', label: '物料市场', icon: 'lucide:store', color: '#4F8EF7' }
+  { key: 'market', label: '物料市场', icon: 'lucide:store', color: '#4F8EF7' },
+  // 空态管理页入口卡（§8 步骤8）：点开对应功能 tab；菜单收敛后这几个仍是工作台内可达入口（先立后破）
+  { key: 'admin-connection', label: '连接配置', icon: 'lucide:inbox', color: '#22B8CF' },
+  { key: 'admin-execution', label: '执行记录', icon: 'lucide:clock', color: '#4F8EF7' },
+  { key: 'admin-monitor', label: '监控大盘', icon: 'lucide:layout-grid', color: '#A371F7' },
+  { key: 'admin-alert', label: '告警记录', icon: 'lucide:circle-alert', color: '#FF8A5B' },
+  { key: 'admin-settings', label: '设置', icon: 'lucide:settings', color: '#2DD288' }
 ];
 
 /** 按权限过滤（checkPermi 依赖 useUserStore，须在 setup 内调用） */

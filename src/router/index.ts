@@ -63,9 +63,59 @@ export const constantRoutes: RouteRecordRaw[] = [
     hidden: true
   },
   {
+    // standalone 独立窗体逃生页（databus-workspace-tabs.md §6.3 写法 1）。
+    // 走 constantRoutes 静态注册（真脱壳，不挂 Layout），不在 sys_menu、不产生后台菜单。
+    // 护栏②：name 全部前缀 DatabusStandalone*，与 dynamic 路由隔离、全局唯一（防 duplicateRouteChecker 404）。
+    // 护栏③：子 path 一律相对（丢 standalone 段拼错 URL）。
+    // 护栏④：meta.noCache，裸页不做 keep-alive 缓存。
+    path: '/databus/standalone',
+    component: () => import('@/views/databus/standalone/index.vue'),
+    hidden: true,
+    redirect: '/databus/standalone/monitor',
+    children: [
+      {
+        path: 'connection/:id?',
+        component: () => import('@/views/databus/standalone/connection.vue'),
+        name: 'DatabusStandaloneConnection',
+        meta: { noCache: true }
+      },
+      {
+        path: 'execution/:id?',
+        component: () => import('@/views/databus/standalone/execution.vue'),
+        name: 'DatabusStandaloneExecution',
+        meta: { noCache: true }
+      },
+      {
+        path: 'monitor',
+        component: () => import('@/views/databus/standalone/monitor.vue'),
+        name: 'DatabusStandaloneMonitor',
+        meta: { noCache: true }
+      },
+      {
+        path: 'alert',
+        component: () => import('@/views/databus/standalone/alert.vue'),
+        name: 'DatabusStandaloneAlert',
+        meta: { noCache: true }
+      },
+      {
+        path: 'settings',
+        component: () => import('@/views/databus/standalone/settings.vue'),
+        name: 'DatabusStandaloneSettings',
+        meta: { noCache: true }
+      },
+      {
+        // 资产只读分享页（§11 定案#7 编辑器类分享页）：/editor/:kind/:id，kind=detail|canvas
+        path: 'editor/:kind/:id',
+        component: () => import('@/views/databus/standalone/editor.vue'),
+        name: 'DatabusStandaloneEditor',
+        meta: { noCache: true }
+      }
+    ]
+  },
+  {
     path: '',
     component: Layout,
-    redirect: '/index',
+    redirect: '/databus/workspace',
     children: [
       {
         path: '/index',
@@ -74,6 +124,15 @@ export const constantRoutes: RouteRecordRaw[] = [
         meta: { title: '首页', icon: 'dashboard', affix: true }
       }
     ]
+  },
+  {
+    // 工作台剥壳（§7）：独立应用壳，走 constantRoutes 裸路由承载（不挂 Layout）、hidden 不进后台菜单。
+    // 顶级 /databus 动态枝在 §8 / §13.1 整枝剔除，此处先立（URL 即刻剥壳）；name 用 Workbench 防与动态路由撞名。
+    path: '/databus/workspace',
+    component: () => import('@/views/databus/workspace/index.vue'),
+    name: 'Workbench',
+    hidden: true,
+    meta: { noCache: true }
   },
   {
     path: '/user',

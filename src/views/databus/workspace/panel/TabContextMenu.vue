@@ -15,6 +15,21 @@
         <SvgIcon icon-class="lucide:circle-x" /><span>关闭其他</span>
       </li>
       <li class="wb-tab-ctx__divider" />
+      <!-- 窗口族（§6.4）：新窗体 / 浏览器全屏 / 专注收栏 —— 无 standalone 路径的编辑态 tab 置灰 -->
+      <li
+        class="wb-tab-ctx__item"
+        :class="{ 'is-disabled': !canOpenNew }"
+        @click="canOpenNew && pick('open-new')"
+      >
+        <SvgIcon icon-class="lucide:external-link" /><span>在新窗体打开</span>
+      </li>
+      <li class="wb-tab-ctx__item" @click="pick('toggle-full')">
+        <SvgIcon icon-class="lucide:maximize" /><span>全屏</span>
+      </li>
+      <li class="wb-tab-ctx__item" @click="pick('toggle-max')">
+        <SvgIcon icon-class="lucide:focus" /><span>专注（最大化）</span>
+      </li>
+      <li class="wb-tab-ctx__divider" />
       <li class="wb-tab-ctx__item is-warning" @click="pick('close-left')">
         <SvgIcon icon-class="lucide:chevron-left" /><span>关闭左侧</span>
       </li>
@@ -46,6 +61,8 @@ const props = defineProps<{
   /** 锚点 tab 在会话中的序号（0 基）与总数，仅用于禁用态判定 */
   index: number;
   total: number;
+  /** 锚点 tab 是否有 standalone 逃生页（§6.4）：无则「新窗体」置灰（画布等编辑态 tab） */
+  canOpenNew: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -104,6 +121,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
   &:hover {
     background-color: var(--el-fill-color-light);
+  }
+}
+
+.wb-tab-ctx__item.is-disabled {
+  color: var(--el-text-color-disabled, #c0c4cc);
+  cursor: not-allowed;
+
+  &:hover {
+    background-color: transparent;
   }
 }
 

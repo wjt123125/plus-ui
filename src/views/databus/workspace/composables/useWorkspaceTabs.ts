@@ -18,6 +18,13 @@ export const NEW_FORM_KEY = 'component:form:new';
 /** 物料市场 tab 单例 key */
 export const MARKET_TAB_KEY = 'market';
 
+/* ---- 管理页功能 tab 单例/构造 key（databus-workspace-tabs.md §4.1，2026-10-20） ---- */
+export const CONNECTION_LIST_KEY = 'connection:list';
+export const EXECUTION_LIST_KEY = 'execution:list';
+export const MONITOR_OVERVIEW_KEY = 'monitor:overview';
+export const ALERT_RECORD_KEY = 'alert:record';
+export const SETTINGS_KEY = 'settings';
+
 export function canvasKey(chainId: WorkspaceTab['chainId']): string {
   return `canvas:${chainId}`;
 }
@@ -32,6 +39,12 @@ export function changesKey(id: number): string {
 }
 export function marketItemKey(itemId: number | string): string {
   return `market-item:${itemId}`;
+}
+export function connectionFormKey(id: number | 'new'): string {
+  return id === 'new' ? 'connection:form:new' : `connection:form:${id}`;
+}
+export function executionRecordKey(id: number | string): string {
+  return `execution:record:${id}`;
 }
 
 export function useWorkspaceTabs() {
@@ -168,10 +181,98 @@ export function useWorkspaceTabs() {
     });
   }
 
+  /** 打开/聚焦连接列表 tab（全局单例） */
+  function openConnectionList(): string {
+    return wb.open({
+      key: CONNECTION_LIST_KEY,
+      kind: 'connection-list',
+      title: '连接管理',
+      code: '',
+      dirty: false
+    });
+  }
+
+  /** 打开/聚焦连接对象 tab（id='new' 即新建；编辑态聚焦时顺手刷新标题） */
+  function openConnectionForm(id: number | 'new', title?: string): string {
+    const key = connectionFormKey(id);
+    const existed = wb.tabs.value.find((t) => t.key === key);
+    if (existed && title) {
+      existed.title = title; // 连接可能已改名，聚焦时顺手刷新
+    }
+    return wb.open({
+      key,
+      kind: 'connection-form',
+      title: title ?? (id === 'new' ? '新建连接' : '连接配置'),
+      code: '',
+      formId: id,
+      dirty: false
+    });
+  }
+
+  /** 打开/聚焦执行记录列表 tab（全局单例） */
+  function openExecutionList(): string {
+    return wb.open({
+      key: EXECUTION_LIST_KEY,
+      kind: 'execution-list',
+      title: '执行记录',
+      code: '',
+      dirty: false
+    });
+  }
+
+  /** 打开/聚焦单条执行记录 tab（同 id 单例；雪花 id 用字符串防精度丢失） */
+  function openExecutionRecord(recordId: number | string, title?: string): string {
+    const key = executionRecordKey(recordId);
+    const existed = wb.tabs.value.find((t) => t.key === key);
+    if (existed && title) {
+      existed.title = title;
+    }
+    return wb.open({
+      key,
+      kind: 'execution-record',
+      title: title ?? `执行记录 #${recordId}`,
+      code: '',
+      recordId,
+      dirty: false
+    });
+  }
+
+  /** 打开/聚焦监控大盘 tab（全局单例） */
+  function openMonitorOverview(): string {
+    return wb.open({
+      key: MONITOR_OVERVIEW_KEY,
+      kind: 'monitor-overview',
+      title: '监控大盘',
+      code: '',
+      dirty: false
+    });
+  }
+
+  /** 打开/聚焦告警记录 tab（全局单例；规则已收进 settings tab） */
+  function openAlertRecord(): string {
+    return wb.open({
+      key: ALERT_RECORD_KEY,
+      kind: 'alert-record',
+      title: '告警记录',
+      code: '',
+      dirty: false
+    });
+  }
+
+  /** 打开/聚焦设置 tab（全局单例；左导航三组配置） */
+  function openSettings(): string {
+    return wb.open({
+      key: SETTINGS_KEY,
+      kind: 'settings',
+      title: '设置',
+      code: '',
+      dirty: false
+    });
+  }
+
   /** 关闭同组件的全部 tab（删除组件后调用） */
   function closeByCode(code: string): void {
     const remain = wb.tabs.value.filter((t) => t.code !== code);
-    wb.tabs.value = remain;
     if (!remain.some((t) => t.key === wb.activeKey.value)) {
       wb.activeKey.value = remain[remain.length - 1]?.key ?? '';
     }
@@ -271,6 +372,13 @@ export function useWorkspaceTabs() {
     openMarketDetail,
     openForm,
     openChanges,
+    openConnectionList,
+    openConnectionForm,
+    openExecutionList,
+    openExecutionRecord,
+    openMonitorOverview,
+    openAlertRecord,
+    openSettings,
     closeByCode,
     closeOthers,
     closeLeft,

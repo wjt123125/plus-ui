@@ -5,7 +5,7 @@
       执行控制台（链路工作台底部抽屉，Node-RED debug sidebar / IDE terminal 范式）：
       - 开合由 WorkbenchHeader 的 panel-bottom 开关控制（useExecuteConsole 单例，执行完自动弹出）；
       - 日志行 = 时间 + 链路编码 + 成败概要（成功带耗时，失败带错误消息）；
-      - 有总账记录（recordId）时行尾可点「查看记录」，就地打开执行详情抽屉（不跳离工作台）。
+      - 有总账记录（recordId）时行尾可点「查看记录」，上抛宿主开 execution-record tab（不跳离工作台）。
       视觉对齐编译控制台：14px 圆角卡片 + mono 字体日志 + 尾部自动滚动。
     -->
     <!-- 外层 transition 要求单根：wrapper 用 display:contents 不生成布局盒，section 仍是原 flex 子项 -->
@@ -56,18 +56,11 @@
       </div>
     </div>
     </section>
-    <ExecutionDetailDrawer
-      v-model:visible="detailVisible"
-      :record-id="detailRecordId"
-      @rerun="handleRerunDone"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
-import ExecutionDetailDrawer from '@/views/databus/execution/ExecutionDetailDrawer.vue';
-import type { DatabusExecutionResult } from '@/api/databus/execution/types';
 import { useLucideSubset } from '../composables/useLucideSubset';
 import { useExecuteConsole, type ExecuteLogEntry } from '../composables/useExecuteConsole';
 
@@ -76,15 +69,14 @@ defineOptions({ name: 'ExecuteConsole' });
 /** bare=true：由工作区终端容器统一提供头部（tab 条 + 清空/收起），本组件只渲日志体 */
 withDefaults(defineProps<{ bare?: boolean }>(), { bare: false });
 
-const { open, entries, errorCount, clear, append } = useExecuteConsole();
+/** 「查看记录」上抛宿主：由工作台开 execution-record tab（pane 无路由依赖，见正本 §5 红线） */
+const emit = defineEmits<{
+  (e: 'view-record', recordId: number | string, title?: string): void;
+}>();
+
+const { open, entries, errorCount, clear } = useExecuteConsole();
 
 const bodyRef = ref<HTMLElement>();
-
-/** 详情抽屉状态：点「查看记录」就地打开，不离开工作台 */
-const detailVisible = ref(false);
-const detailRecordId = ref<ExecuteLogEntry['recordId']>(null);
-/** 当前详情所属日志行：重跑补日志时回填链路信息 */
-const detailEntry = ref<ExecuteLogEntry>();
 
 useLucideSubset();
 
@@ -99,25 +91,10 @@ watch(
   }
 );
 
-/** 打开执行记录详情抽屉（就地查看，不跳路由） */
+/** 「查看记录」：把总账 recordId 上抛宿主开记录 tab */
 function openRecord(entry: ExecuteLogEntry) {
-  detailEntry.value = entry;
-  detailRecordId.value = entry.recordId;
-  detailVisible.value = true;
-}
-
-/** 抽屉内重跑完成：补一条执行日志（与手动执行同一反馈通道）+ 详情切到新记录 */
-function handleRerunDone(result: DatabusExecutionResult) {
-  append({
-    level: result.success ? 'success' : 'error',
-    chainId: result.chainId ?? detailEntry.value?.chainId,
-    chainCode: detailEntry.value?.chainCode ?? String(result.chainId ?? ''),
-    text: result.message ?? '',
-    costTime: result.costTime,
-    recordId: result.recordId ?? null
-  });
-  if (result.recordId) {
-    detailRecordId.value = result.recordId;
+  if (entry.recordId) {
+    emit('view-record', entry.recordId, entry.chainCode ? `执行记录 · ${entry.chainCode}` : undefined);
   }
 }
 </script>

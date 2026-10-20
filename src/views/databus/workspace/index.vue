@@ -17,6 +17,8 @@
       nav-label="资源"
       console-label="终端"
       :console-count="consoleErrorCount"
+      admin-entry
+      @admin="goAdmin"
     />
 
     <div class="wsp">
@@ -59,6 +61,11 @@
           @market-toggle="onMarketToggle"
           @market-open-detail="onMarketOpenDetail"
           @market-open-market="onMarketOpenMarket"
+          @open-connection="onOpenConnection"
+          @connection-saved="onConnectionSaved"
+          @open-execution="onOpenExecutionRecord"
+          @execution-refresh="onExecutionRefresh"
+          @open-alert="wb.openAlertRecord"
         >
           <!-- tab 全关时的空白工作台：注入空态导航（打开/新建/树定位三类入口） -->
           <template #empty>
@@ -67,7 +74,7 @@
         </WorkspaceWorkPanel>
 
         <!-- 底部终端：执行 / 编译双小 tab 同卡片（Trae terminal 范式），任一流有日志自动弹出 -->
-        <WorkbenchTerminal />
+        <WorkbenchTerminal @view-record="onOpenExecutionRecord" />
       </div>
 
       <!-- 栏 4：右抽屉统一资源树（六 section 组织链路/组件/目录/收藏/模板）。
@@ -117,6 +124,7 @@
 
 <script setup name="DatabusWorkspace" lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import {
   delComponent,
@@ -147,7 +155,7 @@ import AiHistoryRail from '@/views/databus/workbench/ai/AiHistoryRail.vue';
 import { useAiSessionHistory } from '@/views/databus/workbench/ai/useAiSessionHistory';
 import ChainForm, { type ChainFormSuccessPayload } from '../chain/ChainForm.vue';
 import ChainCopyDialog from '../chain/ChainCopyDialog.vue';
-import { useWorkspaceTabs } from './composables/useWorkspaceTabs';
+import { useWorkspaceTabs, EXECUTION_LIST_KEY } from './composables/useWorkspaceTabs';
 import { useRecentResources } from './composables/useRecentResources';
 import { useWorkspaceTerminal } from './composables/useWorkspaceTerminal';
 import WorkspaceWorkPanel from './panel/WorkspaceWorkPanel.vue';
@@ -156,6 +164,7 @@ import WorkbenchTerminal from './components/WorkbenchTerminal.vue';
 import ResourceTree from './tree/ResourceTree.vue';
 import type {
   ComponentSaved,
+  ConnectionSaved,
   FormPreset,
   LauncherCommand,
   ResourceMenuCommand,
@@ -174,6 +183,12 @@ const togglingCode = ref<string>();
 
 const wb = useWorkspaceTabs();
 const { tabs, activeKey } = wb;
+
+/** 后台管理入口（§7 改造点3）：进 RuoYi 后台管理首页（按钮可见性由 WorkbenchHeader 内 v-hasRole 控制） */
+const router = useRouter();
+function goAdmin() {
+  router.push('/index');
+}
 const { recentOrdered, touch: touchRecent, remove: removeRecent, prune: pruneRecent } =
   useRecentResources();
 /** 分组/业务域字典：资源树系统组件分组序要用，进页面即触发（模块级缓存，全会话一次） */
@@ -206,6 +221,22 @@ function onLauncherCommand(cmd: LauncherCommand) {
       setDrawerCollapsed(false);
       treeRef.value?.openDirectoryDialog('add');
       break;
+    // 空态管理页入口卡（§8 步骤8）：开对应功能 tab（先立后破，菜单收敛后入口不丢）
+    case 'admin-connection':
+      wb.openConnectionList();
+      break;
+    case 'admin-execution':
+      wb.openExecutionList();
+      break;
+    case 'admin-monitor':
+      wb.openMonitorOverview();
+      break;
+    case 'admin-alert':
+      wb.openAlertRecord();
+      break;
+    case 'admin-settings':
+      wb.openSettings();
+      break;
   }
 }
 
@@ -230,9 +261,69 @@ function onTabAction(cmd: TabMenuCommand, key: string) {
     case 'close-all':
       void wb.closeAll();
       break;
+    // 窗口族（§6.4）：新窗体 / 浏览器全屏 / 壳内专注收栏
+    case 'open-new': {
+      const tab = tabs.value.find((t) => t.key === key);
+      if (tab) openStandalone(tab);
+      break;
+    }
+    case 'toggle-full':
+      toggleFullscreen();
+      break;
+    case 'toggle-max':
+      toggleFocus();
+      break;
     default:
       break;
   }
+}
+
+/* ---------- 窗口族（§6.4 standalone 逃生 / 全屏 / 专注） ---------- */
+
+/** 锚点 tab ✗kind → standalone 逃生 URL（七管理 kind 全带；编辑态 kind 返回 null 置灰菜单） */
+function buildStandaloneUrl(tab: WorkspaceTab): string | null {
+  switch (tab.kind) {
+    case 'connection-list':
+      return '/databus/standalone/connection';
+    case 'connection-form':
+      return `/databus/standalone/connection/${tab.formId ?? 'new'}`;
+    case 'execution-list':
+      return '/databus/standalone/execution';
+    case 'execution-record':
+      return tab.recordId != null
+        ? `/databus/standalone/execution/${tab.recordId}`
+        : '/databus/standalone/execution';
+    case 'monitor-overview':
+      return '/databus/standalone/monitor';
+    case 'alert-record':
+      return '/databus/standalone/alert';
+    case 'settings':
+      return '/databus/standalone/settings';
+    default:
+      return null;
+  }
+}
+
+function openStandalone(tab: WorkspaceTab) {
+  const url = buildStandaloneUrl(tab);
+  if (url) window.open(url, '_blank');
+}
+
+/** 浏览器级全屏（toggle 切换），宿主根上即可 */
+function toggleFullscreen() {
+  if (document.fullscreenElement) {
+    void document.exitFullscreen();
+  } else {
+    void document.documentElement.requestFullscreen();
+  }
+}
+
+/** 壳内专注：收起 AI 栏/会话历史/右抽屉/底部终端，内容最大化 */
+function toggleFocus() {
+  aiCollapsed.value = true;
+  historyCollapsed.value = true;
+  setDrawerCollapsed(true);
+  consoleOpen.value = false;
 }
 
 /* ---------------- 前端偏好（开合与宽度） ---------------- */
@@ -266,10 +357,12 @@ const refreshTokens = reactive<Record<string, number>>({});
 /* ---------------- tab 派生态 ---------------- */
 
 const activeTab = computed(() => tabs.value.find((t) => t.key === activeKey.value));
-/** 当前激活 tab 的 kind：驱动右抽屉露出几个 tab（仅 canvas 露四 tab，market / market-detail 只显资源树） */
+/** 当前激活 tab 的 kind：驱动右抽屉露出几个 tab（仅 canvas/detail/form/changes 露多 tab，其余只显资源树） */
 const drawerKind = computed<DrawerKind>(() => {
   const kind = activeTab.value?.kind;
-  return kind === 'market' || kind === 'market-detail' ? 'none' : (kind ?? 'none');
+  return kind === 'canvas' || kind === 'detail' || kind === 'form' || kind === 'changes'
+    ? kind
+    : 'none';
 });
 /** 树高亮：激活画布的链路 id */
 const activeChainId = computed(() =>
@@ -486,6 +579,45 @@ function onMarketOpenMarket() {
   wb.openMarket();
 }
 
+/* ---------------- 连接管理（中栏 connection tab 上抛，pane 无路由依赖） ---------------- */
+
+/** 连接列表点卡片/新增：开（或聚焦）连接对象 tab */
+function onOpenConnection(id: number | 'new', title: string) {
+  wb.openConnectionForm(id, title);
+}
+
+/**
+ * 连接保存成功：刷新连接列表 tab；新建时后端不回填主键，关掉对象 tab（避免重复保存），
+ * 编辑时把标题改成最新连接名。
+ */
+function onConnectionSaved(tab: WorkspaceTab, payload: ConnectionSaved) {
+  const listTab = tabs.value.find((t) => t.kind === 'connection-list');
+  if (listTab) {
+    refreshTokens[listTab.key] = (refreshTokens[listTab.key] ?? 0) + 1;
+  }
+  if (payload.isNew) {
+    wb.close(tab.key);
+  } else {
+    tab.title = payload.connectionName;
+  }
+}
+
+/* ---------------- 执行记录（中栏 execution tab / 底部终端上抛，pane 无路由依赖） ---------------- */
+
+/**
+ * 打开单条执行记录 tab：列表里点「查看记录」、终端日志行点「查看记录」共用。
+ * 同时给执行列表 tab 自增刷新令牌——重跑后列表数据已变，回到列表须看到最新态。
+ */
+function onOpenExecutionRecord(recordId: number | string, title?: string) {
+  wb.openExecutionRecord(recordId, title);
+  refreshTokens[EXECUTION_LIST_KEY] = (refreshTokens[EXECUTION_LIST_KEY] ?? 0) + 1;
+}
+
+/** 记录 tab 内重跑完成：列表 tab 若已打开则刷新（未打开时下次打开自会取数） */
+function onExecutionRefresh() {
+  refreshTokens[EXECUTION_LIST_KEY] = (refreshTokens[EXECUTION_LIST_KEY] ?? 0) + 1;
+}
+
 /** AI 助手选中某组件（v1 空壳预留）：等价于在树上点该叶子 */
 function onAiSelect(payload: string) {
   const row = rowByCode(payload);
@@ -580,6 +712,9 @@ function onTreeCommand(command: ResourceMenuCommand, node: ResourceTreeNode) {
     case 'delete-chain':
       void handleDeleteChain(node);
       break;
+    case 'share-link':
+      copyShareLink(node);
+      break;
 
     /* —— 组件 —— */
     case 'view-component':
@@ -609,6 +744,30 @@ function onTreeCommand(command: ResourceMenuCommand, node: ResourceTreeNode) {
       // 目录/收藏/移动等动作在树内闭环（见 ResourceTree），不上抛
       break;
   }
+}
+
+/** 分享链路/组件：拼只读分享 URL 并复制到剪贴板。
+ *  链路 → editor/canvas/:chainId；组件 → editor/detail/:componentCode。
+ *  鉴权不变（同源 token+perms），无权限打开即 403，不靠随机 URL 藏内容。 */
+function copyShareLink(node: ResourceTreeNode) {
+  const origin = window.location.origin;
+  let href: string | null = null;
+  if (node.type === 'chain') {
+    const chainId = nodeChainId(node);
+    if (chainId != null) {
+      href = `${origin}/databus/standalone/editor/canvas/${chainId}`;
+    }
+  } else if (node.componentCode) {
+    href = `${origin}/databus/standalone/editor/detail/${encodeURIComponent(node.componentCode)}`;
+  }
+  if (!href) {
+    ElMessage.warning('该资产缺少可分享的标识');
+    return;
+  }
+  void navigator.clipboard
+    .writeText(href)
+    .then(() => ElMessage.success('分享链接已复制'))
+    .catch(() => ElMessage.warning('复制失败，请手动复制地址栏链接'));
 }
 
 /** 树头部/目录右键「新建链路」：开 ChainForm 并预设归属目录（null=未归组） */
@@ -755,11 +914,11 @@ onBeforeUnmount(() => {
 </script>
 
 <style lang="scss" scoped>
-/* 页面级 wrapper：吃掉视口高度，header 与三栏区各取所需（§2.0 高度公式） */
+/* 页面级 wrapper：吃满视口高度（2026-10-20 剥壳后不再缩后台 header 高度，§7 改造点2） */
 .wsp-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 123px);
+  height: 100vh;
 }
 
 .wsp {

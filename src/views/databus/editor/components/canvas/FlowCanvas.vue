@@ -8,8 +8,8 @@
       :default-edge-options="defaultEdgeOptions"
       :connection-line-options="{ type: ConnectionLineType.Bezier, style: {} }"
       :connection-mode="ConnectionMode.Loose"
-      :nodes-draggable="true"
-      :nodes-connectable="true"
+      :nodes-draggable="!readonly"
+      :nodes-connectable="!readonly"
       :elements-selectable="true"
       :connection-radius="24"
       :node-drag-threshold="6"
@@ -21,9 +21,10 @@
       <Background :gap="20" :size="1.5" color="#cdd0d6" variant="dots" />
       <FlowViewportControls />
       <MiniMap pannable zoomable :width="140" :height="90" :node-color="miniMapNodeColor" />
-      <FlowSidePanel />
-      <CmpPickerPopover />
-      <CmpContextMenu />
+      <!-- 编辑类浮层只读态不渲染：试运行/自动排列浮钮、节点拾取、右键菜单全隐藏 -->
+      <FlowSidePanel v-if="!readonly" />
+      <CmpPickerPopover v-if="!readonly" />
+      <CmpContextMenu v-if="!readonly" />
     </VueFlow>
   </div>
 </template>
@@ -64,6 +65,8 @@ defineOptions({ name: 'FlowCanvas' });
 defineProps<{
   nodes: Node<CmpNodeData>[];
   edges: Edge[];
+  /** 只读分享态：禁节点拖拽/连线，隐藏试运行浮钮、节点拾取与右键菜单 */
+  readonly?: boolean;
 }>();
 
 const emit = defineEmits<{

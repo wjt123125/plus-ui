@@ -5,19 +5,21 @@
     :class="{
       'is-palette-collapsed': paletteCollapsed,
       'is-props-collapsed': propsCollapsed,
-      'is-embedded': host === 'workbench'
+      'is-embedded': host === 'workbench',
+      'is-readonly': isReadonly
     }"
   >
     <!-- 三栏：组件面板 / 画布 / 参数表单（IDE 化后无顶栏，网格单行，画布吃满高度；
          文档动作收口到画布空白右键菜单 + 快捷键 + 右上浮钮，见 useEditorActions） -->
     <div class="databus-editor__body">
-      <div class="databus-editor__palette">
+      <div v-if="!isReadonly" class="databus-editor__palette">
         <CmpPalette @collapse="setPaletteCollapsed(true)" />
       </div>
       <div class="databus-editor__canvas-wrap">
         <FlowCanvas
           :nodes="initial.nodes"
           :edges="initial.edges"
+          :readonly="isReadonly"
           @select="ctrl.select($event)"
           @drop-node="onDropNode"
           @node-dblclick="onNodeDblClick"
@@ -31,7 +33,7 @@
           @back="backToList"
         />
         <button
-          v-if="paletteCollapsed"
+          v-if="paletteCollapsed && !isReadonly"
           type="button"
           class="databus-editor__palette-expand"
           title="展开物料区"
@@ -41,7 +43,7 @@
         </button>
         <!-- 浮动展开钮仅全屏编辑器宿主：工作台宿主的抽屉在 Pane 外，开合由工作台开关管 -->
         <button
-          v-if="host === 'editor' && propsCollapsed"
+          v-if="host === 'editor' && propsCollapsed && !isReadonly"
           type="button"
           class="databus-editor__props-expand"
           title="展开右侧面板"
@@ -53,7 +55,7 @@
       <!-- 右抽屉槽仅全屏编辑器宿主挂 Pane 内（名片本地直传，无链路树 tab）；
            工作台宿主的抽屉在工作台级（Pane 外），经 activePort 单例读取名片 -->
       <div
-        v-if="host === 'editor'"
+        v-if="host === 'editor' && !isReadonly"
         class="databus-editor__drawer"
         :class="{ 'is-collapsed': propsCollapsed }"
       >
@@ -151,14 +153,20 @@ const props = withDefaults(
     loadChainId?: number | string | null;
     /** workbench 宿主：本 tab 是否激活（非激活实例快捷键短路） */
     active?: boolean;
+    /** 只读分享态（standalone 只读页宿主）：单列画布、隐藏物料区/右抽屉/编辑动作，
+     *  仅渲染已保存链路供查看（loadChainId 指定）。拖拽/连线/右键菜单一并屏蔽。 */
+    readonly?: boolean;
   }>(),
-  { host: 'editor', loadChainId: null, active: true }
+  { host: 'editor', loadChainId: null, active: true, readonly: false }
 );
 
 const emit = defineEmits<{
   'dirty-change': [dirty: boolean];
   'open-chain': [chainId: number | string, title: string];
 }>();
+
+/** 只读分享态：单列画布，不渲染物料区/右抽屉，编辑动作与快捷键全部短路 */
+const isReadonly = computed(() => props.readonly === true);
 
 // ElNode 模型树是唯一数据源，画布是它的投影
 const treeModel = provideElTreeModel();
@@ -243,6 +251,8 @@ const chainOpts = useChainOptions(() => ({ pageNum: 1, pageSize: 1000, isTemplat
 const router = useRouter();
 
 async function onNodeDblClick(node: Node<CmpNodeData>) {
+  // 只读分享态：不允许跳转子链路（新窗口/开 tab 都属编辑流导航）
+  if (isReadonly) return;
   const data = node.data;
   if (!data || data.defType !== 'CHAIN') return;
   const code = data.cmpId;
@@ -415,24 +425,42 @@ const {
 });
 
 // 文档动作注入：画布空白右键菜单/右上浮层 inject（IDE 化后顶栏已删，命令统一收口于此）
-provideEditorActions({
-  canUndo,
-  canRedo,
-  undo,
-  redo,
-  reset: resetCanvas,
-  save: handleSaveChain,
-  preview: openPreview,
-  openInputParams: () => {
-    inputParamsVisible.value = true;
-  },
-  saveAsEl,
-  chainSaving,
-  previewRunning
-});
+// 只读分享态给空壳：CmpContextMenu/FlowSidePanel 已被 FlowCanvas readonly 隐藏，空壳仅兜底
+// 意外消费方（双击/快捷键等不走此表），保证不触发保存/试运行/生成 EL。
+if (isReadonly) {
+  provideEditorActions({
+    canUndo: ref(false),
+    canRedo: ref(false),
+    undo: () => {},
+    redo: () => {},
+    reset: () => {},
+    save: () => {},
+    preview: () => {},
+    openInputParams: () => {},
+    saveAsEl: () => {},
+    chainSaving: ref(false),
+    previewRunning: ref(false)
+  });
+} else {
+  provideEditorActions({
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    reset: resetCanvas,
+    save: handleSaveChain,
+    preview: openPreview,
+    openInputParams: () => {
+      inputParamsVisible.value = true;
+    },
+    saveAsEl,
+    chainSaving,
+    previewRunning
+  });
+}
 
 // 键盘快捷键：动作注入，window 绑定/解绑在 composable 内自理。
-// workbench 多 canvas tab 共存时，非激活实例短路（undo/Delete 不串台）
+// workbench 多 canvas tab 共存时，非激活实例短路（undo/Delete 不串台）；只读态恒短路
 useEditorHotkeys(
   {
     deselect: () => ctrl.deselect(),
@@ -445,7 +473,7 @@ useEditorHotkeys(
     saveChain: handleSaveChain,
     saveAsEl
   },
-  () => props.active
+  () => props.active && !isReadonly
 );
 
 onMounted(() => {
@@ -493,6 +521,15 @@ onMounted(() => {
 .databus-editor.is-embedded {
   height: 100%;
   grid-template-columns: var(--palette-w) minmax(0, 1fr);
+}
+
+/* 只读分享态宿主：物料区/右抽屉都不渲染，网格收成单列画布，画布占第一轨道 */
+.databus-editor.is-readonly {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.databus-editor.is-readonly .databus-editor__canvas-wrap {
+  grid-column: 1;
 }
 
 /* 折叠只改列宽变量；轨道收缩，画布自然外扩（浮层控件 absolute 在画布 wrap 内，不受影响） */

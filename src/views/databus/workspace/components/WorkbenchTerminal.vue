@@ -41,7 +41,7 @@
     </header>
 
     <div class="ws-term__body">
-      <ExecuteConsole v-show="tab === 'execute'" bare />
+      <ExecuteConsole v-show="tab === 'execute'" bare @view-record="onViewRecord" />
       <CompileConsole v-show="tab === 'compile'" bare />
     </div>
   </section>
@@ -55,7 +55,16 @@ import { useWorkspaceTerminal } from '../composables/useWorkspaceTerminal';
 
 defineOptions({ name: 'WorkbenchTerminal' });
 
+/** 执行日志行「查看记录」上抛宿主：由工作台开 execution-record tab */
+const emit = defineEmits<{
+  (e: 'view-record', recordId: number | string, title?: string): void;
+}>();
+
 const { open, tab, exec, comp, switchTab, close, clearActive } = useWorkspaceTerminal();
+
+function onViewRecord(recordId: number | string, title?: string) {
+  emit('view-record', recordId, title);
+}
 
 useLucideSubset();
 </script>
