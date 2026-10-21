@@ -28,7 +28,7 @@
             v-hasPermi="['databus:directory:add']"
             class="res-tree__tool"
             type="button"
-            @click="openDirectoryDialog('add')"
+            @click="emit('add-directory')"
           >
             <SvgIcon icon-class="lucide:plus" />
           </button>
@@ -144,52 +144,23 @@
       @copy="onCopyCode"
     />
 
-    <!-- 目录新增/编辑（同名/换父成环由后端校验兜底） -->
-    <el-dialog
-      v-model="dirDialog.visible"
-      :title="dirDialog.mode === 'add' ? '新建目录' : '编辑目录'"
-      width="480px"
+    <!-- 目录编辑抽屉（重命名薄壳）：表单体与新建向导 create tab 共用 DirectoryFormBody（2026-10-21 新建路径已收敛到向导 tab） -->
+    <el-drawer
+      v-model="renameDialog.visible"
+      direction="rtl"
+      size="520px"
       append-to-body
+      destroy-on-close
+      :with-header="false"
+      :close-on-click-modal="true"
+      class="res-tree__rename"
     >
-      <el-form ref="dirFormRef" :model="dirDialog.form" :rules="dirRules" label-width="80px">
-        <el-form-item label="目录名" prop="directoryName">
-          <el-input
-            v-model="dirDialog.form.directoryName"
-            maxlength="100"
-            show-word-limit
-            placeholder="目录名"
-          />
-        </el-form-item>
-        <el-form-item label="父目录" prop="parentId">
-          <el-tree-select
-            v-model="dirDialog.form.parentId"
-            :data="dirOptions"
-            node-key="value"
-            check-strictly
-            default-expand-all
-            style="width: 100%"
-            placeholder="根目录"
-          />
-        </el-form-item>
-        <el-form-item label="排序号" prop="sort">
-          <el-input-number v-model="dirDialog.form.sort" :min="0" :max="9999" controls-position="right" />
-        </el-form-item>
-        <el-form-item label="备注" prop="remark">
-          <el-input
-            v-model="dirDialog.form.remark"
-            type="textarea"
-            :rows="2"
-            maxlength="500"
-            show-word-limit
-            placeholder="选填"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dirDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="dirDialog.saving" @click="submitDirectory">确定</el-button>
-      </template>
-    </el-dialog>
+      <DirectoryFormBody
+        :directory-id="renameDialog.directoryId"
+        @saved="onDirectorySaved"
+        @cancel="renameDialog.visible = false"
+      />
+    </el-drawer>
 
     <!-- 归属移动：链路/自建组件通用（选 0=移出为未归组） -->
     <el-dialog v-model="moveDialog.visible" title="移动到目录" width="480px" append-to-body>
@@ -216,12 +187,11 @@
 
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch, type CSSProperties } from 'vue';
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { listChain } from '@/api/databus/chain';
 import type { DatabusChainVo } from '@/api/databus/chain/types';
 import type { ComponentSource, ScriptRuntime } from '@/api/databus/component/types';
 import {
-  addDirectory,
   delDirectory,
   listDirectory,
   moveChainToDirectory,
@@ -245,6 +215,7 @@ import type {
   ResourceTreeNode
 } from '../workbench.types';
 import ResourceTreeContextMenu from './ResourceTreeContextMenu.vue';
+import DirectoryFormBody from '../panel/DirectoryFormBody.vue';
 
 defineOptions({ name: 'ResourceTree' });
 
@@ -267,6 +238,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** 新建链路（头部钮=null 未归组；目录右键=该目录 id） */
   (e: 'add-chain', directoryId: string | number | null): void;
+  /** 新建目录（头部钮=根级无 preset；目录右键=在该目录下建子目录）——宿主开向导 tab directory 段 */
+  (e: 'add-directory', preset?: FormPreset): void;
   /** 新建组件（目录右键携带归属目录预设） */
   (e: 'add-component', preset: FormPreset): void;
   /** 叶子业务动作（打开/编辑/复制/发布/下线/执行/删除/使用模板/查看/代码变更/启停）：宿主承接 */
@@ -791,7 +764,7 @@ function onMenuCommand(command: ResourceMenuCommand, node: ResourceTreeNode) {
       openMoveDialog(node);
       break;
     case 'add-child':
-      openDirectoryDialog('add', node.directoryId);
+      emit('add-directory', { directoryId: node.directoryId ?? null });
       break;
     case 'add-chain':
       emit('add-chain', node.type === 'directory' ? (node.directoryId ?? null) : null);
@@ -802,7 +775,8 @@ function onMenuCommand(command: ResourceMenuCommand, node: ResourceTreeNode) {
       });
       break;
     case 'rename':
-      openDirectoryDialog('edit', node.directoryId);
+      renameDialog.directoryId = node.directoryId ?? null;
+      renameDialog.visible = true;
       break;
     case 'remove-directory':
       removeDirectory(node);
@@ -851,38 +825,9 @@ async function onCopyCode(code: string) {
   }
 }
 
-/* ---------------- 目录新增/编辑 ---------------- */
+/* ---------------- 目录选项与重命名薄壳 ---------------- */
 
-interface DirectoryFormState {
-  id?: string | number;
-  parentId: string | number;
-  directoryName: string;
-  sort: number;
-  remark?: string;
-}
-
-const dirDialog = reactive<{
-  visible: boolean;
-  mode: 'add' | 'edit';
-  saving: boolean;
-  form: DirectoryFormState;
-}>({
-  visible: false,
-  mode: 'add',
-  saving: false,
-  form: { parentId: 0, directoryName: '', sort: 0, remark: '' }
-});
-
-const dirFormRef = ref<FormInstance>();
-
-const dirRules: FormRules = {
-  directoryName: [
-    { required: true, message: '目录名不能为空', trigger: 'blur' },
-    { max: 100, message: '目录名不超过 100 字', trigger: 'blur' }
-  ]
-};
-
-/** 目录下拉树选项（value=0 为根哨兵）；编辑模式剔除自身子树防选环 */
+/** 目录下拉树选项（value=0 为根哨兵）；移动 dialog 与拖拽防环共用（表单体选项由 DirectoryFormBody 自取） */
 interface DirOption {
   value: string | number;
   label: string;
@@ -899,7 +844,7 @@ function buildDirOptions(parentId: string | number, excluded: Set<string>): DirO
     }));
 }
 
-/** 平表闭包求子孙集合（含自身），用于编辑/拖拽剔除自身子树 */
+/** 平表闭包求子孙集合（含自身），用于拖拽剔除自身子树 */
 function subtreeIds(rootId: string): Set<string> {
   const ids = new Set<string>([rootId]);
   let grew = true;
@@ -915,51 +860,16 @@ function subtreeIds(rootId: string): Set<string> {
   return ids;
 }
 
-const dirOptions = computed<DirOption[]>(() => {
-  const excluded =
-    dirDialog.mode === 'edit' && dirDialog.form.id != null
-      ? subtreeIds(String(dirDialog.form.id))
-      : new Set<string>();
-  return [{ value: 0, label: '根目录', children: buildDirOptions(0, excluded) }];
+/** 重命名抽屉（编辑专用薄壳）：表单体与新建向导 create tab 共用 DirectoryFormBody */
+const renameDialog = reactive({
+  visible: false,
+  directoryId: null as string | number | null
 });
 
-function openDirectoryDialog(mode: 'add' | 'edit', parentId?: string | number | null) {
-  dirDialog.mode = mode;
-  if (mode === 'add') {
-    dirDialog.form = { parentId: parentId ?? 0, directoryName: '', sort: 0, remark: '' };
-  } else {
-    const d = directories.value.find((x) => String(x.id) === String(parentId));
-    if (!d) return;
-    dirDialog.form = {
-      id: d.id,
-      parentId: d.parentId,
-      directoryName: d.directoryName,
-      sort: d.sort,
-      remark: d.remark
-    };
-  }
-  dirDialog.visible = true;
-}
-
-async function submitDirectory() {
-  const valid = await dirFormRef.value?.validate().catch(() => false);
-  if (!valid) return;
-  dirDialog.saving = true;
-  try {
-    if (dirDialog.mode === 'add') {
-      await addDirectory({ ...dirDialog.form, parentId: dirDialog.form.parentId ?? 0 });
-      ElMessage.success('目录已创建');
-    } else {
-      await updateDirectory({ ...dirDialog.form, id: dirDialog.form.id });
-      ElMessage.success('目录已更新');
-    }
-    dirDialog.visible = false;
-    await reload();
-  } catch {
-    /* 拦截器已提示 */
-  } finally {
-    dirDialog.saving = false;
-  }
+/** 重命名保存回报：关抽屉并刷树（脏确认与提交提示由表单体自理） */
+async function onDirectorySaved() {
+  renameDialog.visible = false;
+  await reload();
 }
 
 async function removeDirectory(node: ResourceTreeNode) {
@@ -1292,7 +1202,7 @@ function focusSection(id: string) {
   });
 }
 
-defineExpose({ reload, openDirectoryDialog, focusSection });
+defineExpose({ reload, focusSection });
 </script>
 
 <style lang="scss" scoped>
@@ -1635,6 +1545,16 @@ defineExpose({ reload, openDirectoryDialog, focusSection });
   &__from {
     font-size: 12px;
     color: var(--el-text-color-secondary);
+  }
+}
+
+/* 重命名抽屉薄壳：抽体零内边距交给表单体自排版（抽屉传送至 body，须顶层选择器） */
+.res-tree__rename {
+  :deep(.el-drawer__body) {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
   }
 }
 </style>

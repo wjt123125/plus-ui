@@ -7,6 +7,7 @@ import type { ComponentSource } from '@/api/databus/component/types';
 import type { DatabusChainVo } from '@/api/databus/chain/types';
 import type { WorkbenchTab } from '../workbench/workbench.types';
 import type { ComponentRegistryRow } from '../component/model/registry';
+import type { ChainFormSuccessPayload } from '../chain/ChainFormBody.vue';
 
 /**
  * 工作区 tab 形态（2026-10-20 管理页 tab 化扩展，databus-workspace-tabs.md §4.1）：
@@ -26,7 +27,12 @@ export type WorkspaceTabKind =
   | 'execution-record'
   | 'monitor-overview'
   | 'alert-record'
-  | 'settings';
+  | 'settings'
+  // 新建向导（单例 tab，顶部 filetype 分段四合一，2026-10-21 新建入口收敛）
+  | 'create';
+
+/** 新建向导可选的资源类型（向导 tab 顶部分段，CreatePane 按 filetype 分发表单体） */
+export type CreateFileType = 'chain' | 'component' | 'directory' | 'connection';
 
 /** 新建组件 tab 的预设上下文（目录右键「新建组件」携带） */
 export interface FormPreset {
@@ -53,6 +59,8 @@ export interface WorkspaceTab extends WorkbenchTab {
   version?: number | null;
   /** 仅新建 form tab 使用：表单初始分组/业务域/归属目录 */
   preset?: FormPreset;
+  /** 仅 create 向导 tab 使用：当前分段选中的资源类型（切段由 CreatePane 承接） */
+  filetype?: CreateFileType;
   /** connection-form：连接主键（新建为 'new'） */
   formId?: number | 'new';
   /** execution-record：执行记录主键（雪花 id 超 2^53，故与 VO 同宽用字符串兜底） */
@@ -73,19 +81,33 @@ export interface ComponentSaved {
   version?: number | null;
 }
 
+/**
+ * 新建向导保存回报（CreatePane 按当前 filetype 回填对应槽，宿主据此派发刷新/跳转，2026-10-21 新建入口收敛）：
+ * 保存成功后向导 tab 保留并复位为空表，宿主可继续派生后续动作（如打开画布）。
+ */
+export interface CreateSavedPayload {
+  filetype: CreateFileType;
+  /** chain 槽：新建链路回报（宿主据 id 直接打开画布 tab） */
+  chain?: ChainFormSuccessPayload;
+  /** component 槽：组件保存回报（宿主按 code 刷台账/树） */
+  component?: ComponentSaved;
+  /** directory 槽：目录新建回报（宿主刷资源树） */
+  directory?: boolean;
+  /** connection 槽：连接保存回报（宿主刷连接列表） */
+  connection?: ConnectionSaved;
+}
+
 /** 资源生命周期轴（行尾色点）：草稿 / 已发布 / 已下线 */
 export type ResourceLifecycle = 'draft' | 'published' | 'offline';
 
 /** 资源装饰轴（字母码，可与生命周期并存、可多个）：异常 / 会话脏 / 废弃 */
 export type ResourceMark = 'error' | 'modified' | 'deprecated';
 
-/** 中栏空态导航（WorkbenchLauncher）派发的入口命令（打开类走右树定位，新建类走弹窗，市场开 tab） */
+/** 中栏空态导航（WorkbenchLauncher）派发的入口命令（打开类走右树定位，新建类开向导 tab，市场开 tab） */
 export type LauncherCommand =
   | 'recent'
   | 'favorite'
-  | 'new-chain'
-  | 'new-component'
-  | 'new-directory'
+  | 'new'
   | 'system'
   | 'market'
   // 空态管理页入口卡（§8 步骤8「同步补 launcher 卡」，开对应功能 tab，先立后破防功能失踪）

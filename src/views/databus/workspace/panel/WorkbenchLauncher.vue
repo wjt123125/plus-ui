@@ -52,20 +52,13 @@ interface LauncherCard {
 const CARDS: LauncherCard[] = [
   { key: 'recent', label: '最近访问', icon: 'lucide:history', color: '#A371F7' },
   { key: 'favorite', label: '我的收藏', icon: 'lucide:star', color: '#F5B93C' },
-  { key: 'new-chain', label: '新建链路', icon: 'lucide:file-plus', color: '#2DD288', perm: ['databus:editor:add'] },
+  // 新建四合一（2026-10-21 入口收敛，decisions §10）：一张卡开向导 create tab，段内在向导里选
   {
-    key: 'new-component',
-    label: '新建组件',
-    icon: 'lucide:file-plus-2',
-    color: '#FF8A5B',
-    perm: ['databus:component:add']
-  },
-  {
-    key: 'new-directory',
-    label: '新建目录',
-    icon: 'lucide:folder',
-    color: '#22B8CF',
-    perm: ['databus:directory:add']
+    key: 'new',
+    label: '新建',
+    icon: 'lucide:file-plus',
+    color: '#2DD288',
+    perm: ['databus:editor:add', 'databus:component:add', 'databus:directory:add', 'databus:connection:add']
   },
   { key: 'system', label: '系统组件', icon: 'lucide:boxes', color: '#94A3B8' },
   { key: 'market', label: '物料市场', icon: 'lucide:store', color: '#4F8EF7' },

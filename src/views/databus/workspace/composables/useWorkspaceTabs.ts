@@ -11,12 +11,14 @@ import modal from '@/plugins/modal';
 import { usePersisted } from '@/views/databus/workbench/composables/usePersisted';
 import { useWorkbenchTabs } from '@/views/databus/workbench/composables/useWorkbenchTabs';
 import type { ComponentRegistryRow } from '@/views/databus/component/model/registry';
-import type { FormPreset, WorkspaceTab } from '../workbench.types';
+import type { CreateFileType, FormPreset, WorkspaceTab } from '../workbench.types';
 
 /** 新建组件 tab 的保留 key（保存成功后 adoptNewForm 转正） */
 export const NEW_FORM_KEY = 'component:form:new';
 /** 物料市场 tab 单例 key */
 export const MARKET_TAB_KEY = 'market';
+/** 新建向导 tab 单例 key（四 filetype 分段共用一个 tab；tab 本身 v-show 保活即草稿保留，切段时 CreatePane 弹弃稿确认） */
+export const CREATE_TAB_KEY = 'create';
 
 /* ---- 管理页功能 tab 单例/构造 key（databus-workspace-tabs.md §4.1，2026-10-20） ---- */
 export const CONNECTION_LIST_KEY = 'connection:list';
@@ -160,6 +162,28 @@ export function useWorkspaceTabs() {
       title: row?.name ?? '新组件',
       code: row?.code ?? '',
       dbId: id,
+      dirty: false,
+      preset
+    });
+  }
+
+  /** 打开/聚焦新建向导 tab（全局单例：再点只聚焦，草稿不丢；换 filetype 只切分段，preset 未传保留原预设） */
+  function openCreate(filetype: CreateFileType = 'chain', preset?: FormPreset): string {
+    const existed = wb.tabs.value.find((t) => t.key === CREATE_TAB_KEY);
+    if (existed) {
+      if (filetype !== existed.filetype) {
+        existed.filetype = filetype;
+      }
+      if (preset !== undefined) {
+        existed.preset = preset;
+      }
+    }
+    return wb.open({
+      key: CREATE_TAB_KEY,
+      kind: 'create',
+      title: '新建',
+      code: '',
+      filetype,
       dirty: false,
       preset
     });
@@ -371,6 +395,7 @@ export function useWorkspaceTabs() {
     openMarket,
     openMarketDetail,
     openForm,
+    openCreate,
     openChanges,
     openConnectionList,
     openConnectionForm,

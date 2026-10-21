@@ -48,6 +48,7 @@
             :active="tab.key === activeKey"
             @dirty-change="(dirty) => emit('dirty-change', tab.key, dirty)"
             @open-chain="(chainId, title) => emit('open-chain', chainId, title)"
+            @open-component="(code, name) => emit('open-component', code, name)"
           />
           <DetailPane
             v-else-if="tab.kind === 'detail' && rowOf(tab)"
@@ -73,6 +74,17 @@
             :code="tab.code"
             :current-version="currentVersionOf(tab)"
             @rolled="(result) => emit('rolled', tab, result)"
+          />
+          <!-- 新建向导（2026-10-21 新建入口收敛，decisions §10）：filetype 分段四合一表单体，单例 create tab -->
+          <CreatePane
+            v-else-if="tab.kind === 'create'"
+            :filetype="tab.filetype ?? 'chain'"
+            :preset="tab.preset"
+            :tag-suggestions="tagSuggestions"
+            @saved="(payload: CreateSavedPayload) => emit('create-saved', tab, payload)"
+            @cancel="requestClose(tab.key)"
+            @dirty-change="(dirty: boolean) => emit('dirty-change', tab.key, dirty)"
+            @filetype-change="(filetype: CreateFileType) => emit('create-filetype', tab, filetype)"
           />
           <MarketPane
             v-else-if="tab.kind === 'market'"
@@ -154,9 +166,10 @@ import { useLucideSubset } from '@/views/databus/workbench/composables/useLucide
 import ChainCanvasPane from '@/views/databus/editor/ChainCanvasPane.vue';
 import type { ComponentRegistryRow } from '@/views/databus/component/model/registry';
 import type { DatabusMarketItemVo } from '@/api/databus/market/types';
-import type { ComponentSaved, ConnectionSaved, TabMenuCommand, WorkspaceTab, WorkspaceTabKind } from '../workbench.types';
+import type { ComponentSaved, ConnectionSaved, CreateFileType, CreateSavedPayload, TabMenuCommand, WorkspaceTab, WorkspaceTabKind } from '../workbench.types';
 import DetailPane from './DetailPane.vue';
 import FormPane from './FormPane.vue';
+import CreatePane from './CreatePane.vue';
 import ChangesPane from './ChangesPane.vue';
 import ConnectionPane from './ConnectionPane.vue';
 import ExecutionPane from './ExecutionPane.vue';
@@ -184,7 +197,9 @@ const TAB_ICON: Record<WorkspaceTabKind, string> = {
   'execution-record': 'lucide:history',
   'monitor-overview': 'lucide:layout-grid',
   'alert-record': 'lucide:circle-alert',
-  settings: 'lucide:settings'
+  settings: 'lucide:settings',
+  // 新建向导（2026-10-21 新建入口收敛，decisions §10）
+  create: 'lucide:file-plus'
 };
 
 useLucideSubset();
@@ -205,6 +220,7 @@ const emit = defineEmits<{
   (e: 'tab-action', cmd: TabMenuCommand, key: string): void;
   (e: 'dirty-change', key: string, dirty: boolean): void;
   (e: 'open-chain', chainId: number | string, title: string): void;
+  (e: 'open-component', code: string, name: string): void;
   (e: 'saved', tab: WorkspaceTab, payload: ComponentSaved): void;
   (e: 'rolled', tab: WorkspaceTab, result: ScriptSaveResult): void;
   (e: 'open-changes', tab: WorkspaceTab): void;
@@ -221,6 +237,9 @@ const emit = defineEmits<{
   /** 连接管理：列表点卡片/新增开新对象 tab；对象保存回报宿主（关 tab / 刷列表 / 改标题） */
   (e: 'open-connection', id: number | 'new', title: string): void;
   (e: 'connection-saved', tab: WorkspaceTab, payload: ConnectionSaved): void;
+  /** 新建向导：保存回报宿主派发后续动作（开画布/刷树/刷列表，向导 tab 保留）；切段确认后同步 tab.filetype */
+  (e: 'create-saved', tab: WorkspaceTab, payload: CreateSavedPayload): void;
+  (e: 'create-filetype', tab: WorkspaceTab, filetype: CreateFileType): void;
   /** 执行记录：列表/记录视图点「查看记录」开新记录 tab；重跑后请宿主刷新列表 tab */
   (e: 'open-execution', recordId: number | string, title?: string): void;
   (e: 'execution-refresh'): void;

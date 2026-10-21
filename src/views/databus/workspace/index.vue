@@ -50,6 +50,7 @@
           @tab-action="onTabAction"
           @dirty-change="wb.setDirty"
           @open-chain="wb.openCanvas"
+          @open-component="(code, name) => wb.openDetail({ code, name })"
           @saved="handleSaved"
           @rolled="handleRolled"
           @open-changes="handleOpenChanges"
@@ -63,6 +64,8 @@
           @market-open-market="onMarketOpenMarket"
           @open-connection="onOpenConnection"
           @connection-saved="onConnectionSaved"
+          @create-saved="onCreateSaved"
+          @create-filetype="onCreateFiletype"
           @open-execution="onOpenExecutionRecord"
           @execution-refresh="onExecutionRefresh"
           @open-alert="wb.openAlertRecord"
@@ -102,6 +105,7 @@
               :loading="loading"
               @add-chain="onAddChain"
               @add-component="handleAdd"
+              @add-directory="onAddDirectory"
               @command="onTreeCommand"
             />
           </template>
@@ -109,7 +113,7 @@
       </div>
     </div>
 
-    <!-- 链路新增/编辑（树头部/目录右键新建与叶子编辑共用；成功后刷树，新建连画布 tab 一起开） -->
+    <!-- 链路编辑抽屉（薄壳）：树上叶子编辑/重命名用；新建路径已收敛到向导 create tab（2026-10-21），保存后刷树与改标题 -->
     <ChainForm ref="chainFormRef" @success="onChainFormSaved" />
     <!-- 复制链路/使用模板共用弹窗；created 后按模式决定只 reload 还是连副本画布 tab 一起开 -->
     <ChainCopyDialog ref="copyDialogRef" @created="onCopyCreated" />
@@ -153,18 +157,21 @@ import WorkbenchHeader from '@/views/databus/workbench/components/WorkbenchHeade
 import AiAssistantRail from '@/views/databus/workbench/ai/AiAssistantRail.vue';
 import AiHistoryRail from '@/views/databus/workbench/ai/AiHistoryRail.vue';
 import { useAiSessionHistory } from '@/views/databus/workbench/ai/useAiSessionHistory';
-import ChainForm, { type ChainFormSuccessPayload } from '../chain/ChainForm.vue';
+import ChainForm from '../chain/ChainForm.vue';
+import type { ChainFormSuccessPayload } from '../chain/ChainFormBody.vue';
 import ChainCopyDialog from '../chain/ChainCopyDialog.vue';
 import { useWorkspaceTabs, EXECUTION_LIST_KEY } from './composables/useWorkspaceTabs';
 import { useRecentResources } from './composables/useRecentResources';
 import { useWorkspaceTerminal } from './composables/useWorkspaceTerminal';
 import WorkspaceWorkPanel from './panel/WorkspaceWorkPanel.vue';
 import WorkbenchLauncher from './panel/WorkbenchLauncher.vue';
-import WorkbenchTerminal from './components/WorkbenchTerminal.vue';
+import WorkspaceTerminal from './components/WorkbenchTerminal.vue';
 import ResourceTree from './tree/ResourceTree.vue';
 import type {
   ComponentSaved,
   ConnectionSaved,
+  CreateFileType,
+  CreateSavedPayload,
   FormPreset,
   LauncherCommand,
   ResourceMenuCommand,
@@ -211,15 +218,9 @@ function onLauncherCommand(cmd: LauncherCommand) {
     case 'market':
       wb.openMarket();
       break;
-    case 'new-chain':
-      onAddChain(null);
-      break;
-    case 'new-component':
-      handleAdd();
-      break;
-    case 'new-directory':
-      setDrawerCollapsed(false);
-      treeRef.value?.openDirectoryDialog('add');
+    // 新建四合一（2026-10-21 入口收敛）：开向导 create tab，filetype 段内向导里选
+    case 'new':
+      wb.openCreate();
       break;
     // 空态管理页入口卡（§8 步骤8）：开对应功能 tab（先立后破，菜单收敛后入口不丢）
     case 'admin-connection':
@@ -433,9 +434,9 @@ function openDetail(row: ComponentRegistryRow) {
   touchRecent({ type: 'component', refId: row.code, title: row.name, icon: row.icon });
 }
 
-/** 新建组件：入口是资源树目录节点的右键菜单（§2.2），携带该目录的 group/domain/归属目录 */
+/** 新建组件：收敛到向导 tab component 段（树目录右键携带 group/domain/归属目录 preset 预填） */
 function handleAdd(preset?: FormPreset) {
-  wb.openForm(undefined, undefined, preset);
+  wb.openCreate('component', preset);
 }
 
 function handleEdit(row: ComponentRegistryRow) {
@@ -581,8 +582,12 @@ function onMarketOpenMarket() {
 
 /* ---------------- 连接管理（中栏 connection tab 上抛，pane 无路由依赖） ---------------- */
 
-/** 连接列表点卡片/新增：开（或聚焦）连接对象 tab */
+/** 连接列表点卡片：聚焦连接对象 tab；点「新建」收敛到向导 connection 段（2026-10-21 入口收敛） */
 function onOpenConnection(id: number | 'new', title: string) {
+  if (id === 'new') {
+    wb.openCreate('connection');
+    return;
+  }
   wb.openConnectionForm(id, title);
 }
 
@@ -600,6 +605,43 @@ function onConnectionSaved(tab: WorkspaceTab, payload: ConnectionSaved) {
   } else {
     tab.title = payload.connectionName;
   }
+}
+
+/* ---------------- 新建向导承接（中栏 create tab 上抛，2026-10-21 入口收敛） ---------------- */
+
+/**
+ * 向导保存回报（向导 tab 保留、表单已由 CreatePane 复位，可连续新建）：按 filetype 分槽派发——
+ * chain 刷树后直接开新链路画布 tab（对齐 ChainForm 新建语义）；component 刷台账与树；
+ * directory 刷树；connection 刷连接列表 tab（未打开时下次打开自会取数）。
+ */
+async function onCreateSaved(payload: CreateSavedPayload) {
+  switch (payload.filetype) {
+    case 'chain': {
+      await reloadTree();
+      if (payload.chain && payload.chain.id != null) {
+        wb.openCanvas(payload.chain.id, payload.chain.chainName);
+      }
+      break;
+    }
+    case 'component':
+      await Promise.all([getList(), reloadTree()]);
+      break;
+    case 'directory':
+      await reloadTree();
+      break;
+    case 'connection': {
+      const listTab = tabs.value.find((t) => t.kind === 'connection-list');
+      if (listTab) {
+        refreshTokens[listTab.key] = (refreshTokens[listTab.key] ?? 0) + 1;
+      }
+      break;
+    }
+  }
+}
+
+/** 向导切段确认后回报：同步 tab.filetype（随 tab 持久化，会话恢复回到原分段） */
+function onCreateFiletype(tab: WorkspaceTab, filetype: CreateFileType) {
+  tab.filetype = filetype;
 }
 
 /* ---------------- 执行记录（中栏 execution tab / 底部终端上抛，pane 无路由依赖） ---------------- */
@@ -770,9 +812,14 @@ function copyShareLink(node: ResourceTreeNode) {
     .catch(() => ElMessage.warning('复制失败，请手动复制地址栏链接'));
 }
 
-/** 树头部/目录右键「新建链路」：开 ChainForm 并预设归属目录（null=未归组） */
+/** 树头部/目录右键「新建链路」：收敛到向导 chain 段（preset 预填归属目录，null=未归组） */
 function onAddChain(directoryId: string | number | null) {
-  chainFormRef.value?.openDialog(undefined, { directoryId: directoryId ?? null });
+  wb.openCreate('chain', { directoryId: directoryId ?? null });
+}
+
+/** 树「新建目录」承接：头部钮=根级无 preset；目录右键=建子目录，preset 预填父目录（开向导 directory 段） */
+function onAddDirectory(preset?: FormPreset) {
+  wb.openCreate('directory', preset);
 }
 
 /**

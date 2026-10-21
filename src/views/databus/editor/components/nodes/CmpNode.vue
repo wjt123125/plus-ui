@@ -39,7 +39,7 @@
         <div v-if="showTitleOverride" ref="titleRef" class="cmp-node__title">{{ displayTitle }}</div>
       </div>
       <Handle v-if="data.defType !== 'end'" type="source" :position="Position.Right" />
-      <span v-if="isChain && hover" class="cmp-node__open-hint" title="双击打开子流程">↗</span>
+      <span v-if="canDrill && hover" class="cmp-node__open-hint" :title="isChain ? '双击打开子流程' : '双击查看组件详情'">↗</span>
     </div>
     <template #content>
       <div class="cmp-tip">
@@ -102,6 +102,15 @@ const checkTruncation = () => {
 // 列表未加载时降级显示 chainCode，加载后响应式刷新（无需主动 ensure，
 // 链路树/ChainSelect 任意一处拉过即命中模块级缓存）。
 const isChain = computed(() => props.data.defType === 'CHAIN');
+// ↗ 悬停暗示：可双击下钻的节点（CHAIN 跳子流程 / 业务组件跳详情；排除虚拟/操作符/锚点/占位）
+const canDrill = computed(
+  () =>
+    !!props.data.defType &&
+    !props.data.virtual &&
+    !props.data.operator &&
+    !props.data.junctionOf &&
+    !props.data.placeholderOf
+);
 const chainOpts = useChainOptions(() => ({ pageNum: 1, pageSize: 1000, isTemplate: '0' }));
 const chainInfo = computed(() => {
   if (!isChain.value) return null;

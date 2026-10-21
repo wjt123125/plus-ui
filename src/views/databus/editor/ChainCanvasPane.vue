@@ -163,6 +163,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   'dirty-change': [dirty: boolean];
   'open-chain': [chainId: number | string, title: string];
+  'open-component': [code: string, name: string];
 }>();
 
 /** 只读分享态：单列画布，不渲染物料区/右抽屉，编辑动作与快捷键全部短路 */
@@ -243,18 +244,31 @@ function onDropNode(payload: { type: string; x: number; y: number }) {
   ctrl.insertNodeAt(payload.type, payload.x, payload.y);
 }
 
-// 双击 CHAIN 引用节点 → 打开子链路画布。
-// - workbench 宿主：emit open-chain 由工作台新开 tab（同链单例，不影响当前未保存画布）
-// - editor 宿主：新浏览器窗口打开（与 ChainSelect.openable 同口径，独立窗口隔离）
-// 子链 chainCode 存在节点 cmpId（projectChain 写入），从共享链路选项缓存里解析出 id/名称。
+// 双击节点 → 下钻：
+// - CHAIN 引用卡 → 打开子链路画布
+//   - workbench 宿主：emit open-chain 由工作台新开 tab（同链单例，不影响当前未保存画布）
+//   - editor 宿主：新浏览器窗口打开（与 ChainSelect.openable 同口径，独立窗口隔离）
+//   子链 chainCode 存在节点 cmpId（projectChain 写入），从共享链路选项缓存里解析出 id/名称。
+// - 业务组件卡 → 打开组件详情 tab（defType 即组件编码，物料/内置件通吃）
+//   仅 workbench 宿主支持（工作台台账以 code 为正身开 detail tab）；editor 独立窗口降级提示。
 const chainOpts = useChainOptions(() => ({ pageNum: 1, pageSize: 1000, isTemplate: '0' }));
 const router = useRouter();
 
 async function onNodeDblClick(node: Node<CmpNodeData>) {
-  // 只读分享态：不允许跳转子链路（新窗口/开 tab 都属编辑流导航）
-  if (isReadonly) return;
+  // 只读分享态：不允许下钻导航（跳子链/开详情 tab 都属编辑流导航）
+  if (isReadonly.value) return;
   const data = node.data;
-  if (!data || data.defType !== 'CHAIN') return;
+  if (!data) return;
+  // 双击业务组件卡 → 打开组件详情（排除虚拟节点/操作符/连线锚点/占位符）
+  if (data.defType !== 'CHAIN') {
+    if (!data.defType || data.virtual || data.operator || data.junctionOf || data.placeholderOf) return;
+    if (props.host === 'workbench') {
+      emit('open-component', data.defType, data.label || data.defType);
+    } else {
+      ElMessage.info('组件详情请前往工作台查看');
+    }
+    return;
+  }
   const code = data.cmpId;
   if (!code) {
     ElMessage.warning('该子流程未选择引用的链路');
@@ -427,7 +441,7 @@ const {
 // 文档动作注入：画布空白右键菜单/右上浮层 inject（IDE 化后顶栏已删，命令统一收口于此）
 // 只读分享态给空壳：CmpContextMenu/FlowSidePanel 已被 FlowCanvas readonly 隐藏，空壳仅兜底
 // 意外消费方（双击/快捷键等不走此表），保证不触发保存/试运行/生成 EL。
-if (isReadonly) {
+if (isReadonly.value) {
   provideEditorActions({
     canUndo: ref(false),
     canRedo: ref(false),
@@ -473,7 +487,7 @@ useEditorHotkeys(
     saveChain: handleSaveChain,
     saveAsEl
   },
-  () => props.active && !isReadonly
+  () => props.active && !isReadonly.value
 );
 
 onMounted(() => {

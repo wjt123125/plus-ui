@@ -174,7 +174,8 @@ const rules: FormRules<DatabusComponentForm> = {
 
 /** 脏状态基线：表单 + 构造器状态的快照，与当前快照不等即为脏 */
 const dirty = ref(false);
-let baseline = '';
+/** null=尚未完成初次基线（mount 初始化期间不上报，避免瞬时脏误报闪跳） */
+let baseline: string | null = null;
 
 function snapshot(): string {
   return JSON.stringify({
@@ -194,10 +195,11 @@ function markBaseline() {
 watch(
   () => snapshot(),
   (val) => {
-    if (val === baseline) {
+    if (baseline === null) {
       return;
     }
-    const next = !detailLoading.value;
+    // 快照回到基线同样要复位（输入又删净等 A→B→A 轨迹不再残留脏标记，2026-10-21 脏态误报修复）
+    const next = val !== baseline && !detailLoading.value;
     if (next !== dirty.value) {
       dirty.value = next;
       emit('dirty-change', next);
