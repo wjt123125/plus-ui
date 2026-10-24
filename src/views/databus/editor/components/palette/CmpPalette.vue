@@ -42,7 +42,7 @@
     </template>
 
     <template v-else>
-      <el-tabs v-model="activeTab" class="cmp-palette__tabs">
+      <el-tabs v-model="activeTab" class="cmp-palette__tabs db-tabs">
         <el-tab-pane label="编排算子" name="operator">
           <div v-for="group in operatorGroups" :key="group.key" class="cmp-palette__group">
             <div class="cmp-palette__group-title">
@@ -206,21 +206,7 @@ function onDragStart(event: DragEvent, type: string) {
   border-color: var(--el-color-primary-light-5);
 }
 
-/* 页签紧凑化：12px 字号、30px 高、细底线，贴面板密度 */
-.cmp-palette__tabs :deep(.el-tabs__header) {
-  margin-bottom: 10px;
-}
-
-.cmp-palette__tabs :deep(.el-tabs__nav-wrap::after) {
-  height: 1px;
-}
-
-.cmp-palette__tabs :deep(.el-tabs__item) {
-  height: 30px;
-  padding: 0 10px;
-  font-size: 12px;
-  line-height: 30px;
-}
+/* 页签胶囊样式统一走全局 .db-tabs（databus-tabs） */
 
 .cmp-palette__group {
   margin-bottom: 10px;

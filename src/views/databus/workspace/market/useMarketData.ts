@@ -3,9 +3,11 @@
  * 设计正本 §三/§十一：浏览＝列表 + 分类 + 搜索；管理＝我的已装列表。
  * 视图层只管展示与交互，数据拉取、安装/卸载动作全在此收口。
  */
-import { computed, ref } from 'vue';
+import { computed, h, ref } from 'vue';
+import { ElNotification } from 'element-plus';
 import {
   delMarketItem,
+  getMarketReviewDetail,
   installMarketItem,
   listInstalled,
   listMarketCategories,
@@ -23,9 +25,11 @@ import type {
   DatabusMarketItemVo,
   MarketPublishForm,
   MarketResourceType,
+  MarketReviewDetailVo,
   MarketReviewForm
 } from '@/api/databus/market/types';
 import { useLoading } from '@/hooks/async/useLoading';
+import modal from '@/plugins/modal';
 
 /** 分类 chips 的单选值：全部 / 最新 / 我上架的 / 已安装 / 具体分类 id */
 export type MarketChip = 'ALL' | 'RECOMMEND' | 'MINE' | 'INSTALLED' | string | number;
@@ -36,6 +40,52 @@ const RECOMMEND_SIZE = 6;
 /** 跨 pane 市场导航意图（物料详情页 → 市场 tab）：市场 tab 消费后置空（模块级共享单例） */
 export type MarketNavIntent = { kind: 'owner'; ownerCode: string } | { kind: 'mine' };
 export const marketNavIntent = ref<MarketNavIntent | null>(null);
+
+/**
+ * 链路安装结果提示（decisions §十四-2 级联清单）：级联复制/复用明细以通知卡片逐行展示
+ * （状态标签＋源名称＋新编码），两处安装入口（市场卡片 / 物料详情 tab）共用。
+ * 通知全局渲染，样式走内联（scoped 不生效）；仅 CHAIN 安装有 cascade，空清单回退一句话提示。
+ */
+export function showChainInstallResult(vo: DatabusMarketInstallVo | null | undefined): void {
+  const cascade = vo?.cascade ?? [];
+  if (!cascade.length) {
+    modal.msgSuccess('已安装，链路副本已加入资源树「我的目录」');
+    return;
+  }
+  ElNotification({
+    title: '链路安装完成',
+    type: 'success',
+    duration: 8000,
+    message: h(
+      'div',
+      { style: 'display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;margin-top:4px;' },
+      cascade.map((c) =>
+        h('div', { style: 'display:flex;align-items:center;gap:8px;font-size:12px;min-width:0;' }, [
+          h(
+            'span',
+            {
+              style:
+                'flex-shrink:0;padding:1px 6px;border-radius:4px;font-size:11px;' +
+                (c.status === 'NEW'
+                  ? 'color:var(--el-color-success);background:var(--el-color-success-light-9);'
+                  : 'color:var(--el-color-warning);background:var(--el-color-warning-light-9);')
+            },
+            c.status === 'NEW' ? '新增' : '复用既有'
+          ),
+          h('span', { style: 'flex-shrink:0;color:var(--el-text-color-primary);' }, c.sourceName || c.sourceCode),
+          h(
+            'span',
+            {
+              style:
+                'min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--el-text-color-secondary);'
+            },
+            `→ ${c.newCode}`
+          )
+        ])
+      )
+    )
+  });
+}
 
 export function useMarketData() {
   const items = ref<DatabusMarketItemVo[]>([]);
@@ -147,7 +197,13 @@ export function useMarketData() {
     await Promise.all([loadPending(), refresh()]);
   }
 
-  /** 安装＝fork；装完刷新列表（+安装 → 使用）与已装列表 */
+  /** 审核详情（P1 解「干审」）：内容预览＋闭包依赖状态树（权限 databus:market:review） */
+  async function reviewDetail(id: string | number): Promise<MarketReviewDetailVo | undefined> {
+    const { data } = await getMarketReviewDetail(id);
+    return data;
+  }
+
+  /** 安装（链路＝fork 副本 / 组件＝共享注册 / 连接器＝enable def 行，目录参数被后端忽略）；装完刷新列表与已装列表 */
   async function install(itemId: string | number, directoryId?: string | number | null): Promise<DatabusMarketInstallVo | undefined> {
     const { data } = await installMarketItem(itemId, { directoryId: directoryId ?? null });
     await Promise.all([refresh(), loadInstalled()]);
@@ -167,7 +223,7 @@ export function useMarketData() {
       .slice(0, RECOMMEND_SIZE)
   );
 
-  /** 分组展示：chip=全部 时「最新」组 + 各分类组；chip=最新/我上架/已安装/具体分类 时单组 */
+  /** 分组展示：chip=全部 时仅各分类组（单轴去重，「最新」只作独立 chip）；chip=最新/我上架/已安装/具体分类 时单组 */
   const groups = computed<{ key: string; label: string; items: DatabusMarketItemVo[] }[]>(() => {
     if (activeChip.value === 'RECOMMEND') {
       return [{ key: 'RECOMMEND', label: '最新', items: recommended.value }];
@@ -184,10 +240,6 @@ export function useMarketData() {
       return [{ key: String(activeChip.value), label: chipLabel(activeChip.value), items: items.value }];
     }
     const result: { key: string; label: string; items: DatabusMarketItemVo[] }[] = [];
-    // 作者过滤视图下不再叠加「最新」组（结果已按单一作者收窄）
-    if (recommended.value.length && !ownerCode.value) {
-      result.push({ key: 'RECOMMEND', label: '最新', items: recommended.value });
-    }
     for (const c of categories.value) {
       const members = items.value.filter((it) => String(it.categoryId) === String(c.id));
       if (members.length) {
@@ -201,18 +253,18 @@ export function useMarketData() {
     return result;
   });
 
-  /** 管理页计数徽标：按类型统计已装条数 */
+  /** 管理页计数徽标：按类型统计已装条数（连接器不写 install 台账，恒 0——其启停治理走 defs 端点，MarketPane 自行拉 defs 展示） */
   const installedCounts = computed(() => {
     const count = (type: MarketResourceType) =>
       installed.value.filter((i) => i.resourceType === type).length;
-    return { COMPONENT: count('COMPONENT'), CHAIN: count('CHAIN') };
+    return { COMPONENT: count('COMPONENT'), CHAIN: count('CHAIN'), CONNECTOR: count('CONNECTOR') };
   });
 
   /** 管理页计数徽标：按类型统计我的上架条数 */
   const mineCounts = computed(() => {
     const count = (type: MarketResourceType) =>
       mine.value.filter((i) => i.resourceType === type).length;
-    return { COMPONENT: count('COMPONENT'), CHAIN: count('CHAIN') };
+    return { COMPONENT: count('COMPONENT'), CHAIN: count('CHAIN'), CONNECTOR: count('CONNECTOR') };
   });
 
   function chipLabel(chip: MarketChip): string {
@@ -262,6 +314,7 @@ export function useMarketData() {
     unpublish,
     removeItem,
     review,
+    reviewDetail,
     install,
     uninstall,
     switchType,

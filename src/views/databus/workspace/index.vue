@@ -17,8 +17,6 @@
       nav-label="资源"
       console-label="终端"
       :console-count="consoleErrorCount"
-      admin-entry
-      @admin="goAdmin"
     />
 
     <div class="wsp">
@@ -34,7 +32,12 @@
         welcome-title="数据总线助手"
         welcome-desc="用自然语言定位链路与组件、解释编排意图、排查脚本编译与执行问题。"
         @select="onAiSelect"
-      />
+      >
+        <!-- 侧栏底部用户区（n8n 式，§7 改造点3）：头像+昵称+角色整行下拉，替代原 header 右上角用户胶囊 -->
+        <template #footer>
+          <WorkbenchUserBar admin-entry @profile="goProfile" @admin="goAdmin" @logout="onLogout" />
+        </template>
+      </AiAssistantRail>
       <Splitter v-if="!aiCollapsed" v-model="aiWidth" :min="AI_MIN_WIDTH" />
 
       <!-- 栏 3：中栏容器 = 工作面板（五 kind 主内容区）+ 底部终端。
@@ -61,7 +64,12 @@
           @market-installed="onMarketInstalled"
           @market-toggle="onMarketToggle"
           @market-open-detail="onMarketOpenDetail"
+          @market-open-review="onMarketOpenReview"
+          @market-reviewed="onMarketReviewed"
+          @market-dep-reviewed="onMarketDepReviewed"
+          @market-open-source="onMarketOpenSource"
           @market-open-market="onMarketOpenMarket"
+          @market-open-source-canvas="onMarketOpenSourceCanvas"
           @open-connection="onOpenConnection"
           @connection-saved="onConnectionSaved"
           @create-saved="onCreateSaved"
@@ -127,9 +135,10 @@
 </template>
 
 <script setup name="DatabusWorkspace" lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
+import { useUserStore } from '@/store/modules/user';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   delComponent,
   listComponent,
@@ -139,6 +148,8 @@ import {
 } from '@/api/databus/component';
 import type { ComponentOption, ScriptRuntime, ScriptSaveResult } from '@/api/databus/component/types';
 import { delChain, offlineChain, publishChain } from '@/api/databus/chain';
+import type { ChainPublishResultVo } from '@/api/databus/chain/types';
+import { publishMarketBatch, uninstallMarketItem } from '@/api/databus/market';
 import type { DatabusExecutionResult } from '@/api/databus/execution/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import modal from '@/plugins/modal';
@@ -154,6 +165,7 @@ import { usePersisted } from '@/views/databus/workbench/composables/usePersisted
 import { useCompileConsole } from '@/views/databus/workbench/composables/useCompileConsole';
 import Splitter from '@/views/databus/workbench/components/Splitter.vue';
 import WorkbenchHeader from '@/views/databus/workbench/components/WorkbenchHeader.vue';
+import WorkbenchUserBar from '@/views/databus/workbench/components/WorkbenchUserBar.vue';
 import AiAssistantRail from '@/views/databus/workbench/ai/AiAssistantRail.vue';
 import AiHistoryRail from '@/views/databus/workbench/ai/AiHistoryRail.vue';
 import { useAiSessionHistory } from '@/views/databus/workbench/ai/useAiSessionHistory';
@@ -165,7 +177,7 @@ import { useRecentResources } from './composables/useRecentResources';
 import { useWorkspaceTerminal } from './composables/useWorkspaceTerminal';
 import WorkspaceWorkPanel from './panel/WorkspaceWorkPanel.vue';
 import WorkbenchLauncher from './panel/WorkbenchLauncher.vue';
-import WorkspaceTerminal from './components/WorkbenchTerminal.vue';
+import WorkbenchTerminal from './components/WorkbenchTerminal.vue';
 import ResourceTree from './tree/ResourceTree.vue';
 import type {
   ComponentSaved,
@@ -191,10 +203,29 @@ const togglingCode = ref<string>();
 const wb = useWorkspaceTabs();
 const { tabs, activeKey } = wb;
 
-/** 后台管理入口（§7 改造点3）：进 RuoYi 后台管理首页（按钮可见性由 WorkbenchHeader 内 v-hasRole 控制） */
+/** 后台管理入口（§7 改造点3）：新标签页打开 RuoYi 后台首页（菜单项可见性由 WorkbenchUserBar 内 checkRole 门控），不中断工作台当前任务 */
 const router = useRouter();
+const userStore = useUserStore();
 function goAdmin() {
-  router.push('/index');
+  const { href } = router.resolve('/index');
+  window.open(href, '_blank');
+}
+/** 个人中心（§7 改造点3）：进 RuoYi 个人中心页 */
+function goProfile() {
+  router.push('/user/profile');
+}
+/** 退出登录（§7 改造点3）：确认后复用 RuoYi 登出链路（/auth/logout + 清 token + 回登录页） */
+function onLogout() {
+  ElMessageBox.confirm('确定退出当前账号吗？', '退出登录', {
+    confirmButtonText: '退出',
+    cancelButtonText: '取消',
+    type: 'warning'
+  })
+    .then(async () => {
+      await userStore.logout();
+      router.replace('/login');
+    })
+    .catch(() => {});
 }
 const { recentOrdered, touch: touchRecent, remove: removeRecent, prune: pruneRecent } =
   useRecentResources();
@@ -534,12 +565,12 @@ async function toggleEnabled(row: ComponentRegistryRow, val: boolean) {
 
 /* ---------------- 物料市场（中栏 market tab 上抛，市场面板无 DB 行，动作归宿主） ---------------- */
 
-/** 台账行按组件主键反查：市场「使用/启停」只带本地副本 id */
+/** 台账行按组件主键反查：市场「打开/启停」只带本地资源 id（链路副本/共享组件源 id） */
 function rowById(id: string | number): ComponentRegistryRow | undefined {
   return rows.value.find((r) => r.db?.id != null && String(r.db.id) === String(id));
 }
 
-/** 使用本地副本：链路开画布 tab，组件开详情 tab（与树叶子开件同口径） */
+/** 打开本地资源：链路开画布 tab，组件开详情 tab（与树叶子开件同口径） */
 function onMarketOpen(
   localResourceId: string | number,
   resourceType: 'COMPONENT' | 'CHAIN',
@@ -553,7 +584,7 @@ function onMarketOpen(
   if (row) {
     openDetail(row);
   } else {
-    ElMessage.warning('本地副本已不在台账中，请刷新后重试');
+    ElMessage.warning('组件不在台账中，请刷新后重试');
   }
 }
 
@@ -575,9 +606,60 @@ function onMarketOpenDetail(itemId: string | number, title: string) {
   wb.openMarketDetail(itemId, title);
 }
 
+/** 待审核「详情」：打开物料审核 tab（kind market-review，同 id 单例，2026-10-24 弹窗 tab 化） */
+function onMarketOpenReview(itemId: string | number, title: string) {
+  wb.openMarketReview(itemId, `审核 · ${title}`);
+}
+
+/**
+ * 物料审核完成（通过/驳回成功）：关审核 tab；给市场 tab 自增刷新令牌——
+ * 待审核冒泡与市场列表的数据源都在市场 pane 实例里，pane 收令牌后重取（冒泡减号、新上线可见）。
+ */
+function onMarketReviewed(tab: WorkspaceTab) {
+  wb.close(tab.key);
+  const marketTab = tabs.value.find((t) => t.kind === 'market');
+  if (marketTab) {
+    refreshTokens[marketTab.key] = (refreshTokens[marketTab.key] ?? 0) + 1;
+  }
+}
+
+/** 依赖单据就地审完（闭包联审）：审核 tab 保持开着，只刷市场 pane 待审核冒泡 */
+function onMarketDepReviewed() {
+  const marketTab = tabs.value.find((t) => t.kind === 'market');
+  if (marketTab) {
+    refreshTokens[marketTab.key] = (refreshTokens[marketTab.key] ?? 0) + 1;
+  }
+}
+
+/** P1 看得见（decisions §十四-7 扩展）：审核详情「查看」开工作台 tab 看物料真身——
+ *  链路按源 id 开画布 tab；组件按源 code 开详情 tab（正本身份是 code，pane 自取数）。
+ *  源资源非当前用户所有：链路保存被后端 updateByBo owner 校验拦截（前端只读态另做） */
+function onMarketOpenSource(
+  resourceType: 'COMPONENT' | 'CHAIN',
+  sourceId: string | number,
+  code: string | null,
+  title: string
+) {
+  if (resourceType === 'CHAIN') {
+    wb.openCanvas(sourceId, title);
+    return;
+  }
+  if (code) {
+    wb.openDetail({ code, name: title });
+  }
+}
+
 /** 物料详情页请求回到市场 tab（作者筛选 / 已上架跳转，意图经 marketNavIntent 传给市场 pane 消费） */
 function onMarketOpenMarket() {
   wb.openMarket();
+}
+
+/**
+ * 物料详情「实现」页打开源链路画布（2026-10-24 装前可看）：按源链 id 开画布 tab，
+ * 只读态由 ChainCanvasPane 按「chainOwner ≠ 当前用户」自动判定——未安装者看编排不能改。
+ */
+function onMarketOpenSourceCanvas(chainId: string | number, title: string) {
+  wb.openCanvas(chainId, title);
 }
 
 /* ---------------- 连接管理（中栏 connection tab 上抛，pane 无路由依赖） ---------------- */
@@ -782,9 +864,36 @@ function onTreeCommand(command: ResourceMenuCommand, node: ResourceTreeNode) {
       break;
     }
 
+    /* —— 市场引用叶：卸载（仅删我的安装记录，不动源组件本体） —— */
+    case 'uninstall':
+      void handleUninstallMarket(node);
+      break;
+
     default:
       // 目录/收藏/移动等动作在树内闭环（见 ResourceTree），不上抛
       break;
+  }
+}
+
+/** 卸载市场引用叶：树上 SHARED 安装组件的卸载（与 MarketPane.onUninstall 同口径） */
+async function handleUninstallMarket(node: ResourceTreeNode) {
+  const resourceId = node.dbId;
+  if (resourceId == null) {
+    return;
+  }
+  try {
+    await modal.confirm(
+      `确认卸载「${node.label}」？`
+    );
+  } catch {
+    return;
+  }
+  try {
+    await uninstallMarketItem(resourceId);
+    modal.msgSuccess('已卸载');
+    await onMarketInstalled();
+  } catch {
+    /* 拦截器已提示 */
   }
 }
 
@@ -855,9 +964,83 @@ async function handlePublish(node: ResourceTreeNode) {
   if (chainId == null) {
     return;
   }
-  await publishChain(chainId);
-  modal.msgSuccess('发布成功');
+  const { data } = await publishChain(chainId);
   void reloadTree();
+  await guidePublishAfterChain(data);
+}
+
+/**
+ * 发布引导（decisions §十四-6）：链路发布成功后，闭包内未上架的自有物料弹窗确认整批提审；
+ * 弹窗走 ElMessageBox（自定义按钮文案「提交审核 / 暂不上架」，modal.confirm 按钮文案固定）。
+ * 他人未上架链后端直接拒发布（走不到这里）；他人未上架组件不阻塞，仅以编码软提示。
+ */
+async function guidePublishAfterChain(result?: ChainPublishResultVo): Promise<void> {
+  const guide = result?.guideItems ?? [];
+  const others = result?.otherUnlistedComponents ?? [];
+  if (!guide.length) {
+    if (others.length) {
+      modal.msgWarning(`发布成功；链路引用了他人未上架组件：${others.join('、')}（不影响发布与运行）`);
+    } else {
+      modal.msgSuccess('发布成功');
+    }
+    return;
+  }
+  // 弹窗全局渲染，清单样式走内联（scoped 不生效）
+  const message = h('div', { style: 'display:flex;flex-direction:column;gap:8px;' }, [
+    h(
+      'p',
+      { style: 'margin:0;font-size:13px;line-height:1.6;color:var(--el-text-color-regular);' },
+      `发布成功。还有 ${guide.length} 项你的物料未上架市场，上架后他人才能安装完整链路：`
+    ),
+    h(
+      'div',
+      { style: 'display:flex;flex-direction:column;gap:6px;max-height:240px;overflow-y:auto;padding:2px 0;' },
+      guide.map((g) =>
+        h('div', { style: 'display:flex;align-items:center;gap:8px;font-size:13px;min-width:0;' }, [
+          h(
+            'span',
+            {
+              style:
+                'flex-shrink:0;width:44px;text-align:center;padding:1px 0;border-radius:4px;font-size:11px;' +
+                (g.resourceType === 'CHAIN'
+                  ? 'color:var(--el-color-primary);background:var(--el-color-primary-light-9);'
+                  : 'color:var(--el-color-success);background:var(--el-color-success-light-9);')
+            },
+            g.resourceType === 'CHAIN' ? '链路' : '组件'
+          ),
+          h(
+            'span',
+            { style: 'min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--el-text-color-primary);' },
+            g.name
+          )
+        ])
+      )
+    ),
+    ...(others.length
+      ? [
+          h(
+            'p',
+            { style: 'margin:0;font-size:12px;color:var(--el-text-color-secondary);' },
+            `另引用了他人未上架组件：${others.join('、')}（不影响发布与运行）`
+          )
+        ]
+      : []),
+    h('p', { style: 'margin:0;font-size:12px;color:var(--el-text-color-secondary);' }, '提交后进入待审核，通过后即上架市场。')
+  ]);
+  try {
+    await ElMessageBox.confirm(message, '发布成功 · 一并上架？', {
+      confirmButtonText: '提交审核',
+      cancelButtonText: '暂不上架',
+      type: 'success'
+    });
+  } catch {
+    modal.msgWarning('发布成功；物料暂未上架，可稍后在物料市场手动上架');
+    return;
+  }
+  await publishMarketBatch({
+    items: guide.map((g) => ({ resourceType: g.resourceType, sourceId: g.sourceId }))
+  });
+  modal.msgSuccess(`已将 ${guide.length} 项物料提交上架审核`);
 }
 
 async function handleOffline(node: ResourceTreeNode) {

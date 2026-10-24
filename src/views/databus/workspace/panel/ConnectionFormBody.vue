@@ -37,7 +37,7 @@
       label-position="top"
       class="conn-body__form"
     >
-      <el-tabs v-model="activeTab" class="conn-body__tabs">
+      <el-tabs v-model="activeTab" class="conn-body__tabs db-tabs">
         <el-tab-pane label="基础" name="basic">
           <el-form-item label="连接ID" prop="connectionId">
             <el-input v-model="form.connectionId" maxlength="64" placeholder="全局唯一,如 bpm-prod" />
@@ -111,13 +111,13 @@ import type { FormInstance } from 'element-plus';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import type { SysDatabusConnectionBo } from '@/api/databus/connection/types';
 import {
-  CONNECTOR_OPTIONS,
   addConnection,
   getConnection,
   updateConnection
 } from '@/api/databus/connection';
 import modal from '@/plugins/modal';
 import ConnectionTestButton from '@/views/databus/connection/ConnectionTestButton.vue';
+import { useConnectorOptions } from './useConnectorOptions';
 import type { ConnectionSaved } from '../workbench.types';
 
 /**
@@ -161,12 +161,11 @@ const activeTab = ref<'basic' | 'advanced'>('basic');
 
 const isEdit = computed(() => props.connectionId !== 'new');
 
-/** 当前 connectorType 对应的可读 label（后续多 connector 时改 dynamic map） */
-const currentConnectorLabel = computed(
-  () =>
-    CONNECTOR_OPTIONS.find((item) => item.value === form.value.connectorType)?.label ??
-    form.value.connectorType
-);
+/* 连接器类型 label：动态 defs（无权限降级静态内置，§15.7） */
+const { loadConnectorOptions, connectorLabelOf } = useConnectorOptions();
+
+/** 当前 connectorType 对应的可读 label */
+const currentConnectorLabel = computed(() => connectorLabelOf(form.value.connectorType));
 
 /** openapi 网关 secret：新增必填，编辑留空表示沿用原密钥 */
 const validateApiSecret = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
@@ -283,7 +282,10 @@ function handleSubmit() {
   });
 }
 
-onMounted(reload);
+onMounted(() => {
+  void reload();
+  void loadConnectorOptions();
+});
 watch(() => props.connectionId, reload);
 
 defineExpose({ reload });
@@ -376,24 +378,8 @@ defineExpose({ reload });
   }
 }
 
+/* 页签胶囊样式统一走全局 .db-tabs（databus-tabs），此处只留 pane 内边距修正 */
 .conn-body__tabs {
-  :deep(.el-tabs__header) {
-    margin: 0 0 8px;
-    padding: 0 2px;
-  }
-
-  :deep(.el-tabs__nav-wrap::after) {
-    height: 1px;
-    background-color: var(--el-border-color-lighter);
-  }
-
-  :deep(.el-tabs__item) {
-    height: 30px;
-    font-size: 13px;
-    font-weight: 500;
-    padding: 0 14px;
-  }
-
   :deep(.el-tab-pane) {
     padding: 0 2px;
 

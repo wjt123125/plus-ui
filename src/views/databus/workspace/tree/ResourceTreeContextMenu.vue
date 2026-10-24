@@ -129,6 +129,31 @@
         </li>
       </template>
 
+      <!-- 市场引用叶（SHARED 安装组件）：打开 / 移动归属 / 收藏 / 卸载（不动源组件本体） -->
+      <template v-else-if="menu.node.type === 'market-ref'">
+        <li class="res-tree-ctx__item is-primary" @click="onCommand('open')">
+          <SvgIcon icon-class="lucide:external-link" /><span>打开</span>
+        </li>
+        <li class="res-tree-ctx__divider" />
+        <li v-hasPermi="['databus:directory:edit']" class="res-tree-ctx__item is-primary" @click="onCommand('move')">
+          <SvgIcon icon-class="lucide:folder-input" /><span>移动到目录…</span>
+        </li>
+        <li v-if="!menu.node.favorited" class="res-tree-ctx__item is-warning" @click="onCommand('favorite-add')">
+          <SvgIcon icon-class="lucide:star" /><span>收藏</span>
+        </li>
+        <li v-else class="res-tree-ctx__item" @click="onCommand('favorite-remove')">
+          <SvgIcon icon-class="lucide:star-off" /><span>取消收藏</span>
+        </li>
+        <li class="res-tree-ctx__divider" />
+        <li
+          v-hasPermi="['databus:market:install']"
+          class="res-tree-ctx__item is-danger"
+          @click="onCommand('uninstall')"
+        >
+          <SvgIcon icon-class="lucide:trash" /><span>卸载</span>
+        </li>
+      </template>
+
       <!-- 目录节点：新建链路（挂本目录）· 新建组件（挂本目录）· 新建子目录 · 重命名 · 删除 -->
       <template v-else-if="menu.node.type === 'directory'">
         <li v-hasPermi="['databus:editor:add']" class="res-tree-ctx__item is-success" @click="onCommand('add-chain')">

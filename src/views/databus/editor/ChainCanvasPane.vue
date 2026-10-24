@@ -103,6 +103,7 @@ import { useRouter } from 'vue-router';
 import { useVueFlow, type Node, type Edge } from '@vue-flow/core';
 import { Expand } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
+import { useUserStore } from '@/store/modules/user';
 import { generateEl } from '@/api/databus/el';
 import CmpPalette from './components/palette/CmpPalette.vue';
 import FlowCanvas from './components/canvas/FlowCanvas.vue';
@@ -165,9 +166,6 @@ const emit = defineEmits<{
   'open-chain': [chainId: number | string, title: string];
   'open-component': [code: string, name: string];
 }>();
-
-/** 只读分享态：单列画布，不渲染物料区/右抽屉，编辑动作与快捷键全部短路 */
-const isReadonly = computed(() => props.readonly === true);
 
 // ElNode 模型树是唯一数据源，画布是它的投影
 const treeModel = provideElTreeModel();
@@ -350,6 +348,7 @@ const {
   editingId,
   chainId,
   chainName,
+  chainOwner,
   chainSaving,
   inputParams,
   inputParamsVisible,
@@ -371,6 +370,13 @@ const {
   ensureCanvasHasNodes,
   ensureDataSpacesValid
 });
+
+// 只读态（只读分享态：单列画布，不渲染物料区/右抽屉，编辑动作与快捷键全部短路）：
+// P1 看得见（decisions §十四-7 扩展）并入「非本人链路只读」——审核者从审核详情打开
+// 他人链路仅查看，硬拦截在后端 updateByBo owner 校验；系统行（create_by 空）不置只读
+const isReadonly = computed(
+  () => props.readonly === true || (chainOwner.value != null && chainOwner.value !== useUserStore().userId)
+);
 
 // ── tab 脏圆点信号（上报工作台 tab 壳，editor 宿主无人接听、无副作用） ──
 // 不用 useFlowHistory.isDirty()：它是普通函数非响应式，且语义是「防抖窗口内

@@ -70,7 +70,7 @@
           </div>
         </section>
 
-        <el-tabs v-model="activeTab" class="cmp-picker-panel__tabs">
+        <el-tabs v-model="activeTab" class="cmp-picker-panel__tabs db-tabs">
           <el-tab-pane label="编排算子" name="operator">
             <section
               v-for="sec in operatorSections"
@@ -448,27 +448,17 @@ html.dark .cmp-picker-panel__section-label.is-recommend {
 
 /* tab 头贴顶：长列表滚动时页签不消失，卡片从其下方穿过需底色遮挡。
    底边距 + 首段上间距共同给第一排卡片骑框角标（向上凸出 5px）留净空，
-   否则角标贴住分隔线、滚动瞬间被 sticky 不透光头裁掉 */
+   否则角标贴住分隔线、滚动瞬间被 sticky 不透光头裁掉。
+   胶囊轨道/项样式统一走全局 .db-tabs（databus-tabs） */
 .cmp-picker-panel__tabs :deep(.el-tabs__header) {
   position: sticky;
   top: 0;
   z-index: 1;
-  margin: 2px 0 10px;
+  margin: 2px 0 12px;
   background-color: var(--el-bg-color);
 }
 
 .cmp-picker-panel__tabs :deep(.el-tab-pane) > .cmp-picker-panel__section:first-child {
   margin-top: 4px;
-}
-
-.cmp-picker-panel__tabs :deep(.el-tabs__nav-wrap::after) {
-  height: 1px;
-}
-
-.cmp-picker-panel__tabs :deep(.el-tabs__item) {
-  height: 30px;
-  padding: 0 10px;
-  font-size: 12px;
-  line-height: 30px;
 }
 </style>

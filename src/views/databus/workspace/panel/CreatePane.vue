@@ -7,12 +7,12 @@
       </div>
     </header>
     <nav class="create__bar">
-      <div v-if="visibleSegs.length" class="create__seg">
+      <div v-if="visibleSegs.length" class="db-seg">
         <button
           v-for="seg in visibleSegs"
           :key="seg.value"
           type="button"
-          class="create__seg-item"
+          class="db-seg__item"
           :class="{ 'is-active': currentFiletype === seg.value }"
           @click="switchFiletype(seg.value)"
         >
@@ -238,35 +238,7 @@ function onConnectionSaved(payload: ConnectionSaved) {
   padding: 0 20px 10px;
 }
 
-/* filetype 分段（对标物料市场类型分段） */
-.create__seg {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 9px;
-  background: var(--el-fill-color-light, #f5f7fa);
-}
-
-.create__seg-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 14px;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-  background: transparent;
-  border: none;
-  border-radius: 7px;
-  cursor: pointer;
-
-  &.is-active {
-    color: var(--el-text-color-primary);
-    font-weight: 600;
-    background: var(--el-bg-color);
-    box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
-  }
-}
+/* filetype 分段：胶囊轨道/项由全局 .db-seg / .db-seg__item 提供（databus-tabs） */
 
 /* 表单体区：限宽内满高，滚动由各表单体自理 */
 .create__body {

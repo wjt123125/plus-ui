@@ -26,6 +26,24 @@
   font-weight: 500;
 }
 
+// --- 按钮内 SvgIcon 与文字间距 ---
+// Element Plus 只对 [class*='el-icon'] + span 给间距（button.scss:88-91），本项目 SvgIcon
+// 渲染出的是 .svg-icon，选择器不命中 → 图标与文字贴死。这里镜像 EP 的 $button-icon-span-gap
+// 分尺寸值（default 6 / small 4 / large 8），两种图标体系间距一致。
+// 不用 gap：那会同时作用于 EP 原生 el-icon + span（它已有 margin-left），造成双重间距。
+// 顺序不可颠倒：small/large 与基础规则特异度相同（0,2,1），靠后写才覆盖得掉 6px。
+.el-button .svg-icon + span {
+  margin-left: 6px;
+}
+
+.el-button--small .svg-icon + span {
+  margin-left: 4px;
+}
+
+.el-button--large .svg-icon + span {
+  margin-left: 8px;
+}
+
 // --- primary 品牌色（亮色；暗色见 tokens/_theme-dark） ---
 .el-button--primary {
   --el-button-bg-color: var(--app-accent-strong);

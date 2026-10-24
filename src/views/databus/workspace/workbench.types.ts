@@ -11,7 +11,7 @@ import type { ChainFormSuccessPayload } from '../chain/ChainFormBody.vue';
 
 /**
  * 工作区 tab 形态（2026-10-20 管理页 tab 化扩展，databus-workspace-tabs.md §4.1）：
- * 链路画布 / 组件详情 / 组件编辑 / 代码变更 / 物料市场 / 物料详情（组件库 grid 已废 2026-10-18）
+ * 链路画布 / 组件详情 / 组件编辑 / 代码变更 / 物料市场 / 物料详情 / 物料审核（组件库 grid 已废 2026-10-18）
  * + 连接列表/连接对象 / 执行列表/执行记录 / 监控大盘 / 告警记录 / 设置（七值，key 规则见 §4.1）
  */
 export type WorkspaceTabKind =
@@ -21,6 +21,7 @@ export type WorkspaceTabKind =
   | 'changes'
   | 'market'
   | 'market-detail'
+  | 'market-review'
   | 'connection-list'
   | 'connection-form'
   | 'execution-list'
@@ -55,6 +56,8 @@ export interface WorkspaceTab extends WorkbenchTab {
   dbId?: number;
   /** market-detail：物料主键（同 id 单例；pane 自取数，不走台账。雪花 id 超 2^53，故用字符串防精度丢失） */
   marketItemId?: string;
+  /** market-review：受审物料主键（同 id 单例；雪花 id 用字符串防精度丢失，口径同 marketItemId） */
+  marketReviewItemId?: string;
   /** changes：当前脚本版本 */
   version?: number | null;
   /** 仅新建 form tab 使用：表单初始分组/业务域/归属目录 */
@@ -143,8 +146,11 @@ export interface RecentResource {
 /**
  * 统一资源树节点形态（右抽屉树 tab）：
  * 收藏根 / 最近根 / 目录 / 未归组 / 系统根 / 系统分组
- * + 叶子：链路 / 自建组件 / 系统组件 / 收藏条目
+ * + 叶子：链路 / 自建组件 / 系统组件 / 收藏条目 / 市场引用叶子
  * —— 精选模板节已撤（2026-10-18 树瘦身，design §十二）：模板退役，探索诉求改由物料市场承担。
+ * market-ref：SHARED 安装组件的引用叶子（§十二-7 引用挂树）——open 走源组件详情，
+ *   挪动只改 install.directory_id（不动源组件行），卸载走市场 install 记录删除；
+ *   行尾 S 字母由本形态派生（装饰随 type，不另立来源轴）。
  */
 export type ResourceNodeType =
   | 'favorite-root'
@@ -156,6 +162,7 @@ export type ResourceNodeType =
   | 'chain'
   | 'component'
   | 'system-leaf'
+  | 'market-ref'
   | 'favorite'
   | 'recent';
 
@@ -189,6 +196,10 @@ export interface ResourceTreeNode {
   disabled?: boolean;
   /** 台账合流行（组件右键编辑/删除/启停要读它；宿主据此派发） */
   row?: ComponentRegistryRow;
+
+  /* —— 市场引用叶子（market-ref，§十二-7 引用挂树）—— */
+  /** 安装记录主键（挪动/卸载通道） */
+  installId?: string | number;
 
   /* —— 收藏条目 —— */
   favoriteType?: 'chain' | 'component';
@@ -227,11 +238,13 @@ export type ResourceMenuCommand =
   | 'add-child'
   | 'rename'
   | 'remove-directory'
-  // 归属移动（链路/组件通用）
+  // 归属移动（链路/组件/市场引用通用）
   | 'move'
   // 收藏
   | 'favorite-add'
-  | 'favorite-remove';
+  | 'favorite-remove'
+  // 市场引用叶子卸载（删 install 记录，不动源组件）
+  | 'uninstall';
 
 /** 右键菜单浮层状态（坐标已做视口夹取） */
 export interface ResourceMenuState {

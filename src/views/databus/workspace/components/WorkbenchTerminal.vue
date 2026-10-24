@@ -7,10 +7,10 @@
 <template>
   <section v-if="open" class="ws-term" aria-label="终端">
     <header class="ws-term__head">
-      <nav class="ws-term__tabs">
+      <nav class="ws-term__tabs db-seg">
         <button
           type="button"
-          class="ws-term__tab"
+          class="ws-term__tab db-seg__item"
           :class="{ 'is-active': tab === 'execute' }"
           @click="switchTab('execute')"
         >
@@ -19,7 +19,7 @@
         </button>
         <button
           type="button"
-          class="ws-term__tab"
+          class="ws-term__tab db-seg__item"
           :class="{ 'is-active': tab === 'compile' }"
           @click="switchTab('compile')"
         >
@@ -91,38 +91,7 @@ useLucideSubset();
   height: 30px;
   padding: 0 6px 0 8px;
 }
-.ws-term__tabs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.ws-term__tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 10px;
-  border: none;
-  border-radius: var(--app-radius-md, 10px);
-  background: transparent;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
-
-  &:hover {
-    background: var(--el-fill-color-light, #f5f7fa);
-  }
-
-  &.is-active {
-    background: var(--wb-tab-card-bg);
-    color: var(--el-text-color-primary, #1d2129);
-    font-weight: 600;
-    box-shadow: var(--wb-tab-card-shadow);
-  }
-}
+/* 终端小页签：胶囊轨道/项走全局 .db-seg / .db-seg__item（databus-tabs） */
 .ws-term__badge {
   min-width: 16px;
   padding: 0 4px;

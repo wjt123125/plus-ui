@@ -4,6 +4,7 @@
  *   canvas:{chainId}（同链单例）/ component:detail:{code}
  *   / component:form:{id}（新建临时 component:form:new）/ component:changes:{id}
  *   / market（物料市场，全局单例）/ market-item:{id}（物料详情，同 id 单例）
+ *   / market-review:{id}（物料审核，同 id 单例，2026-10-24 审核详情弹窗 tab 化）
  * 会话落 localStorage：刷新恢复上次打开的 tab（无历史=空白工作台）；重复打开只聚焦。
  */
 import { watch } from 'vue';
@@ -41,6 +42,10 @@ export function changesKey(id: number): string {
 }
 export function marketItemKey(itemId: number | string): string {
   return `market-item:${itemId}`;
+}
+/** 物料审核 tab key（同 id 单例；审核详情弹窗 tab 化 2026-10-24） */
+export function marketReviewKey(itemId: number | string): string {
+  return `market-review:${itemId}`;
 }
 export function connectionFormKey(id: number | 'new'): string {
   return id === 'new' ? 'connection:form:new' : `connection:form:${id}`;
@@ -140,6 +145,24 @@ export function useWorkspaceTabs() {
       title,
       code: '',
       marketItemId: id,
+      dirty: false
+    });
+  }
+
+  /** 打开/聚焦物料审核 tab（kind market-review，同 id 单例；pane 自取数不走台账） */
+  function openMarketReview(itemId: number | string, title: string): string {
+    const id = String(itemId); // 雪花 id 超 2^53，勿转 Number（会丢精度）
+    const key = marketReviewKey(id);
+    const existed = wb.tabs.value.find((t) => t.key === key);
+    if (existed) {
+      existed.title = title; // 物料可能已改名，聚焦时顺手刷新
+    }
+    return wb.open({
+      key,
+      kind: 'market-review',
+      title,
+      code: '',
+      marketReviewItemId: id,
       dirty: false
     });
   }
@@ -394,6 +417,7 @@ export function useWorkspaceTabs() {
     openDetail,
     openMarket,
     openMarketDetail,
+    openMarketReview,
     openForm,
     openCreate,
     openChanges,

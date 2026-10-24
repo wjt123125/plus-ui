@@ -40,6 +40,14 @@ const LUCIDE_SUBSET: IconifyJSON = {
     'panel-bottom-open': {
       body: `<g ${S}><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18M9 10l3-3l3 3"/></g>`
     },
+    // 用户区下拉（§7 改造点3）：展开箭头、个人中心、退出登录
+    'chevron-down': { body: `<path ${S} d="m6 9l6 6l6-6"/>` },
+    'user-round': {
+      body: `<g ${S}><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></g>`
+    },
+    'log-out': {
+      body: `<g ${S}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17l5-5l-5-5"/><path d="M21 12H9"/></g>`
+    },
     // 工作面板 tab 图标
     'layout-grid': {
       body: `<g ${S}><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></g>`
@@ -57,6 +65,10 @@ const LUCIDE_SUBSET: IconifyJSON = {
     'file-diff': {
       body: `<path ${S} d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2zm3-12h6m-3 3V7M9 17h6"/>`
     },
+    // 物料审核 tab（2026-10-24 审核详情弹窗 tab 化）：带对勾的文件（审核语义，与 file 族 tab 同形）
+    'file-check': {
+      body: `<g ${S}><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="m9 15l2 2l4-4"/></g>`
+    },
     x: { body: `<path ${S} d="M18 6L6 18M6 6l12 12"/>` },
     'circle-x': {
       body: `<g ${S}><circle cx="12" cy="12" r="10"/><path d="m15 9l-6 6m0-6l6 6"/></g>`
@@ -73,6 +85,10 @@ const LUCIDE_SUBSET: IconifyJSON = {
     // 资源树容器/虚拟根：目录（展开态）、未归组收件箱、精选模板、系统组件
     'folder-open': {
       body: `<path ${S} d="m6 14l1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>`
+    },
+    // 目录树选择器的根节点（带向下连线＝所有分组的父级），与 folder 区分
+    'folder-root': {
+      body: `<g ${S}><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2"/><circle cx="12" cy="13" r="2"/><path d="M12 15v5"/></g>`
     },
     inbox: {
       body: `<g ${S}><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11"/></g>`
@@ -158,6 +174,17 @@ const LUCIDE_SUBSET: IconifyJSON = {
     },
     download: {
       body: `<g ${S}><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10l5 5l5-5"/></g>`
+    },
+    // 我的上架「下架」（与 download 区分：落到底线即停，语义是撤下货架）
+    'arrow-down-to-line': {
+      body: `<g ${S}><path d="M12 17V3"/><path d="m6 11l6 6l6-6"/><path d="M19 21H5"/></g>`
+    },
+    // 物料市场连接器分段（d3 万物皆包）：连接器图标兜底（电插头）、上传 zip 包
+    plug: {
+      body: `<g ${S}><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></g>`
+    },
+    upload: {
+      body: `<g ${S}><path d="M12 3v12"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 8l5-5l5 5"/></g>`
     }
   }
 };

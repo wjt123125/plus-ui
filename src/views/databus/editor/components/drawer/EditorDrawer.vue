@@ -1,6 +1,6 @@
 <template>
   <div class="editor-drawer" :class="{ 'is-collapsed': collapsed }">
-    <el-tabs v-model="activeTab" class="editor-drawer__tabs">
+    <el-tabs v-model="activeTab" class="editor-drawer__tabs db-tabs">
       <!-- 资源树 tab 仅工作台宿主出现（全屏编辑器无跨资源导航）；内容由宿主经 slot 注入 -->
       <el-tab-pane v-if="showTreeTab" label="资源" name="tree" lazy>
         <div class="editor-drawer__tree">
@@ -163,22 +163,10 @@ watch(
   min-height: 0;
 }
 
+/* 页签胶囊样式统一走全局 .db-tabs（databus-tabs），此处只留抽屉内的边距与滚动 */
 .editor-drawer__tabs :deep(.el-tabs__header) {
-  margin: 0;
+  margin: 0 0 10px;
   padding: 0 8px;
-}
-
-/* 页签样式与左侧物料区保持一致（12px 字号、34px 高、1px 细底线）；
-   四 tab 共存时压缩左右内边距防溢出。34px 是工作台 header 统一线高度 */
-.editor-drawer__tabs :deep(.el-tabs__nav-wrap::after) {
-  height: 1px;
-}
-
-.editor-drawer__tabs :deep(.el-tabs__item) {
-  height: 34px;
-  padding: 0 8px;
-  font-size: 12px;
-  line-height: 34px;
 }
 
 .editor-drawer__tabs :deep(.el-tabs__content) {

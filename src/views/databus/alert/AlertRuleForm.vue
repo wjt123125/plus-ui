@@ -59,7 +59,7 @@
       label-position="top"
       class="alert-rule-form__body"
     >
-      <el-tabs v-model="activeTab" class="alert-rule-form__tabs">
+      <el-tabs v-model="activeTab" class="alert-rule-form__tabs db-tabs">
         <el-tab-pane label="基础" name="basic">
           <el-form-item label="规则名称" prop="ruleName">
             <el-input v-model="form.ruleName" maxlength="100" placeholder="如：订单同步链路连续失败" />
@@ -930,24 +930,8 @@ defineExpose({ openDialog });
     line-height: 1.4;
   }
 
+  /* 页签胶囊样式统一走全局 .db-tabs（databus-tabs） */
   &__tabs {
-    :deep(.el-tabs__header) {
-      margin: 0 0 8px;
-      padding: 0 2px;
-    }
-
-    :deep(.el-tabs__nav-wrap::after) {
-      height: 1px;
-      background-color: var(--el-border-color-lighter);
-    }
-
-    :deep(.el-tabs__item) {
-      height: 30px;
-      font-size: 13px;
-      font-weight: 500;
-      padding: 0 14px;
-    }
-
     :deep(.el-tab-pane) {
       padding: 0 2px;
       /* 以最高的「基础」tab 实际高度为基准兜底：切 tab 弹窗高度不再跳变

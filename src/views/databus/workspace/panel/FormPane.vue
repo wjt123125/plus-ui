@@ -27,12 +27,12 @@
       </div>
       <span class="cf-head__spacer" />
       <!-- Safari 分段控件（macOS 工具栏式）：两侧 spacer 把它居中在标题与开关之间的空白区 -->
-      <nav class="cf-head__seg" aria-label="表单分段">
+      <nav class="cf-head__seg db-seg" aria-label="表单分段">
         <button
           v-for="tab in FORM_TABS"
           :key="tab.name"
           type="button"
-          class="cf-seg"
+          class="cf-seg db-seg__item"
           :class="{ 'is-active': activeTab === tab.name }"
           @click="activeTab = tab.name"
         >
@@ -464,20 +464,6 @@ defineExpose({ reload });
     flex: 1;
   }
 
-  &__seg {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: 2px;
-    flex-shrink: 0;
-    /* 外圆角 = 内胶囊圆角 + 轨道内衬，形成同心的细轨 */
-    border-radius: 8px;
-    /* Safari 轨道：浅灰半透明 + 磨砂（与工作台 tab 条同款 token） */
-    background: var(--wb-tab-track-bg);
-    backdrop-filter: blur(16px) saturate(1.6);
-    -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  }
-
   &__dot {
     width: 9px;
     height: 9px;
@@ -520,39 +506,8 @@ defineExpose({ reload });
   }
 }
 
-/* Safari 分段（卡头）：细轨 + 无底胶囊，激活段白卡片浮起（macOS 原生观感，克制不肥） */
+/* 卡头分段：胶囊轨道/项由全局 .db-seg / .db-seg__item 提供 */
 .cf-seg {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  font-size: 12px;
-  font-family: inherit;
-  color: var(--el-text-color-secondary);
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease,
-    box-shadow 0.15s ease;
-
-  &:hover {
-    background: var(--wb-tab-hover-bg);
-    color: var(--el-text-color-primary);
-  }
-
-  &.is-active {
-    background: var(--wb-tab-card-bg);
-    color: var(--el-text-color-primary);
-    font-weight: 600;
-    box-shadow: var(--wb-tab-card-shadow);
-  }
-
   &__dot {
     width: 6px;
     height: 6px;

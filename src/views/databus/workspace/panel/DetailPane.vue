@@ -71,7 +71,7 @@
         class="detail-alert"
       />
 
-      <el-tabs v-model="activeTab" class="detail-tabs">
+      <el-tabs v-model="activeTab" class="detail-tabs db-tabs">
         <!-- Tab 1：配置说明（默认主角） -->
         <el-tab-pane label="配置说明" name="contract">
           <div class="detail-tab-pane">
@@ -467,12 +467,7 @@ async function copyCode() {
   margin: 0;
 }
 
-.detail-tabs {
-  // 面板内分栏，压缩 tab 条与正文的留白
-  :deep(.el-tabs__header) {
-    margin-bottom: 12px;
-  }
-}
+/* 页签胶囊样式统一走全局 .db-tabs（databus-tabs） */
 
 .detail-tab-pane {
   display: flex;

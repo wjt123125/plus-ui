@@ -59,7 +59,7 @@
                 全部类型
               </button>
               <button
-                v-for="item in CONNECTOR_OPTIONS"
+                v-for="item in connectorOptions"
                 :key="item.value"
                 class="filter-tab"
                 :class="{ active: queryParams.connectorType === item.value }"
@@ -206,7 +206,6 @@
 import { Plus, Search, Edit, Delete, Link, Key, CopyDocument, Connection } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import {
-  CONNECTOR_OPTIONS,
   delConnection,
   listConnection,
   testConnection,
@@ -220,6 +219,7 @@ import type {
 import { useLoading } from '@/hooks/async/useLoading';
 import modal from '@/plugins/modal';
 import ConnectionFormBody from './ConnectionFormBody.vue';
+import { useConnectorOptions } from './useConnectorOptions';
 import type { ConnectionSaved } from '../workbench.types';
 
 const props = defineProps<{
@@ -251,6 +251,9 @@ const total = ref(0);
 const togglingId = ref<number | undefined>();
 const testingId = ref<number | undefined>();
 
+/* 连接器类型选项：动态 defs（无权限降级静态内置），筛选 tab 与 label 共用（§15.7） */
+const { options: connectorOptions, loadConnectorOptions, connectorLabelOf } = useConnectorOptions();
+
 const queryParams = ref<SysDatabusConnectionQuery>({
   pageNum: 1,
   pageSize: 10,
@@ -261,12 +264,7 @@ const queryParams = ref<SysDatabusConnectionQuery>({
 });
 
 /** 连接器类型值转展示文案，未知类型原样显示 */
-const connectorTypeLabel = (value?: string) => {
-  if (!value) {
-    return '-';
-  }
-  return CONNECTOR_OPTIONS.find((item) => item.value === value)?.label ?? value;
-};
+const connectorTypeLabel = (value?: string) => connectorLabelOf(value);
 
 /** 超时毫秒值 → 人类可读文案 */
 const formatTimeout = (ms?: number) => {
@@ -429,6 +427,7 @@ const copyConnectionId = async (row: SysDatabusConnectionVo) => {
 
 onMounted(() => {
   getList();
+  void loadConnectorOptions();
 });
 
 /** 宿主请求刷新列表（别处保存/删除后同步） */

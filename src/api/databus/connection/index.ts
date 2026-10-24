@@ -9,8 +9,8 @@ import type {
 } from './types';
 
 /**
- * 连接器类型选项（后端 ConnectorRegistry 已注册类型的前端镜像）。
- * 1D-P0 仅 bpmHttp；后续物料市场接入新 Connector 后扩展此处，表单 select 与列表标签共用。
+ * 内置连接器类型静态基线（万物皆包 §15.7：连接管理页消费侧动态化后仅作降级兜底——
+ * 无 databus:connector:list 权限 / defs 请求失败时显示内置 bpmHttp，见 useConnectorOptions）。
  */
 export const CONNECTOR_OPTIONS = [{ value: 'bpmHttp', label: 'BPM HTTP 连接器' }] as const;
 

@@ -5,8 +5,11 @@ import {
   MarketInstallForm,
   DatabusMarketInstallVo,
   DatabusMarketItemVo,
+  MarketPreviewVo,
+  MarketPublishBatchForm,
   MarketPublishForm,
   MarketQuery,
+  MarketReviewDetailVo,
   MarketReviewForm
 } from './types';
 
@@ -62,11 +65,20 @@ export function uninstallMarketItem(resourceId: string | number): AxiosPromise<v
   });
 }
 
-/** 我的已装列表（管理页数据源） */
+/** 我的已装列表（管理页数据源；树引用叶子第三数据源） */
 export function listInstalled(): AxiosPromise<DatabusMarketInstallVo[]> {
   return request({
     url: '/databus/market/installed',
     method: 'get'
+  });
+}
+
+/** 引用叶子目录归属移动（引用挂树：只更新 install.directory_id，不动源组件） */
+export function moveInstallDirectory(id: string | number, directoryId: string | number | null): AxiosPromise<void> {
+  return request({
+    url: `/databus/market/install/${id}/directory`,
+    method: 'put',
+    data: { directoryId: directoryId ?? null }
   });
 }
 
@@ -86,12 +98,37 @@ export function listPendingMarketItems(): AxiosPromise<DatabusMarketItemVo[]> {
   });
 }
 
+/** 审核详情（decisions §十四-7 嵌套审核：主体 item + 闭包依赖状态树 + P1 内容预览；权限 databus:market:review） */
+export function getMarketReviewDetail(id: string | number): AxiosPromise<MarketReviewDetailVo> {
+  return request({
+    url: `/databus/market/items/${id}/review-detail`,
+    method: 'get'
+  });
+}
+
+/** 实现预览（2026-10-24 装前可看）：组件＝脚本与契约、链路＝节点清单；仅 ONLINE 物料返回 */
+export function getMarketPreview(id: string | number): AxiosPromise<MarketPreviewVo> {
+  return request({
+    url: `/databus/market/items/${id}/preview`,
+    method: 'get'
+  });
+}
+
 /* ---------------- 供给（上架侧） ---------------- */
 
 /** 提交上架（进待审） */
 export function publishMarket(data: MarketPublishForm): AxiosPromise<void> {
   return request({
     url: '/databus/market/publish',
+    method: 'post',
+    data
+  });
+}
+
+/** 批量提审（decisions §十四-6 发布引导确认后整批提交；整批 all-or-nothing，任一项校验失败整批回滚） */
+export function publishMarketBatch(data: MarketPublishBatchForm): AxiosPromise<void> {
+  return request({
+    url: '/databus/market/publish/batch',
     method: 'post',
     data
   });

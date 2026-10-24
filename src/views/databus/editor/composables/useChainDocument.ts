@@ -57,6 +57,8 @@ export function useChainDocument(store: ChainDocumentStore) {
   const logLevel = ref('BASIC');
   const remark = ref('');
   const chainSaving = ref(false);
+  /** 当前链路创建人 id（P1 看得见：非本人链路画布置只读——审核者从审核详情打开他人链路仅查看；系统行 create_by 为空不拦） */
+  const chainOwner = ref<number | string | null>(null);
 
   /** 链路入参登记表（跟链路走；试运行按默认值预填，执行前按必填校验） */
   const inputParams = ref<ChainInputParam[]>([]);
@@ -81,6 +83,7 @@ export function useChainDocument(store: ChainDocumentStore) {
     editingId.value = data.id ?? id;
     chainId.value = data.chainCode;
     chainName.value = data.chainName;
+    chainOwner.value = data.createBy ?? null;
     logLevel.value = data.logLevel ?? 'BASIC';
     remark.value = data.remark ?? '';
     inputParams.value = data.inputParams ? JSON.parse(JSON.stringify(data.inputParams)) : [];
@@ -184,6 +187,7 @@ export function useChainDocument(store: ChainDocumentStore) {
     editingId,
     chainId,
     chainName,
+    chainOwner,
     logLevel,
     remark,
     chainSaving,

@@ -1,0 +1,104 @@
+/* =============================================================================
+ * databus 页签统一风格（2026-10-24）
+ * 唯一基准＝物料市场类型分段：浅灰胶囊轨道 + 白色浮起选中项。
+ * 两个入口共用同一视觉，禁止各页面再自造 tab 样式：
+ *   - .db-seg / .db-seg__item：按钮式分段（市场类型、新建向导、发布弹窗、组件编辑卡头、终端小页签）
+ *   - .db-tabs：el-tabs 复用（市场详情、组件详情、连接器表单、告警表单、抽屉、算子面板）
+ * ========================================================================== */
+
+.db-seg {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--el-fill-color-light, #f5f7fa);
+}
+
+.db-seg__item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  /* 短文案（如「简介」「执行」）兜底最小宽：避免段被压成开关滑块般的矮胖胶囊 */
+  min-width: 64px;
+  height: 26px;
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+
+  &:hover {
+    color: var(--el-text-color-primary);
+  }
+
+  &.is-active {
+    color: var(--el-text-color-primary);
+    font-weight: 600;
+    background: var(--el-bg-color, #fff);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+  }
+}
+
+/* el-tabs 版：把下划线页签改造成同一套胶囊轨道 */
+.db-tabs {
+  .el-tabs__header {
+    margin: 0 0 12px;
+  }
+
+  /* 去掉默认细底线与滑动高亮条 */
+  .el-tabs__nav-wrap::after,
+  .el-tabs__active-bar {
+    display: none;
+  }
+
+  .el-tabs__nav {
+    padding: 2px;
+    border-radius: 9px;
+    background: var(--el-fill-color-light, #f5f7fa);
+  }
+
+  .el-tabs__item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 64px;
+    height: 26px;
+    margin: 0;
+    padding: 0 14px;
+    font-size: 13px;
+    line-height: 26px;
+    color: var(--el-text-color-secondary);
+    border-radius: 7px;
+    transition:
+      background-color 0.15s ease,
+      color 0.15s ease;
+
+    &:hover {
+      color: var(--el-text-color-primary);
+    }
+
+    &.is-active {
+      color: var(--el-text-color-primary);
+      font-weight: 600;
+      background: var(--el-bg-color, #fff);
+      box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+    }
+  }
+
+  .el-tabs__nav-prev,
+  .el-tabs__nav-next {
+    height: 30px;
+    line-height: 30px;
+    color: var(--el-text-color-secondary);
+  }
+}

@@ -212,6 +212,8 @@ export interface DatabusComponentVo {
   remark?: string | null;
   /** 创建时间 */
   createTime?: string;
+  /** 创建人（资源树按人隔离：自建件客户端按 createBy 过滤） */
+  createBy?: number;
 }
 
 /** 新增/修改入参（scriptLang/scriptBody/version 为工件列，第一步 form 不可写不传） */

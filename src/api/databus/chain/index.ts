@@ -3,6 +3,7 @@ import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
   ChainCopyBo,
+  ChainPublishResultVo,
   ChainStatsVo,
   CopySuggestionVo,
   DatabusChainBo,
@@ -84,9 +85,10 @@ export function delChain(ids: number | string | Array<number | string>) {
 /**
  * 发布链路：status 0草稿/2已下线 → 1已发布 + version+1；
  * 后端先推 EL（含脚本）到 Rule-DB lf_chain/lf_script，再改状态。
+ * 响应携带发布引导清单（decisions §十四-6）：闭包内自有未上架物料，前端弹窗确认后调批量提审。
  * POST /databus/chain/publish/{id}（权限 databus:editor:publish）
  */
-export function publishChain(id: number | string) {
+export function publishChain(id: number | string): AxiosPromise<ChainPublishResultVo> {
   return request({
     url: '/databus/chain/publish/' + id,
     method: 'post'

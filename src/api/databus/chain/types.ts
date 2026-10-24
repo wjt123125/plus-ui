@@ -28,6 +28,8 @@ export interface ChainInputParam {
 export interface DatabusChainVo {
   /** 主键 id（编辑/发布/删除用；后端 Long 超出 JS 安全整数时序列化为字符串） */
   id?: number | string;
+  /** 创建人 id（P1 看得见：非本人链路画布置只读态；系统行 create_by 为空） */
+  createBy?: number | string;
   /** 链路编码（全局唯一；Rule-DB lf_chain.chain_id 用此值） */
   chainCode: string;
   /** 链路名称（用户可读） */
@@ -134,6 +136,31 @@ export interface DatabusChainQuery extends PageQuery {
   isTemplate?: string;
   /** 归属目录 id 精确过滤（工作台链树按目录拉链路用；「未归组」语义由前端拉全量自行分组） */
   directoryId?: string | number;
+  /** 只看自己创建的（资源树按人隔离传 true，后端叠加 create_by 过滤，超管豁免） */
+  onlyMine?: boolean;
+}
+
+/**
+ * 发布引导清单条目（闭包内自有未上架物料），与后端 ChainPublishResultVo.GuideItemVo 对齐。
+ */
+export interface ChainPublishGuideItem {
+  /** 物料类型：CHAIN＝闭包子链 / COMPONENT＝闭包组件 */
+  resourceType: 'CHAIN' | 'COMPONENT';
+  /** 源资源 id（链路主键 / 组件 DB 行 id；Long 超出 JS 安全整数时序列化为字符串，直接回传批量提审） */
+  sourceId: string | number;
+  /** 名称（引导弹窗清单展示） */
+  name: string;
+}
+
+/**
+ * 链路发布结果，与后端 org.dromara.databus.domain.vo.ChainPublishResultVo 对齐。
+ * 发布引导（decisions §十四-6）：闭包内未上架的自有物料进 guideItems，前端弹窗确认后整批提审；
+ * 他人未上架组件不阻塞发布，仅以编码提示。
+ */
+export interface ChainPublishResultVo {
+  guideItems?: ChainPublishGuideItem[];
+  /** 闭包内引用的他人未上架组件编码（仅提示，不影响发布与运行） */
+  otherUnlistedComponents?: string[];
 }
 
 /**

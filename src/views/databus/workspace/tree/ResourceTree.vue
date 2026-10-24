@@ -112,6 +112,7 @@
             />
             <span class="tree-node__label" :class="labelClass(data)">{{ data.label }}</span>
             <span class="tree-node__tail">
+              <span v-if="data.type === 'market-ref'" class="tree-node__mark is-shared">S</span>
               <span
                 v-if="data.lifecycle"
                 class="tree-node__dot"
@@ -190,7 +191,11 @@ import { computed, nextTick, reactive, ref, watch, type CSSProperties } from 'vu
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { listChain } from '@/api/databus/chain';
 import type { DatabusChainVo } from '@/api/databus/chain/types';
+import type { CmpProperty } from '@/api/databus/el/types';
 import type { ComponentSource, ScriptRuntime } from '@/api/databus/component/types';
+import { useUserStore } from '@/store/modules/user';
+import { listInstalled, moveInstallDirectory } from '@/api/databus/market';
+import type { DatabusMarketInstallVo } from '@/api/databus/market/types';
 import {
   delDirectory,
   listDirectory,
@@ -254,6 +259,8 @@ const TREE_PROPS = { children: 'children', label: 'label' } as const;
 
 const directories = ref<DirectoryVo[]>([]);
 const chains = ref<DatabusChainVo[]>([]);
+/** 我的市场安装记录（引用叶子第三数据源：SHARED 组件 → 引用挂树，§十二-7） */
+const installs = ref<DatabusMarketInstallVo[]>([]);
 const localLoading = ref(false);
 const keyword = ref('');
 
@@ -273,18 +280,27 @@ const treeRef = ref<TreeInstance>();
 /** 树滚动容器（.res-tree__body，overflow-y:auto）：定位节点的滚动基准 */
 const bodyRef = ref<HTMLElement>();
 
-/** 目录平表 + 链路 + 收藏（失败静默，拦截器已 toast） */
+/** 目录平表 + 链路 + 我的已装（分源容错：单源失败保旧值继续组树，拦截器已 toast） */
 async function reload() {
   localLoading.value = true;
   try {
-    const [dirRes, chainRes] = await Promise.all([
+    // allSettled 分源容错（对齐宿主 getList 先例）：任一源失败不拖垮其余源
+    const [dirRes, chainRes, installRes] = await Promise.allSettled([
       listDirectory(),
-      listChain({ pageNum: 1, pageSize: 9999, isTemplate: '0' })
+      // 按人隔离：树只拉自己创建的链路（超级管理员后端豁免，admin 仍全量）
+      listChain({ pageNum: 1, pageSize: 9999, isTemplate: '0', onlyMine: true }),
+      // 引用挂树第三源：install.owner_id=当前用户天然按人隔离（market:list 载体 F 行）
+      listInstalled()
     ]);
-    directories.value = dirRes.data ?? [];
-    chains.value = chainRes.data?.rows ?? [];
-  } catch {
-    /* 拦截器已提示，树保持旧数据 */
+    if (dirRes.status === 'fulfilled') {
+      directories.value = dirRes.value.data ?? [];
+    }
+    if (chainRes.status === 'fulfilled') {
+      chains.value = chainRes.value.data?.rows ?? [];
+    }
+    if (installRes.status === 'fulfilled') {
+      installs.value = installRes.value.data ?? [];
+    }
   } finally {
     localLoading.value = false;
   }
@@ -295,7 +311,20 @@ void reload();
 
 const chainMap = computed(() => new Map(chains.value.map((c) => [String(c.id), c])));
 const rowByCode = computed(() => new Map(props.rows.map((r) => [r.code, r])));
-const selfBuiltRows = computed(() => props.rows.filter((r) => r.db != null));
+const userStore = useUserStore();
+/** 当前用户 id（数值化对齐 db.createBy；未登录态为 null → 自建件区为空） */
+const myUserId = computed(() => {
+  const id = Number(userStore.userId);
+  return Number.isFinite(id) && id > 0 ? id : null;
+});
+/** 超级管理员不参与按人隔离（对齐后端 isSuperAdmin 豁免口径，admin 树全量） */
+const isSuperAdmin = computed(() => userStore.roles.includes('superadmin'));
+/** 自建组件按人隔离：只显示我创建的台账行（目录/链路过滤在后端，此处是组件侧客户端过滤） */
+const selfBuiltRows = computed(() =>
+  isSuperAdmin.value
+    ? props.rows.filter((r) => r.db != null)
+    : props.rows.filter((r) => r.db != null && r.db.createBy === myUserId.value)
+);
 const systemRows = computed(() => props.rows.filter((r) => r.source === 'SYSTEM'));
 const dirtySet = computed(() => new Set(props.dirtyCodes ?? []));
 const unhealthySet = computed(() => new Set((props.unhealthy ?? []).map((h) => h.componentCode)));
@@ -340,7 +369,38 @@ function marksOfComponent(r: ComponentRegistryRow): ResourceMark[] {
   return marks;
 }
 
+/** registry 现存组件码集合（含停用/废弃行：缺依赖只对真正不存在的码红标） */
+const registryCodes = computed(() => new Set(props.rows.map((r) => r.code)));
+
+/**
+ * 递归收集链路组件树的依赖引用码（cmp_property）：
+ * 顶层 id 只存在于组件叶子节点（编排节点无 id，子表达式走 condition）。
+ */
+function collectComponentIds(node: CmpProperty | null | undefined, out: Set<string>): void {
+  if (!node) {
+    return;
+  }
+  if (node.id) {
+    out.add(node.id);
+  }
+  collectComponentIds(node.condition, out);
+  for (const child of node.children ?? []) {
+    collectComponentIds(child, out);
+  }
+}
+
+/** 链路缺依赖：树引用了 registry 里不存在的组件码（原作者删件/从未安装） */
+function missingDepsOf(c: DatabusChainVo): string[] {
+  if (!c.cmpProperty) {
+    return [];
+  }
+  const refs = new Set<string>();
+  collectComponentIds(c.cmpProperty, refs);
+  return [...refs].filter((code) => !registryCodes.value.has(code));
+}
+
 function chainLeaf(c: DatabusChainVo): ResourceTreeNode {
+  const missing = missingDepsOf(c);
   return {
     id: `chain:${c.id}`,
     type: 'chain',
@@ -350,6 +410,11 @@ function chainLeaf(c: DatabusChainVo): ResourceTreeNode {
     chainCode: c.chainCode,
     status: c.status,
     lifecycle: lifecycleOfChain(c.status),
+    // 缺依赖红标：复用 error 装饰码（E），tooltip 引导去市场安装
+    marks: missing.length ? ['error'] : undefined,
+    tip: missing.length
+      ? `缺依赖：${missing.join('、')}（可到物料市场安装）`
+      : undefined,
     children: [],
     favorited: isFavorited('chain', c.id)
   };
@@ -390,6 +455,39 @@ function systemLeaf(r: ComponentRegistryRow): ResourceTreeNode {
     row: r,
     lifecycle: 'published',
     children: []
+  };
+}
+
+/**
+ * 市场引用叶（SHARED 组件安装，§十二-7 引用挂树）：组织视角挂我的目录，
+ * open 走源组件详情（componentCode 反查台账）；挪动只改 install.directory_id。
+ */
+function marketLeaf(it: DatabusMarketInstallVo): ResourceTreeNode | null {
+  if (it.mode !== 'SHARED' || it.resourceType !== 'COMPONENT') {
+    return null;
+  }
+  const row = it.componentCode ? rowByCode.value.get(it.componentCode) : undefined;
+  // 自己装自己：本体叶已在我的自建区（可挪动归属），引用叶多余跳过（超管豁免同口径）
+  if (row?.db != null && !isSuperAdmin.value && row.db.createBy === myUserId.value) {
+    return null;
+  }
+  return {
+    id: `mref:${it.id}`,
+    type: 'market-ref',
+    label: it.name || row?.shortName || row?.name || it.componentCode || '未命名组件',
+    directoryId: it.directoryId ?? null,
+    installId: it.id,
+    dbId: it.localResourceId ?? null,
+    componentCode: it.componentCode,
+    icon: it.icon ?? row?.icon,
+    color: it.color ?? row?.color,
+    disabled: it.enabled === false,
+    row,
+    lifecycle: row ? lifecycleOfComponent(row) : undefined,
+    marks: row ? marksOfComponent(row) : undefined,
+    children: [],
+    favorited: it.localResourceId != null && isFavorited('component', it.localResourceId),
+    tip: row ? '来自市场的共享组件（上游更新实时生效）' : '来自市场的共享组件（源已不在台账，可卸载）'
   };
 }
 
@@ -588,6 +686,13 @@ const treeData = computed<ResourceTreeNode[]>(() => {
   for (const r of selfBuiltRows.value) {
     place(componentLeaf(r), r.db?.directoryId ?? null);
   }
+  // 引用挂树：SHARED 组件安装按 install.directory_id 分桶（与本体归属解耦）
+  for (const it of installs.value) {
+    const leaf = marketLeaf(it);
+    if (leaf) {
+      place(leaf, leaf.directoryId);
+    }
+  }
   for (const [key, bucket] of buckets) {
     dirNodeMap.get(key)!.children.push(...bucket.toSorted(byLabel));
   }
@@ -742,14 +847,14 @@ function onNodeContextMenu(event: MouseEvent, data: ResourceTreeNode) {
   menu.value = { visible: true, x, y, node: data };
 }
 
-/** 收藏目标（链路叶子→chain；自建组件叶→component；收藏条目→其自身） */
+/** 收藏目标（链路叶子→chain；自建组件/市场引用叶→component；收藏条目→其自身） */
 function favTargetOf(
   node: ResourceTreeNode
 ): { type: FavoriteResourceType; id: string | number } | null {
   if (node.type === 'chain') {
     return node.chainId != null ? { type: 'chain', id: node.chainId } : null;
   }
-  if (node.type === 'component') {
+  if (node.type === 'component' || node.type === 'market-ref') {
     return node.dbId != null ? { type: 'component', id: node.dbId } : null;
   }
   if (node.type === 'favorite' && node.favoriteType != null && node.favoriteId != null) {
@@ -896,7 +1001,7 @@ async function removeDirectory(node: ResourceTreeNode) {
 const moveDialog = reactive<{
   visible: boolean;
   saving: boolean;
-  kind: 'chain' | 'component';
+  kind: 'chain' | 'component' | 'install';
   id: string | number;
   name: string;
   fromLabel: string;
@@ -917,8 +1022,14 @@ const moveOptions = computed<DirOption[]>(() => [
 
 function openMoveDialog(node: ResourceTreeNode) {
   const dir = directories.value.find((d) => String(d.id) === String(node.directoryId));
-  moveDialog.kind = node.type === 'component' ? 'component' : 'chain';
-  moveDialog.id = node.type === 'component' ? (node.dbId as number) : (node.chainId as string | number);
+  // 市场引用叶子：id=安装记录主键（改 install.directory_id，不动源组件）
+  if (node.type === 'market-ref') {
+    moveDialog.kind = 'install';
+    moveDialog.id = node.installId as string | number;
+  } else {
+    moveDialog.kind = node.type === 'component' ? 'component' : 'chain';
+    moveDialog.id = node.type === 'component' ? (node.dbId as number) : (node.chainId as string | number);
+  }
   moveDialog.name = node.label;
   moveDialog.fromLabel = `当前归属：${dir ? dir.directoryName : '未归组'}`;
   moveDialog.target = dir ? dir.id : 0;
@@ -933,7 +1044,9 @@ async function submitMove() {
   try {
     const target = moveDialog.target;
     const directoryId = target === 0 || target === '0' ? null : target;
-    if (moveDialog.kind === 'component') {
+    if (moveDialog.kind === 'install') {
+      await moveInstallDirectory(moveDialog.id, directoryId);
+    } else if (moveDialog.kind === 'component') {
       await moveComponentToDirectory({ componentId: moveDialog.id, directoryId });
     } else {
       await moveChainToDirectory({ chainId: moveDialog.id, directoryId });
@@ -956,44 +1069,92 @@ async function submitMove() {
  */
 interface DragNode {
   data: Record<string, any>;
+  /** el-tree 内部 Node 的层级与父节点：prev/next 落点要反推「与目标同父」 */
+  level?: number;
+  parent?: DragNode | null;
 }
 
-/** 可拖：链路/自建组件叶子（换目录）与目录（换父）；系统件/虚拟根不可拖 */
+/** 可拖：链路/自建组件/市场引用叶子（换目录）与目录（换父）；系统件/虚拟根不可拖 */
 function allowDrag(node: DragNode): boolean {
   const data = node.data as ResourceTreeNode;
-  return data.type === 'chain' || data.type === 'component' || data.type === 'directory';
+  return (
+    data.type === 'chain' || data.type === 'component' || data.type === 'market-ref' || data.type === 'directory'
+  );
 }
 
 /**
- * 落点规则：只允许 inner（不做同级排序，排序仍由目录 sort 字段管），
- * 链路/组件 → 目录或未归组；目录 → 别的目录，且目标不得在自己的子树内。
+ * prev/next 落点语义＝「与目标同父」：反推目标所在容器。
+ * 树视图没有 root 节点，故顶级节点（level=1）的容器即树根（目录 parentId=0）；
+ * 未归组叶子旁＝顶级；虚拟根（收藏/最近/系统组件）下不做同级落点，返回 null。
+ */
+function siblingParentOf(target: DragNode): { dirId: string | number | null } | null {
+  if ((target.level ?? 1) === 1) {
+    return { dirId: null };
+  }
+  const parentData = target.parent?.data as ResourceTreeNode | undefined;
+  if (!parentData) {
+    return null;
+  }
+  if (parentData.type === 'directory') {
+    return { dirId: parentData.directoryId ?? null };
+  }
+  if (parentData.type === 'ungrouped') {
+    return { dirId: null };
+  }
+  return null;
+}
+
+/**
+ * 落点规则：inner＝落入容器；prev/next＝与目标同父（目录借此升顶级/换父：
+ * 拖到顶级节点的上/下沿即成为 root 的子级、该节点的兄弟）。
+ * 链路/组件/市场引用 inner → 目录或未归组；目录 inner → 别的目录且不在自己子树内；
+ * 目录 prev/next → 容器为目录或树根，且不同于当前父、不在自己子树内（不做同级排序）。
  */
 function allowDrop(
   dragging: DragNode,
   target: DragNode,
   type: 'prev' | 'inner' | 'next'
 ): boolean {
-  if (type !== 'inner') return false;
   const dragData = dragging.data as ResourceTreeNode;
   const targetData = target.data as ResourceTreeNode;
-  if (dragData.type === 'chain' || dragData.type === 'component') {
-    if (targetData.type === 'ungrouped') return dragData.directoryId != null;
-    if (targetData.type !== 'directory') return false;
-    return String(dragData.directoryId ?? '') !== String(targetData.directoryId);
+  if (type === 'inner') {
+    if (dragData.type === 'chain' || dragData.type === 'component' || dragData.type === 'market-ref') {
+      if (targetData.type === 'ungrouped') return dragData.directoryId != null;
+      if (targetData.type !== 'directory') return false;
+      return String(dragData.directoryId ?? '') !== String(targetData.directoryId);
+    }
+    if (dragData.type === 'directory') {
+      if (targetData.type !== 'directory') return false;
+      if (String(dragData.directoryId) === String(targetData.directoryId)) return false;
+      return !subtreeIds(String(dragData.directoryId)).has(String(targetData.directoryId));
+    }
+    return false;
   }
-  if (dragData.type === 'directory') {
-    if (targetData.type !== 'directory') return false;
-    if (String(dragData.directoryId) === String(targetData.directoryId)) return false;
-    return !subtreeIds(String(dragData.directoryId)).has(String(targetData.directoryId));
-  }
-  return false;
+  if (dragData.type !== 'directory') return false;
+  const container = siblingParentOf(target);
+  if (!container) return false;
+  const newParentId = container.dirId ?? 0;
+  const current = directories.value.find((d) => String(d.id) === String(dragData.directoryId));
+  if (!current || String(current.parentId) === String(newParentId)) return false;
+  return !subtreeIds(String(dragData.directoryId)).has(String(newParentId));
 }
 
 /** 落定即提交后端，成败都 reload：el-tree 已就地改过 data，用后端真值覆盖回视觉 */
-async function onNodeDrop(dragging: DragNode, target: DragNode) {
+async function onNodeDrop(
+  dragging: DragNode,
+  target: DragNode,
+  // el-tree node-drop 的落位口径是 before/after/inner（allow-drop 才是 prev/next），非 inner 一律按兄弟处理
+  dropType: 'before' | 'after' | 'inner'
+) {
   const dragData = dragging.data as ResourceTreeNode;
   const targetData = target.data as ResourceTreeNode;
-  const directoryId = targetData.type === 'ungrouped' ? null : targetData.directoryId;
+  let directoryId: string | number | null;
+  if (dropType === 'inner') {
+    directoryId = targetData.type === 'ungrouped' ? null : targetData.directoryId;
+  } else {
+    if (dragData.type !== 'directory') return;
+    directoryId = siblingParentOf(target)?.dirId ?? null;
+  }
   try {
     if (dragData.type === 'chain') {
       await moveChainToDirectory({ chainId: dragData.chainId, directoryId });
@@ -1001,6 +1162,10 @@ async function onNodeDrop(dragging: DragNode, target: DragNode) {
     } else if (dragData.type === 'component') {
       await moveComponentToDirectory({ componentId: dragData.dbId as number, directoryId });
       ElMessage.success('组件归属已更新');
+    } else if (dragData.type === 'market-ref') {
+      // 引用挂树：只改 install.directory_id（组织视角），不动源组件归属
+      await moveInstallDirectory(dragData.installId as string | number, directoryId);
+      ElMessage.success('引用归属已更新');
     } else {
       const dir = directories.value.find((d) => String(d.id) === String(dragData.directoryId));
       if (!dir) return;
@@ -1169,7 +1334,12 @@ function tipOf(data: ResourceTreeNode): string {
     if (data.type === 'component' || data.type === 'system-leaf') {
       return `${base}\n${sourceLabel(data.source)} · ${statusText(data)}`;
     }
-    return base;
+    // 链路叶附带缺依赖等补充文案（tip 由叶子生成时写入）
+    return data.tip ? `${base}\n${data.tip}` : base;
+  }
+  if (data.type === 'market-ref') {
+    // 源已不在台账的引用叶：componentCode 为空走不进 code 分支，兜底带出「可卸载」提示
+    return data.tip ? `${data.label}\n${data.tip}` : data.label;
   }
   return data.label;
 }
@@ -1461,7 +1631,7 @@ defineExpose({ reload, focusSection });
     }
   }
 
-  /* 装饰轴字母码（E 异常 / M 会话脏 / D 废弃），可与色点并存 */
+  /* 字母码基座（两轴共用）：E 异常 / M 会话脏 / D 废弃 + S 共享引用（is-shared 蓝，由 market-ref 形态派生），可与色点并存 */
   &__mark {
     flex-shrink: 0;
     min-width: 12px;
@@ -1482,6 +1652,11 @@ defineExpose({ reload, focusSection });
 
     &.is-deprecated {
       color: var(--el-text-color-placeholder);
+    }
+
+    /* 共享引用身份（market-ref 叶）：品牌蓝，与 marks 的异常语义色区分 */
+    &.is-shared {
+      color: var(--el-color-primary);
     }
   }
 

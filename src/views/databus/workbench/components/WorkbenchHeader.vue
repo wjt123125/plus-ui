@@ -67,24 +67,6 @@
           <SvgIcon :icon-class="navCollapsed ? 'lucide:panel-right-open' : 'lucide:panel-right-close'" />
         </button>
       </el-tooltip>
-      <!-- 后台管理入口（§7 改造点3，opt-in）：仅外部传入 adminEntry 才渲染；点按抛给页面跳转。
-           按钮自身按角色隐藏（v-hasRole），非后台角色不可见；后台子页路由由 sys_menu 动态注册兜底 -->
-      <el-tooltip
-        v-if="adminEntry"
-        :content="adminLabel"
-        placement="bottom"
-        :show-after="300"
-      >
-        <button
-          type="button"
-          class="wb-header__btn wb-header__admin"
-          v-hasRole="['admin', 'databus_ops', 'databus_gov']"
-          @click="emit('admin')"
-        >
-          <SvgIcon icon-class="lucide:settings" />
-          <span class="wb-header__admin-text">{{ adminLabel }}</span>
-        </button>
-      </el-tooltip>
     </div>
   </header>
 </template>
@@ -116,18 +98,13 @@ withDefaults(
     consoleLabel?: string;
     /** 面板收起时的错误角标数（>0 显示红点数字，>99 显示 99+） */
     consoleCount?: number;
-    /** 是否渲染「后台管理」入口（opt-in，§7 改造点3）；undefined = 不渲染 */
-    adminEntry?: boolean;
-    /** 后台管理入口文案 */
-    adminLabel?: string;
   }>(),
   {
     historyLabel: '会话历史',
     aiLabel: 'AI 助手',
     navLabel: '资源树',
     aiHotkey: 'Ctrl+U',
-    consoleLabel: '编译输出',
-    adminLabel: '后台管理'
+    consoleLabel: '编译输出'
   }
 );
 
@@ -136,8 +113,6 @@ const emit = defineEmits<{
   (e: 'update:aiCollapsed', value: boolean): void;
   (e: 'update:navCollapsed', value: boolean): void;
   (e: 'update:consoleOpen', value: boolean): void;
-  /** 点「后台管理」：交页面跳转，header 保持零路由依赖（§7 改造点3） */
-  (e: 'admin'): void;
 }>();
 
 useLucideSubset();
@@ -199,19 +174,6 @@ useLucideSubset();
     line-height: 15px;
     text-align: center;
     pointer-events: none;
-  }
-
-  /* 后台管理入口（§7 改造点3）：icon + 文字，比纯图标钮略宽且独立语义 */
-  &__admin {
-    width: auto;
-    gap: 5px;
-    padding: 0 8px;
-    margin-left: 6px;
-
-    &-text {
-      font-size: 12px;
-      font-weight: 500;
-    }
   }
 }
 </style>

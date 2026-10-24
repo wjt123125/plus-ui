@@ -88,6 +88,7 @@
           />
           <MarketPane
             v-else-if="tab.kind === 'market'"
+            :refresh-token="refreshTokens[tab.key] ?? 0"
             @open-local="
               (id: string | number, type: 'COMPONENT' | 'CHAIN', title: string) =>
                 emit('market-open', id, type, title)
@@ -95,6 +96,21 @@
             @installed="emit('market-installed')"
             @toggle-local="(id: string | number, enabled: boolean) => emit('market-toggle', id, enabled)"
             @open-detail="(it: DatabusMarketItemVo) => emit('market-open-detail', it.id, it.name)"
+            @open-review="
+              (id: string | number, title: string) => emit('market-open-review', id, title)
+            "
+          />
+          <!-- 物料审核 tab（2026-10-24 审核详情弹窗 tab 化）：审完关 tab 并刷市场 pane 冒泡；
+               「查看」同市场 pane 口径（链开画布、组件开详情） -->
+          <MarketReviewTab
+            v-else-if="tab.kind === 'market-review' && tab.marketReviewItemId != null"
+            :item-id="tab.marketReviewItemId"
+            @open-source="
+              (type: 'COMPONENT' | 'CHAIN', sourceId: string | number, code: string | null, title: string) =>
+                emit('market-open-source', type, sourceId, code, title)
+            "
+            @reviewed="emit('market-reviewed', tab)"
+            @dep-reviewed="emit('market-dep-reviewed')"
           />
           <MarketItemPane
             v-else-if="tab.kind === 'market-detail' && tab.marketItemId != null"
@@ -105,6 +121,9 @@
             "
             @installed="emit('market-installed')"
             @open-market="emit('market-open-market')"
+            @open-source-canvas="
+              (chainId: string | number, title: string) => emit('market-open-source-canvas', chainId, title)
+            "
           />
           <!-- 管理页 pane（2026-10-20 tab 化，§10 步骤2）：连接列表 / 连接对象 -->
           <ConnectionPane
@@ -179,6 +198,7 @@ import SettingsPane from './SettingsPane.vue';
 import TabContextMenu from './TabContextMenu.vue';
 import MarketPane from '../market/MarketPane.vue';
 import MarketItemPane from '../market/MarketItemPane.vue';
+import MarketReviewTab from '../market/MarketReviewTab.vue';
 
 defineOptions({ name: 'WorkspaceWorkPanel' });
 
@@ -190,6 +210,8 @@ const TAB_ICON: Record<WorkspaceTabKind, string> = {
   changes: 'lucide:file-diff',
   market: 'lucide:store',
   'market-detail': 'lucide:package',
+  // 物料审核（2026-10-24 审核详情弹窗 tab 化）
+  'market-review': 'lucide:file-check',
   // 管理页 tab（2026-10-20 扩展，§4.1）；图标一律取自 lucide 子集现有 key（见 useLucideSubset）
   'connection-list': 'lucide:external-link',
   'connection-form': 'lucide:file-pen',
@@ -233,7 +255,17 @@ const emit = defineEmits<{
   (e: 'market-toggle', localResourceId: string | number, enabled: boolean): void;
   /** 市场浏览卡片点主体：打开物料详情 tab；物料详情页请求回到市场 tab */
   (e: 'market-open-detail', itemId: string | number, title: string): void;
+  /** 审核详情「详情」按钮：打开物料审核 tab（kind market-review，同 id 单例） */
+  (e: 'market-open-review', itemId: string | number, title: string): void;
+  /** 物料审核完成（通过/驳回成功）：宿主关审核 tab 并刷新市场 pane 待审核冒泡 */
+  (e: 'market-reviewed', tab: WorkspaceTab): void;
+  /** 依赖单据就地审完（闭包联审）：审核 tab 不关，宿主只刷新市场 pane 待审核冒泡 */
+  (e: 'market-dep-reviewed'): void;
+  /** P1 看得见：审核「查看」——链按 sourceId 开画布、组件按 code 开详情（宿主分发，市场审核 tab 共用） */
+  (e: 'market-open-source', resourceType: 'COMPONENT' | 'CHAIN', sourceId: string | number, code: string | null, title: string): void;
   (e: 'market-open-market'): void;
+  /** 市场物料详情「实现」页：打开源链路只读画布（未安装也能看编排） */
+  (e: 'market-open-source-canvas', chainId: string | number, title: string): void;
   /** 连接管理：列表点卡片/新增开新对象 tab；对象保存回报宿主（关 tab / 刷列表 / 改标题） */
   (e: 'open-connection', id: number | 'new', title: string): void;
   (e: 'connection-saved', tab: WorkspaceTab, payload: ConnectionSaved): void;

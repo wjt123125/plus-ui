@@ -30,6 +30,11 @@
     <div class="ai-rail__input">
       <el-input disabled type="textarea" :rows="3" resize="none" :placeholder="inputPlaceholder" />
     </div>
+
+    <!-- 侧栏底部插槽（n8n 式用户区位）：页面注入 WorkbenchUserBar 等，栏自身保持零业务依赖 -->
+    <div v-if="$slots.footer" class="ai-rail__footer">
+      <slot name="footer" />
+    </div>
   </div>
 </template>
 
@@ -162,7 +167,14 @@ const emit = defineEmits<{
 
   &__input {
     flex-shrink: 0;
-    padding: 10px 12px 14px;
+    padding: 10px 12px 12px;
+    border-top: 1px solid var(--el-border-color-lighter, #ebeef5);
+  }
+
+  /* 侧栏底部用户区位（n8n 式）：顶边线与输入区分隔，内容（WorkbenchUserBar）自带行内边距 */
+  &__footer {
+    flex-shrink: 0;
+    padding: 6px;
     border-top: 1px solid var(--el-border-color-lighter, #ebeef5);
   }
 }
