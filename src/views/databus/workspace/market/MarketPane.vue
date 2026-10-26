@@ -893,7 +893,7 @@ async function onUninstall(row: DatabusMarketInstallVo) {
     await modal.confirm(
       shared
         ? `确认卸载「${row.name}」？`
-        : `确认卸载「${row.name}」？将删除你的本地副本；若你的链路仍在使用它，可能影响运行。`
+        : `确认卸载「${row.name}」？将删除你的本地副本；若该副本仍被你的其他链路引用，会被拒绝删除，请先移除引用。`
     );
   } catch {
     return;
@@ -918,7 +918,7 @@ async function onUninstallCard(it: DatabusMarketItemVo) {
   const tip =
     activeType.value === 'COMPONENT'
       ? `确认卸载「${it.name}」？`
-      : `确认卸载「${it.name}」？将删除你的本地副本（随它入目录、未引用且未改造的子链副本一并回收）；若你的链路仍在使用它，可能影响运行。`;
+      : `确认卸载「${it.name}」？将删除你的本地副本（随它入目录、未引用且装完未碰的子链副本一并回收）；若该副本仍被你的其他链路引用，会被拒绝删除，请先移除引用。`;
   try {
     await modal.confirm(tip);
   } catch {
