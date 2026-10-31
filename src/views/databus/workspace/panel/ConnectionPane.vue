@@ -5,7 +5,7 @@
     - embedded=true（路由页宿主）：列表↔对象由 pane 内部 activeFormId 切换，取消/保存回列表
     - embedded=false（工作台 tab 宿主）：formId prop 决定对象视图；列表点击/新建统一 emit('open') 开新 tab
   红线：无路由依赖、不 import Layout、不自行 router.push；动作一律 emit 上抛。
-  列表视图整体平移自原 connection/index.vue（Style-B 小卡片网格），仅去掉 max-width 以吃满 pane 宽度。
+  列表视图整体平移自原 connection/index.vue（Style-B 小卡片网格）；限宽居中骨架统一用全局 .db-pane-inner（2026-10-31 收敛，勿再自写 max-width）。
 -->
 <template>
   <div class="conn-pane">
@@ -19,7 +19,7 @@
 
     <div v-else v-loading="loading" class="conn-list">
       <div class="conn-list__scroll">
-        <div class="conn-list__inner">
+        <div class="db-pane-inner">
           <!-- 顶部标题栏 -->
           <div class="page-header">
             <div class="page-title-wrap">
@@ -465,13 +465,6 @@ watch(
   min-height: 0;
   overflow-y: auto;
   background: var(--el-fill-color-light, #f5f7fa);
-}
-
-.conn-list__inner {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 24px 24px 32px;
 }
 
 .page-header {

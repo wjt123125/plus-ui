@@ -14,7 +14,7 @@
 <template>
   <div class="monitor-pane">
     <div class="monitor-pane__scroll">
-      <div class="monitor-pane__inner">
+      <div class="db-pane-inner">
         <!-- 顶部标题栏 -->
         <div class="page-header">
           <div class="page-title-wrap">
@@ -1122,15 +1122,6 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-}
-
-.monitor-pane__inner {
-  max-width: 1320px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 24px 24px 32px;
 }
 
 .page-header {

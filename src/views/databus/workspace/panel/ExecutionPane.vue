@@ -5,14 +5,14 @@
     - embedded=true（路由页宿主）：列表↔记录由 pane 内部 activeRecordId 切换，记录视图带「返回列表」
     - embedded=false（工作台 tab 宿主）：recordId prop 决定记录视图；列表点击统一 emit('open') 开新 tab
   红线：无路由依赖、不 import Layout、不自行 router.push；动作一律 emit 上抛。
-  列表视图整体平移自原 execution/index.vue，仅去掉 max-width 以吃满 pane 宽度。
+  列表视图整体平移自原 execution/index.vue；限宽居中骨架统一用全局 .db-pane-inner（2026-10-31 收敛，勿再自写 max-width）。
 -->
 <template>
   <div class="exec-pane">
     <!-- 列表视图 -->
     <div v-if="viewRecordId == null" v-loading="loading" class="exec-list">
       <div class="exec-list__scroll">
-        <div class="exec-list__inner">
+        <div class="db-pane-inner">
           <!-- 顶部标题栏 -->
           <div class="page-header">
             <div class="page-title-wrap">
@@ -469,13 +469,6 @@ watch(
   min-height: 0;
   overflow-y: auto;
   background: var(--el-fill-color-light, #f5f7fa);
-}
-
-.exec-list__inner {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 24px 24px 32px;
 }
 
 /* 记录视图：正文（ExecutionRecordBody）自吃剩余高度并内层滚动 */

@@ -187,10 +187,29 @@ const rootRef = ref<HTMLElement | null>(null);
 provideEditorFullscreen(rootRef);
 
 // 在父组件创建 Vue Flow store 实例并注入子树，FlowCanvas 通过 useVueFlow() 拿到同一实例
-const { getNodes, getEdges, setNodes, setEdges, fitView, onNodeDragStop } = useVueFlow();
+const { getNodes, getEdges, setNodes, setEdges, fitView, vueFlowRef, onNodeDragStop } = useVueFlow();
 
 // ELK 自动排列：提升到顶层，供 canvasController（结构变更后）调用
 const { autoLayout: runAutoLayout } = useAutoLayout(treeModel);
+
+/**
+ * 视口是否已在「真实尺寸」下自适应过。
+ * 工作台用 v-show 保活，非激活 tab 是 display:none（容器 0×0），此时加载链路触发的
+ * fitView 会按 0 尺寸算出无效视口，切回来就看到画布内容贴在左上角（像是没排过版）。
+ * 隐藏态那次不计入，等该 tab 第一次被激活、容器有尺寸时补一次 fitView。
+ */
+let viewportSettled = false;
+function settleViewportOnce() {
+  if (viewportSettled) {
+    return;
+  }
+  const host = vueFlowRef.value;
+  if (!host || !host.clientWidth || !host.clientHeight || !getNodes.value.length) {
+    return; // 还没尺寸或链路还没进画布，等下一次激活/加载
+  }
+  viewportSettled = true;
+  fitView({ padding: 0.2 });
+}
 
 // 撤销/重做历史栈：数据源切换到 ElNode 树快照
 const { undo, redo, canUndo, canRedo, push, reset } = useFlowHistory(
@@ -323,6 +342,9 @@ if (props.host === 'workbench') {
     (active) => {
       if (active) {
         setActiveDrawerPort(drawerPort);
+        // 从 display:none 切回来才拿到真实尺寸：隐藏态没算成的视口在这里补一次。
+        // 双层 rAF：先等 v-show 后的 ResizeObserver 完成尺寸测量，再 fitView
+        nextTick(() => requestAnimationFrame(() => requestAnimationFrame(settleViewportOnce)));
       } else {
         elPreview.active.value = false;
       }
@@ -510,7 +532,13 @@ onMounted(() => {
     }
   } else if (props.loadChainId != null) {
     // 工作台宿主：v-show 保活 mount 一次即加载；同链单例保证 loadChainId 不再变化
-    void loadChainToEditor(props.loadChainId);
+    void loadChainToEditor(props.loadChainId).finally(() => {
+      // 加载完时可见 → autoLayout 自带的那次 fitView 是有效视口，标记已定；
+      // 隐藏 → 那次按 0 尺寸算的作废，留给激活时补（见 settleViewportOnce）
+      if (props.active && vueFlowRef.value?.clientWidth) {
+        viewportSettled = true;
+      }
+    });
   }
 });
 </script>

@@ -8,7 +8,7 @@
 <template>
   <div class="alert-pane">
     <div class="alert-pane__scroll">
-      <div class="alert-pane__inner">
+      <div class="db-pane-inner">
         <div class="page-header">
           <div class="page-title-wrap">
             <h2 class="page-title">告警记录</h2>
@@ -274,15 +274,6 @@ onMounted(() => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-}
-
-.alert-pane__inner {
-  max-width: 1200px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 24px 24px 32px;
 }
 
 .page-header {

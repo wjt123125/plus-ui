@@ -195,6 +195,8 @@ html.dark {
   --wb-tab-bg: rgba(0, 0, 0, 0.35);
   --wb-tab-hover-bg: rgba(0, 0, 0, 0.5);
   --wb-tab-card-bg: #3f3f46;
+  /* 「+」不透明底色＝轨道色叠在页面底上的实色（滚动 tab 会从它底下穿过，必须挡住） */
+  --wb-tab-add-bg: #2a2a2c;
   --wb-tab-card-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.08),
     0 1px 2px rgba(0, 0, 0, 0.45),

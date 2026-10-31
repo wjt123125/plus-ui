@@ -131,14 +131,15 @@ export type ResourceLifecycle = 'draft' | 'published' | 'offline';
 /** 资源装饰轴（字母码，可与生命周期并存、可多个）：异常 / 会话脏 / 废弃 */
 export type ResourceMark = 'error' | 'modified' | 'deprecated';
 
-/** 中栏空态导航（WorkbenchLauncher）派发的入口命令（打开类走右树定位，新建类开向导 tab，市场开 tab） */
+/**
+ * 工作台入口命令（tab 条「+」下拉与零 tab 空态卡共用，清单见 launcherEntries.ts）。
+ * 只收「会真正开 tab」的入口：最近访问 / 收藏 / 系统组件是资源树常驻节，
+ * 揭右抽屉即可定位，不作为入口重复投放。
+ */
 export type LauncherCommand =
-  | 'recent'
-  | 'favorite'
   | 'new'
-  | 'system'
   | 'market'
-  // 空态管理页入口卡（§8 步骤8「同步补 launcher 卡」，开对应功能 tab，先立后破防功能失踪）
+  // 管理页入口（§8 步骤8「同步补 launcher 卡」，开对应功能 tab，先立后破防功能失踪）
   | 'admin-connection'
   | 'admin-execution'
   | 'admin-monitor'

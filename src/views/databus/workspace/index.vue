@@ -51,6 +51,7 @@
           :refresh-tokens="refreshTokens"
           @close="wb.close"
           @tab-action="onTabAction"
+          @open-tool="onLauncherCommand"
           @dirty-change="wb.setDirty"
           @open-chain="wb.openCanvas"
           @open-component="(code, name) => wb.openDetail({ code, name })"
@@ -238,18 +239,13 @@ const { ensureTaxonomy } = useComponentTaxonomy();
 /** ph 图标全集：台账 icon 契约是 `ph:*`，树叶子与卡片渲染前必须离线注入，否则运行时联网取图 */
 const { loadPhIcons } = usePhIcons();
 
-/** 空态导航命令 → 打开类揭右抽屉并树定位（展开+高亮+滚动），新建类触发弹窗 */
+/**
+ * 入口命令分发（两处消费：tab 条「+」下拉 + 零 tab 空态卡）。
+ * 清单在 workspace/panel/launcherEntries.ts，只收「会真正开 tab」的入口——
+ * 最近访问/收藏/系统组件是资源树常驻节，已在右抽屉可见，不再重复投放（2026-10-31）。
+ */
 function onLauncherCommand(cmd: LauncherCommand) {
   switch (cmd) {
-    case 'recent':
-      focusTree('recent-root');
-      break;
-    case 'favorite':
-      focusTree('fav-root');
-      break;
-    case 'system':
-      focusTree('sys-root');
-      break;
     case 'market':
       wb.openMarket();
       break;
@@ -274,12 +270,6 @@ function onLauncherCommand(cmd: LauncherCommand) {
       wb.openSettings();
       break;
   }
-}
-
-/** 揭右抽屉并定位目标树节点（section 虚拟根：展开 + 高亮 + 滚动入视） */
-function focusTree(id: string) {
-  setDrawerCollapsed(false);
-  treeRef.value?.focusSection(id);
 }
 
 /** tab 右键菜单关闭族（'close' 由面板本地脏确认处理）：批量关闭语义归 useWorkspaceTabs */

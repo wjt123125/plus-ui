@@ -7,9 +7,9 @@
   空态（tab 全关）由宿主经 #empty 插槽注入导航面板，缺省回退为一句提示。
 -->
 <template>
-  <section class="ws-panel">
+  <section ref="panelRef" class="ws-panel">
     <div v-if="tabs.length" class="ws-panel__strip">
-      <div ref="tabsRef" class="ws-panel__tabs" @wheel="onTabsWheel">
+      <div ref="tabsRef" class="ws-panel__tabs">
         <div
           v-for="tab in tabs"
           :key="tab.key"
@@ -20,11 +20,47 @@
           @mousedown.middle.prevent="requestClose(tab.key)"
           @contextmenu.prevent="onTabContextMenu(tab, $event)"
         >
-          <span v-if="tab.dirty" class="wb-tab__dirty" aria-label="未保存" />
-          <SvgIcon v-else class="wb-tab__icon" :icon-class="tabIcon(tab.kind)" />
+          <SvgIcon class="wb-tab__icon" :icon-class="tabIcon(tab.kind)" :color="tabColor(tab.kind)" />
           <span class="wb-tab__title">{{ tab.title }}</span>
-          <SvgIcon class="wb-tab__close" icon-class="lucide:x" @click.stop="requestClose(tab.key)" />
+          <!-- 关闭位三态（VS Code 同款）：脏时圆点常显，悬停回退成 ×；点 × 走 requestClose 的确认弹窗 -->
+          <span class="wb-tab__tail" :class="{ 'is-dirty': tab.dirty }" @click.stop="requestClose(tab.key)">
+            <span v-if="tab.dirty" class="wb-tab__dirty" aria-label="未保存" />
+            <SvgIcon class="wb-tab__close" icon-class="lucide:x" />
+          </span>
         </div>
+
+        <!--
+          tab 条尾部「+」（Trae 范式，2026-10-31）：常驻开新页入口，
+          不再需要「先关闭全部 → 进空态 → 再点卡片」才能换页。
+          sticky right:0 —— tab 少时跟在末个 tab 之后，多时被顶到轨道右缘固定不动；
+          条目与零 tab 空态卡共用 launcherEntries 清单，只收会真正开 tab 的入口。
+        -->
+        <!-- show-arrow=false：不画气泡小箭头（Trae 的菜单是无箭头浮层） -->
+        <el-dropdown
+          class="wb-tab-add-wrap"
+          trigger="click"
+          placement="bottom-start"
+          popper-class="wb-tab-add-popper"
+          :show-arrow="false"
+          @command="onOpenTool"
+        >
+          <button type="button" class="wb-tab-add" title="打开新页" aria-label="打开新页">
+            <SvgIcon class="wb-tab-add__icon" icon-class="lucide:plus" />
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item
+                v-for="entry in openEntries"
+                :key="entry.key"
+                :command="entry.key"
+                :divided="entry.dividerBefore"
+              >
+                <SvgIcon class="wb-tab-add__menu-icon" :icon-class="entry.icon" :style="{ color: entry.color }" />
+                <span>{{ entry.label }}</span>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </div>
 
@@ -213,12 +249,14 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import modal from '@/plugins/modal';
+import { checkPermi } from '@/utils/permission';
 import type { ScriptSaveResult } from '@/api/databus/component/types';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import ChainCanvasPane from '@/views/databus/editor/ChainCanvasPane.vue';
 import type { ComponentRegistryRow } from '@/views/databus/component/model/registry';
 import type { DatabusMarketItemVo } from '@/api/databus/market/types';
-import type { ComponentSaved, ConnectionSaved, CreateFileType, CreateSavedPayload, MarketScope, TabMenuCommand, WorkspaceTab, WorkspaceTabKind } from '../workbench.types';
+import type { ComponentSaved, ConnectionSaved, CreateFileType, CreateSavedPayload, LauncherCommand, MarketScope, TabMenuCommand, WorkspaceTab, WorkspaceTabKind } from '../workbench.types';
+import { LAUNCHER_ENTRIES } from './launcherEntries';
 import DetailPane from './DetailPane.vue';
 import FormPane from './FormPane.vue';
 import CreatePane from './CreatePane.vue';
@@ -237,30 +275,34 @@ import ConnectorPackagePane from '../market/ConnectorPackagePane.vue';
 
 defineOptions({ name: 'WorkspaceWorkPanel' });
 
-/** tab 图标一律走 lucide（离线注入，不用 @element-plus/icons-vue） */
-const TAB_ICON: Record<WorkspaceTabKind, string> = {
-  canvas: 'lucide:spline',
-  detail: 'lucide:file-text',
-  form: 'lucide:file-pen',
-  changes: 'lucide:file-diff',
-  market: 'lucide:store',
-  // 物料管理（2026-10-30 由 MarketPane 内部视图提为独立 tab）；与全局设置 tab 同图标，两者极少同屏
-  'market-manage': 'lucide:settings',
-  'market-detail': 'lucide:package',
+/**
+ * tab 图标与配色（图标一律走 lucide，离线注入，不用 @element-plus/icons-vue）。
+ * 色板对齐 launcherEntries（同一入口在「+」菜单与 tab 上同色，只维护一份口径）；
+ * 未出现在入口清单的 kind（画布/详情/变更/看包等）按同色系补齐。
+ */
+const TAB_META: Record<WorkspaceTabKind, { icon: string; color: string }> = {
+  canvas: { icon: 'lucide:spline', color: '#4F8EF7' },
+  detail: { icon: 'lucide:file-text', color: '#22B8CF' },
+  form: { icon: 'lucide:file-pen', color: '#2DD288' },
+  changes: { icon: 'lucide:file-diff', color: '#F59E0B' },
+  market: { icon: 'lucide:store', color: '#4F8EF7' },
+  // 物料管理（2026-10-30 由 MarketPane 内部视图提为独立 tab）；与全局设置 tab 同图标同色，两者极少同屏
+  'market-manage': { icon: 'lucide:settings', color: '#2DD288' },
+  'market-detail': { icon: 'lucide:package', color: '#22B8CF' },
   // 物料审核（2026-10-24 审核详情弹窗 tab 化）
-  'market-review': 'lucide:file-check',
+  'market-review': { icon: 'lucide:file-check', color: '#F59E0B' },
   // 连接器包查看（2026-10-29 「看包」弹窗 tab 化）；与 market-detail 的 package 错开，同屏两 tab 可辨
-  'connector-package': 'lucide:box',
+  'connector-package': { icon: 'lucide:box', color: '#A371F7' },
   // 管理页 tab（2026-10-20 扩展，§4.1）；图标一律取自 lucide 子集现有 key（见 useLucideSubset）
-  'connection-list': 'lucide:external-link',
-  'connection-form': 'lucide:file-pen',
-  'execution-list': 'lucide:play',
-  'execution-record': 'lucide:history',
-  'monitor-overview': 'lucide:layout-grid',
-  'alert-record': 'lucide:circle-alert',
-  settings: 'lucide:settings',
+  'connection-list': { icon: 'lucide:external-link', color: '#22B8CF' },
+  'connection-form': { icon: 'lucide:file-pen', color: '#2DD288' },
+  'execution-list': { icon: 'lucide:play', color: '#4F8EF7' },
+  'execution-record': { icon: 'lucide:history', color: '#A371F7' },
+  'monitor-overview': { icon: 'lucide:layout-grid', color: '#A371F7' },
+  'alert-record': { icon: 'lucide:circle-alert', color: '#FF8A5B' },
+  settings: { icon: 'lucide:settings', color: '#2DD288' },
   // 新建向导（2026-10-21 新建入口收敛，decisions §10）
-  create: 'lucide:file-plus'
+  create: { icon: 'lucide:file-plus', color: '#2DD288' }
 };
 
 useLucideSubset();
@@ -279,6 +321,8 @@ const emit = defineEmits<{
   (e: 'update:activeKey', key: string): void;
   (e: 'close', key: string): void;
   (e: 'tab-action', cmd: TabMenuCommand, key: string): void;
+  /** tab 条尾部「+」选了某个入口：宿主分发到既有 onLauncherCommand */
+  (e: 'open-tool', cmd: LauncherCommand): void;
   (e: 'dirty-change', key: string, dirty: boolean): void;
   (e: 'open-chain', chainId: number | string, title: string): void;
   (e: 'open-component', code: string, name: string): void;
@@ -344,11 +388,17 @@ function tabTitle(tab: WorkspaceTab): string {
 }
 
 function tabIcon(kind: WorkspaceTabKind): string {
-  return TAB_ICON[kind];
+  return TAB_META[kind].icon;
+}
+
+function tabColor(kind: WorkspaceTabKind): string {
+  return TAB_META[kind].color;
 }
 
 /* ---------------- tab 条：无滚动条横滚 / 右键菜单 / 激活入视 ---------------- */
 
+/** 面板根节点：滚轮监听挂这里（tab 条会随 tab 数增减挂载/卸载，根节点常驻） */
+const panelRef = ref<HTMLElement>();
 /** tab 滚动容器（.ws-panel__tabs）：滚轮横滚与激活入视的基准 */
 const tabsRef = ref<HTMLElement>();
 /** tab 右键菜单浮层状态（锚点 key 留宿主，菜单只收序号/总数） */
@@ -366,14 +416,118 @@ const STANDALONE_KINDS: WorkspaceTabKind[] = [
 ];
 const tabMenuCanOpenNew = computed(() => STANDALONE_KINDS.includes(tabMenu.kind as WorkspaceTabKind));
 
-/** 滚轮横滚（VS Code/Trae 范式）：竖向 delta 折算进 scrollLeft，横向 delta 交浏览器原生处理 */
-function onTabsWheel(event: WheelEvent) {
-  const el = tabsRef.value;
-  if (!el || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) {
+/**
+ * 滚轮横滚（VS Code/Trae 范式）：竖向滚轮折算进 scrollLeft，代替拖滚动条。
+ * 用缓动滑行而非一次跳到位，跟手感和连续滚动的手势更接近；横向滚轮（触控板横扫）交浏览器原生处理。
+ */
+const GLIDE_EASE = 0.2; // 每帧向目标逼近的比例，越小越「滑」
+let glideTarget = 0;
+let glideRaf = 0;
+/** 本轮滑行停稳后是否要按滚动位置同步激活 tab */
+let pendingActivateSync = false;
+/** 指针在 tab 条上的最新横坐标：滑行时 tab 从指针底下划过，停稳后以指针压住的那一格为准 */
+let pointerX = 0;
+/** 由滚轮滑行引起的激活：跳过「激活入视」，否则会和滑行位置互相拽 */
+let suppressEnsure = false;
+
+function stopGlide(el: HTMLElement) {
+  if (glideRaf) {
+    cancelAnimationFrame(glideRaf);
+    glideRaf = 0;
+  }
+  pendingActivateSync = false;
+  glideTarget = el.scrollLeft;
+}
+
+function glideTo(el: HTMLElement, target: number) {
+  glideTarget = target;
+  if (glideRaf) {
     return;
   }
-  el.scrollLeft += event.deltaY;
+  const settle = () => {
+    el.scrollLeft = glideTarget;
+    glideRaf = 0;
+    if (pendingActivateSync && tabsRef.value === el) {
+      pendingActivateSync = false;
+      syncActiveFromScroll(el);
+    }
+  };
+  const tick = () => {
+    const current = el.scrollLeft;
+    const diff = glideTarget - current;
+    // 容差 1px：浏览器对 scrollLeft 按整像素取整，最后残差会稳定在 1px，更小的逼近量会被抹平
+    if (Math.abs(diff) <= 1) {
+      settle();
+      return;
+    }
+    const next = current + diff * GLIDE_EASE;
+    if (Math.abs(next - current) < 1) {
+      settle(); // 递增量已被取整抹平，再算也是原地，直接收尾
+      return;
+    }
+    el.scrollLeft = next;
+    glideRaf = requestAnimationFrame(tick);
+  };
+  glideRaf = requestAnimationFrame(tick);
+}
+
+/** 滑行停稳后按「指针位置」选 tab：指针压在哪个 tab 上，页面就切到哪个 */
+function syncActiveFromScroll(el: HTMLElement) {
+  const tabs = Array.from(el.querySelectorAll<HTMLElement>('.wb-tab'));
+  if (!tabs.length) {
+    return;
+  }
+  // 以「指针落在哪个 tab 上」为准：滑行时是 tab 从指针底下划过，用户眼睛盯的就是指针那一格
+  let hit = -1;
+  let hitDist = Infinity;
+  for (let i = 0; i < tabs.length; i++) {
+    const rect = tabs[i].getBoundingClientRect();
+    const dist = pointerX < rect.left ? rect.left - pointerX : pointerX > rect.right ? pointerX - rect.right : 0;
+    if (dist === 0) {
+      hit = i;
+      break;
+    }
+    if (dist < hitDist) {
+      hitDist = dist;
+      hit = i;
+    }
+  }
+  const key = props.tabs[hit]?.key;
+  if (!key || key === props.activeKey) {
+    return;
+  }
+  suppressEnsure = true;
+  emit('update:activeKey', key);
+}
+
+/** 只有指针落在 tab 条上才接管滚轮，其余区域（内容区等）保持页面原有滚动 */
+function onStripWheel(event: WheelEvent) {
+  const el = tabsRef.value;
+  if (!el || !(event.target instanceof Node) || !el.contains(event.target)) {
+    return;
+  }
+  if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+    return;
+  }
+  const max = el.scrollWidth - el.clientWidth;
+  if (max <= 0) {
+    return; // tab 全部装得下，没有可滚的，放行页面滚动
+  }
   event.preventDefault();
+  pointerX = event.clientX;
+  // deltaMode：0=像素 1=行 2=页
+  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? el.clientWidth : 1;
+  const next = glideTarget + event.deltaY * unit;
+  pendingActivateSync = true; // 停稳后同步激活（滑行期间不切，避免页面连续抖动）
+  glideTo(el, Math.min(max, Math.max(0, next)));
+}
+
+/** 滑行途中移动指针也要更新锚点，停稳时按「最后停留的那一格」激活 */
+function onStripMouseMove(event: MouseEvent) {
+  const el = tabsRef.value;
+  if (el && event.target instanceof Node && el.contains(event.target)) {
+    pointerX = event.clientX;
+  }
 }
 
 function onTabContextMenu(tab: WorkspaceTab, event: MouseEvent) {
@@ -396,23 +550,43 @@ function onMenuCommand(cmd: TabMenuCommand) {
   emit('tab-action', cmd, key);
 }
 
+/* ---------------- tab 条尾部「+」：开新页入口 ---------------- */
+
+/** 按权限过滤后的入口清单（与零 tab 空态卡同一份 launcherEntries） */
+const openEntries = computed(() => LAUNCHER_ENTRIES.filter((e) => !e.perm || checkPermi(e.perm)));
+
+/** 选入口：只抛命令，开什么 tab 由宿主 onLauncherCommand 分发（本组件零业务） */
+function onOpenTool(cmd: LauncherCommand) {
+  emit('open-tool', cmd);
+}
+
 /** 激活 tab 自动滚入可视区（只动横向，不碰纵向与页面滚动） */
 watch(
   () => props.activeKey,
   () => {
     void nextTick(() => {
+      if (suppressEnsure) {
+        suppressEnsure = false; // 滚轮滑行定位的激活：位置已经是目标位置，不再二次滚动
+        return;
+      }
       const el = tabsRef.value;
       const active = el?.querySelector<HTMLElement>('.wb-tab.is-active');
       if (!el || !active) {
         return;
       }
+      stopGlide(el); // 切 tab 的直接定位优先于滚轮滑行，先掐掉进行中的动画
       const box = el.getBoundingClientRect();
       const tab = active.getBoundingClientRect();
       const margin = 4;
+      /**
+       * 右缘预留：tab 溢出时「+」靠 sticky 钉在轨道右缘，会压住末屏 tab 的尾巴，
+       * 故入视判定要给加号（24px + 间距 + 左侧渐隐 12px）让出宽度。
+       */
+      const rightReserve = 34;
       if (tab.left < box.left) {
         el.scrollLeft -= box.left - tab.left + margin;
-      } else if (tab.right > box.right) {
-        el.scrollLeft += tab.right - box.right + margin;
+      } else if (tab.right > box.right - rightReserve) {
+        el.scrollLeft += tab.right - (box.right - rightReserve) + margin;
       }
     });
   },
@@ -430,7 +604,7 @@ async function requestClose(key: string) {
     return;
   }
   try {
-    await modal.confirm(`「${tab.title}」有未保存的改动，确认放弃并关闭？`);
+    await modal.confirm(`「${tab.title}」内容尚未保存，关闭后将丢失修改，确定关闭吗？`);
     emit('close', key);
   } catch {
     /* 用户取消，tab 保留 */
@@ -479,8 +653,24 @@ function step(delta: 1 | -1) {
   emit('update:activeKey', props.tabs[(idx + delta + len) % len].key);
 }
 
-onMounted(() => window.addEventListener('keydown', onKeydown));
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown);
+  /**
+   * 显式注册成非被动监听，保证 preventDefault 一定生效（否则页面会跟着滚）。
+   * 挂在常驻的面板根节点上，指针落在 tab 条内时由 onStripWheel 判断接管。
+   */
+  panelRef.value?.addEventListener('wheel', onStripWheel, { passive: false });
+  panelRef.value?.addEventListener('mousemove', onStripMouseMove, { passive: true });
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown);
+  panelRef.value?.removeEventListener('wheel', onStripWheel);
+  panelRef.value?.removeEventListener('mousemove', onStripMouseMove);
+  if (glideRaf) {
+    cancelAnimationFrame(glideRaf);
+    glideRaf = 0;
+  }
+});
 </script>
 
 <style lang="scss" scoped>
@@ -531,7 +721,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-shrink: 0;
+  /* 可压缩（Trae 一阶降级）：内容宽为基准、上限 200px，超出容器先压到 128px 才轮到横滚 */
+  flex: 0 1 auto;
+  min-width: 128px;
   height: 24px;
   padding: 0 6px 0 10px;
   max-width: 200px;
@@ -549,10 +741,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
   &:hover {
     background: var(--wb-tab-hover-bg);
-
-    .wb-tab__close {
-      opacity: 1;
-    }
   }
 
   &.is-active {
@@ -562,42 +750,185 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
     box-shadow: var(--wb-tab-card-shadow);
   }
 
+  /* 图标常驻彩色：未激活略收，激活/hover 提亮（颜色由 TAB_META 按 kind 注入） */
   &__icon {
     font-size: 13px;
     flex-shrink: 0;
+    opacity: 0.8;
+    transition: opacity 0.15s ease;
+
+    .wb-tab:hover &,
+    .wb-tab.is-active & {
+      opacity: 1;
+    }
+  }
+
+  /*
+    标题吃掉剩余宽度：tab 有 128px 最小宽，短标题（如「设置」）时不设 flex 会把
+    关闭位顶到文字后头、剩下一截空胶囊，所以让标题撑满，× 才贴在胶囊右内缘。
+    min-width:0 保证 ellipsis 能生效（flex 子项默认不被压缩）。
+  */
+  &__title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 关闭位（VS Code 同款三态）：干净态仅 hover/激活淡显 ×；脏态圆点常显，hover 回退 × */
+  &__tail {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    transition: background-color 0.15s ease;
+
+    &:hover {
+      background: var(--el-fill-color, #e9e9eb);
+    }
+
+    &.is-dirty .wb-tab__close {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
   }
 
   &__dirty {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    flex-shrink: 0;
     background: var(--el-color-warning, #e6a23c);
-  }
-
-  &__title {
-    overflow: hidden;
-    text-overflow: ellipsis;
+    transition: opacity 0.15s ease;
   }
 
   &__close {
     font-size: 12px;
-    padding: 2px;
-    border-radius: 4px;
     opacity: 0;
-    flex-shrink: 0;
-    transition:
-      opacity 0.15s ease,
-      background-color 0.15s ease;
+    transition: opacity 0.15s ease;
 
-    &:hover {
-      background: var(--el-fill-color, #e9e9eb);
+    .wb-tab:hover & {
+      opacity: 1;
     }
   }
 
-  &.is-active .wb-tab__close {
+  &.is-active &__close {
     opacity: 0.6;
   }
+
+  &.is-active:hover &__close {
+    opacity: 1;
+  }
+
+  /* 脏态：× 只在 hover 出现，覆盖掉激活态的 0.6 淡显，避免与圆点叠在一起 */
+  &__tail.is-dirty &__close {
+    opacity: 0;
+  }
+
+  &:hover &__tail.is-dirty &__close {
+    opacity: 1;
+  }
+
+  &:hover &__dirty {
+    opacity: 0;
+  }
+}
+
+/*
+  tab 条「+」的 sticky 挂在 el-dropdown 外壳上，而不是里面的 button：
+  sticky 元素只能在自己父盒内偏移，壳默认 inline-block 且与按钮同宽，
+  按钮自身 sticky 没有可偏移空间，溢出时只会跟着 tab 一起滚走。
+*/
+.ws-panel__tabs .wb-tab-add-wrap {
+  position: sticky;
+  right: 0;
+  z-index: 3;
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+/*
+  tab 条「+」按钮本体：定位与钉边由外层壳承担，这里只管方块视觉。
+  底色必须不透明（--wb-tab-add-bg 为轨道色叠在页面底上的实色），
+  否则滚到加号底下的 tab 文字会透出来；左缘 12px 渐隐做截断层次。
+*/
+.wb-tab-add {
+  /* 左缘渐隐伪元素以按钮自身为锚，不随 sticky 外壳漂移 */
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  /* 方形小圆角（Trae 同款）：24px 见方配 6px，再大就成圆点/胶囊 */
+  border-radius: 6px;
+  background: var(--wb-tab-add-bg, var(--el-bg-color, #fff));
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 100%;
+    width: 12px;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--wb-tab-add-bg, var(--el-bg-color, #fff)));
+  }
+
+  &:hover {
+    /* 半透明叠加层压在不透明底上：保住轨道质感，又不会让底下滚过的 tab 透出来 */
+    background:
+      linear-gradient(var(--wb-tab-hover-bg), var(--wb-tab-hover-bg)),
+      var(--wb-tab-add-bg, var(--el-bg-color, #fff));
+    color: var(--el-text-color-primary, #1d2129);
+  }
+
+  &__icon {
+    font-size: 15px;
+
+    /* lucide 默认 2px 描边在小尺寸下偏细，加粗一档才显得精致 */
+    :deep(g) {
+      stroke-width: 2.2;
+    }
+  }
+
+  /* 下拉项图标：继承 launcherEntries 的每项一色（与空态卡视觉一致） */
+  &__menu-icon {
+    margin-right: 10px;
+    font-size: 16px;
+
+    :deep(g) {
+      stroke-width: 2.4;
+    }
+  }
+}
+
+/* 下拉弹层（Trae 观感）：定宽更舒展、内边距与行高加大、字号收到 13px */
+:global(.wb-tab-add-popper) {
+  min-width: 208px;
+}
+
+:global(.wb-tab-add-popper .el-dropdown-menu) {
+  padding: 6px;
+}
+
+:global(.wb-tab-add-popper .el-dropdown-menu__item) {
+  height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
 }
 
 .ws-panel__body {

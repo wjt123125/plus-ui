@@ -44,6 +44,17 @@
   color: var(--db-ink);
 }
 
+/* —— 内容区骨架：管理/列表类 pane 的统一限宽居中列（2026-10-31 收敛）。
+     各 pane 的列表/管理内容列直接挂此类，禁止再自写 max-width —— */
+.db-pane-inner {
+  max-width: var(--db-content-max, 1200px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 24px 32px;
+}
+
 /* —— 指标区：整块容器 + 内部 0.5px 网格分割（不是一堆独立卡片）—— */
 .db-metric-grid {
   display: grid;
