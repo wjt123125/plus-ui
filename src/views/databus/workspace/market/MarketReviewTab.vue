@@ -1,7 +1,7 @@
 <!--
   物料审核 tab 面板（kind=market-review，2026-10-24 由审核详情弹窗 tab 化）：
-  三段式——物料信息头（名称/作者/类型/上架说明）→ 内容预览（链路画布节点清单 / 组件关键信息）
-  → 闭包依赖状态树（依赖上下架状态 + 「查看」跳工作台 tab 看真身）。
+  三段式——物料信息头（名称/作者/类型/上架说明）→ 内容预览（链路画布节点清单 / 组件关键信息 /
+  连接器查看（开连接器包查看 tab，下载原包在该 tab 头部））→ 闭包依赖状态树（依赖上下架状态 + 「查看」跳工作台 tab 看真身）。
   操作栏钉 tab 底部：通过 / 驳回就地完成；禁自审；B 口径（2026-10-24 拍板）：链路通过前对
   「非 ONLINE 依赖」做未查看知情确认——ONLINE 依赖各有审核单背书豁免；全看过或无依赖走普通确认；
   审完 emit('reviewed') 由宿主关 tab 并刷新市场 pane 的待审核冒泡。
@@ -74,6 +74,31 @@
                 <span v-if="n.structure" class="mrt__node-tag">结构</span>
               </li>
             </ul>
+          </template>
+          <template v-else-if="detail.item.resourceType === 'CONNECTOR'">
+            <!-- 连接器审核「看得见」§2.3：查看（开连接器包查看 tab：清单+反编译预览），解盲审。
+                 下载原包不在审核页上——收在包查看 tab 头部，看包只此一个入口 -->
+            <h4 class="mrt__h">
+              连接器关键信息
+              <el-button
+                v-if="canInspectConnector"
+                class="mrt__view"
+                size="small"
+                text
+                type="primary"
+                @click="onInspectConnector"
+              >
+                查看
+              </el-button>
+            </h4>
+            <ul class="mrt__kv">
+              <li><span>上架者</span><b>{{ detail.preview?.author || detail.item.ownerCode || '-' }}</b></li>
+              <li><span>类型</span><b class="mono">#{{ detail.preview?.code || '-' }}</b></li>
+              <li><span>版本</span><b>v{{ detail.preview?.version || '-' }}</b></li>
+            </ul>
+            <p v-if="!canInspectConnector" class="mrt__empty">
+              该连接器缺类型编码或版本号，无法定位包文件，只能盲审（建议驳回要求补齐 manifest）。
+            </p>
           </template>
           <template v-else>
             <h4 class="mrt__h">
@@ -214,6 +239,8 @@ const emit = defineEmits<{
   (e: 'reviewed'): void;
   /** 依赖单据就地审完（闭包联审）：本 tab 不关，宿主只刷新市场 pane 待审核冒泡 */
   (e: 'dep-reviewed'): void;
+  /** 连接器行「查看」：打开连接器包查看 tab（kind connector-package，同 type+version 单例） */
+  (e: 'open-connector-package', type: string, version: string): void;
 }>();
 
 const market = useMarketData();
@@ -261,6 +288,31 @@ const typeLabel = computed(() => {
   const t = detail.value?.item?.resourceType;
   return t === 'CHAIN' ? '链路' : t === 'CONNECTOR' ? '连接器' : '组件';
 });
+
+/* ---------------- 连接器审核「看得见」（§2.3）：查看包 ---------------- */
+
+/** 连接器类型键（preview.code 在 CONNECTOR 分支＝def 行 type） */
+function connectorTypeOf(): string | null {
+  return detail.value?.preview?.code ?? null;
+}
+
+/** 连接器包版本号 */
+function connectorVersionOf(): string | null {
+  return detail.value?.preview?.version ?? null;
+}
+
+/** 能否查看包（类型与版本都齐才有包可定位；缺失走盲审提示） */
+const canInspectConnector = computed(() => Boolean(connectorTypeOf() && connectorVersionOf()));
+
+function onInspectConnector(): void {
+  const t = connectorTypeOf();
+  const v = connectorVersionOf();
+  if (!t || !v) {
+    ElMessage.warning('缺类型编码或版本号，无法查看包');
+    return;
+  }
+  emit('open-connector-package', t, v);
+}
 
 /** 依赖市场状态展示标签（null/未上架 → 未上架） */
 function statusLabel(status?: MarketItemStatus | null): string {
@@ -667,7 +719,7 @@ async function onReject() {
   border-radius: 4px;
 }
 
-/* —— 组件关键信息（COMPONENT） —— */
+/* —— 关键信息键值列表（COMPONENT / CONNECTOR 共用） —— */
 .mrt__kv {
   list-style: none;
   margin: 0;
@@ -691,6 +743,11 @@ async function onReject() {
       font-weight: 500;
       color: var(--el-text-color-primary);
       word-break: break-all;
+
+      /* 类型编码等等宽渲染，与连接器包查看 tab 口径一致 */
+      &.mono {
+        font-family: var(--el-font-family-mono, monospace);
+      }
     }
   }
 }

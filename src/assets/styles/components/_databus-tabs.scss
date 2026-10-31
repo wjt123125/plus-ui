@@ -95,6 +95,13 @@
     }
   }
 
+  /* EP 为下划线对齐会把首项 padding-left、末项 padding-right 归零（theme-chalk tabs.scss m(top,bottom)），
+     胶囊轨道下会让首尾段贴边，这里补回对称内边距；选择器特异度 (0,5,0) 需压过 EP 的 (0,4,0) */
+  &.el-tabs--top > .el-tabs__header .el-tabs__item:nth-child(2),
+  &.el-tabs--top > .el-tabs__header .el-tabs__item:last-child {
+    padding: 0 14px;
+  }
+
   .el-tabs__nav-prev,
   .el-tabs__nav-next {
     height: 30px;

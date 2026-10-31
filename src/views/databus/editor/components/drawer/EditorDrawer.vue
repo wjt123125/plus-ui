@@ -1,6 +1,10 @@
 <template>
   <div class="editor-drawer" :class="{ 'is-collapsed': collapsed }">
-    <el-tabs v-model="activeTab" class="editor-drawer__tabs db-tabs">
+    <el-tabs
+      v-model="activeTab"
+      class="editor-drawer__tabs db-tabs"
+      :class="{ 'is-tree-only': !showCanvasTabs }"
+    >
       <!-- 资源树 tab 仅工作台宿主出现（全屏编辑器无跨资源导航）；内容由宿主经 slot 注入 -->
       <el-tab-pane v-if="showTreeTab" label="资源" name="tree" lazy>
         <div class="editor-drawer__tree">
@@ -167,6 +171,12 @@ watch(
 .editor-drawer__tabs :deep(.el-tabs__header) {
   margin: 0 0 10px;
   padding: 0 8px;
+}
+
+/* 非画布形态只剩资源树一个 tab：单颗「资源」胶囊是纯噪声，隐掉页签头，
+   让树自带的工具行与搜索框顶到抽屉最上 */
+.editor-drawer__tabs.is-tree-only :deep(.el-tabs__header) {
+  display: none;
 }
 
 .editor-drawer__tabs :deep(.el-tabs__content) {

@@ -1,5 +1,5 @@
 <template>
-  <div class="wsp-page">
+  <div class="wsp-page db-app">
     <!--
       数据总线工作区（单壳，2026-10-17 融合，workbench-unification.md）：
         顶部 header（唯一开关入口）/ 会话历史栏 / AI 助手栏 / 中栏工作面板 + 底部终端 / 右抽屉统一资源树。
@@ -65,10 +65,13 @@
           @market-toggle="onMarketToggle"
           @market-open-detail="onMarketOpenDetail"
           @market-open-review="onMarketOpenReview"
+          @connector-package-open="onConnectorPackageOpen"
           @market-reviewed="onMarketReviewed"
           @market-dep-reviewed="onMarketDepReviewed"
           @market-open-source="onMarketOpenSource"
           @market-open-market="onMarketOpenMarket"
+          @market-open-manage="onMarketOpenManage"
+          @market-manage-scope="onMarketManageScope"
           @market-open-source-canvas="onMarketOpenSourceCanvas"
           @open-connection="onOpenConnection"
           @connection-saved="onConnectionSaved"
@@ -144,7 +147,7 @@ import {
   listComponent,
   listComponentOptions,
   listScriptRuntime,
-  updateComponent
+  toggleComponent
 } from '@/api/databus/component';
 import type { ComponentOption, ScriptRuntime, ScriptSaveResult } from '@/api/databus/component/types';
 import { delChain, offlineChain, publishChain } from '@/api/databus/chain';
@@ -186,6 +189,7 @@ import type {
   CreateSavedPayload,
   FormPreset,
   LauncherCommand,
+  MarketScope,
   ResourceMenuCommand,
   ResourceTreeNode,
   TabMenuCommand,
@@ -542,6 +546,8 @@ async function handleDelete(row: ComponentRegistryRow) {
 /**
  * 卡片开关：val=true 启用（status 0）/ false 停用（status 1）。
  * 停用不硬拦：仅提示面板不可见、已发布链路继续跑（库存脚本件重启后不再注册，重启用恢复）。
+ * 走独立启停端点（databus:component:toggle，治理专属）：不再借「修改组件」整包提交改 status，
+ * 否则操作员凭 edit 权限也能停物料投放。入口显隐由 v-hasRoles(['databus_gov']) / v-hasPermi 同源门控。
  */
 async function toggleEnabled(row: ComponentRegistryRow, val: boolean) {
   if (!row.db || togglingCode.value) {
@@ -555,7 +561,7 @@ async function toggleEnabled(row: ComponentRegistryRow, val: boolean) {
   }
   togglingCode.value = row.code;
   try {
-    await updateComponent({ ...row.db, status: val ? '0' : '1' });
+    await toggleComponent(row.db.id, val ? '0' : '1');
     modal.msgSuccess(val ? '已启用' : '已停用');
     await getList();
   } finally {
@@ -588,9 +594,10 @@ function onMarketOpen(
   }
 }
 
-/** 安装/卸载成功：副本落在「我的目录」，台账与资源树都要重取 */
+/** 安装/卸载成功：副本落在「我的目录」，台账与资源树都要重取；市场与管理两 pane 的数据也要跟上 */
 async function onMarketInstalled() {
   await Promise.all([getList(), reloadTree()]);
+  bumpMarketTokens();
 }
 
 /** 启停本地组件副本：复用卡片开关同一路径（停用有二次确认与重启语义） */
@@ -611,24 +618,37 @@ function onMarketOpenReview(itemId: string | number, title: string) {
   wb.openMarketReview(itemId, `审核 · ${title}`);
 }
 
+/** 「查看」连接器包：打开包查看 tab（kind connector-package，同 type+version 单例，2026-10-29 弹窗 tab 化）；
+ *  source 透传给 pane：DEV＝开发目录装载，没有 zip，pane 改渲染目录装载信息 */
+function onConnectorPackageOpen(type: string, version: string, source?: string) {
+  wb.openConnectorPackage(type, version, source);
+}
+
 /**
- * 物料审核完成（通过/驳回成功）：关审核 tab；给市场 tab 自增刷新令牌——
- * 待审核冒泡与市场列表的数据源都在市场 pane 实例里，pane 收令牌后重取（冒泡减号、新上线可见）。
+ * 给所有市场类 tab（market + market-manage）自增刷新令牌。
+ * 拆成两个 tab 后各自持有独立的 useMarketData 实例，一方动了台账另一方看不见——
+ * 审核减号、连接器启停、安装态都靠这个令牌广播（workbench-unification.md §2.1 连带红线）。
+ */
+function bumpMarketTokens() {
+  tabs.value
+    .filter((t) => t.kind === 'market' || t.kind === 'market-manage')
+    .forEach((t) => {
+      refreshTokens[t.key] = (refreshTokens[t.key] ?? 0) + 1;
+    });
+}
+
+/**
+ * 物料审核完成（通过/驳回成功）：关审核 tab；广播市场令牌——
+ * 待审核冒泡在市场 pane、待审核列表在管理 pane，两边都要重取。
  */
 function onMarketReviewed(tab: WorkspaceTab) {
   wb.close(tab.key);
-  const marketTab = tabs.value.find((t) => t.kind === 'market');
-  if (marketTab) {
-    refreshTokens[marketTab.key] = (refreshTokens[marketTab.key] ?? 0) + 1;
-  }
+  bumpMarketTokens();
 }
 
-/** 依赖单据就地审完（闭包联审）：审核 tab 保持开着，只刷市场 pane 待审核冒泡 */
+/** 依赖单据就地审完（闭包联审）：审核 tab 保持开着，只广播市场令牌 */
 function onMarketDepReviewed() {
-  const marketTab = tabs.value.find((t) => t.kind === 'market');
-  if (marketTab) {
-    refreshTokens[marketTab.key] = (refreshTokens[marketTab.key] ?? 0) + 1;
-  }
+  bumpMarketTokens();
 }
 
 /** P1 看得见（decisions §十四-7 扩展）：审核详情「查看」开工作台 tab 看物料真身——
@@ -649,9 +669,20 @@ function onMarketOpenSource(
   }
 }
 
-/** 物料详情页请求回到市场 tab（作者筛选 / 已上架跳转，意图经 marketNavIntent 传给市场 pane 消费） */
+/** 物料详情页「@作者」：回市场 tab 并筛该作者作品（意图经 marketNavIntent 传给市场 pane 消费） */
 function onMarketOpenMarket() {
   wb.openMarket();
+}
+
+/** 去物料管理 tab（全局单例，kind market-manage）；带 scope＝顺便切到那个视角。
+ *  已开时只聚焦+切视角，管理 tab 自身不关（与市场 tab 并存） */
+function onMarketOpenManage(scope?: MarketScope) {
+  wb.openMarketManage(scope);
+}
+
+/** 管理 pane 内切视角：回写 tab.marketScope，随会话落盘（刷新后原地恢复） */
+function onMarketManageScope(scope: MarketScope) {
+  wb.setMarketScope(scope);
 }
 
 /**
@@ -1144,11 +1175,15 @@ onBeforeUnmount(() => {
 </script>
 
 <style lang="scss" scoped>
-/* 页面级 wrapper：吃满视口高度（2026-10-20 剥壳后不再缩后台 header 高度，§7 改造点2） */
+/* 页面级 wrapper：吃满视口高度（2026-10-20 剥壳后不再缩后台 header 高度，§7 改造点2）。
+   整页垫白成壳内一张大卡：header 带与工作区同底，避免顶部 tab 条灰轨道与壳灰底
+   （#f5f7fa）近邻时色阶几乎相同、糊成一块 */
 .wsp-page {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  background: var(--el-bg-color, #fff);
+  border-radius: 10px;
 }
 
 .wsp {
@@ -1157,6 +1192,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: stretch;
   overflow: hidden;
+  /* 与顶部 header 留出明确间隙：灰轨道与 header 之间隔一段白，不再贴边融合 */
+  margin-top: 8px;
   background: var(--el-bg-color, #fff);
   border: 1px solid var(--el-border-color-lighter, #ebeef5);
   border-radius: 8px;

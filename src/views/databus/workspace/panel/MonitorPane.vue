@@ -24,9 +24,59 @@
             </p>
           </div>
           <div class="header-actions">
-            <el-select v-model="hours" class="window-select" :disabled="loading" @change="reload">
-              <el-option v-for="w in WINDOW_OPTIONS" :key="w.value" :label="w.label" :value="w.value" />
-            </el-select>
+            <div class="seg-control" role="group" aria-label="时间范围">
+              <button
+                v-for="p in WINDOW_PRESETS"
+                :key="p.value"
+                type="button"
+                class="seg-item"
+                :class="{ active: !customRange && hours === p.value }"
+                :disabled="loading"
+                @click="selectPreset(p.value)"
+              >
+                {{ p.label }}
+              </button>
+              <el-popover
+                v-model:visible="rangeVisible"
+                placement="bottom-end"
+                :width="320"
+                trigger="click"
+                :teleported="false"
+              >
+                <template #reference>
+                  <button
+                    type="button"
+                    class="seg-item seg-item-custom"
+                    :class="{ active: !!customRange }"
+                    :disabled="loading"
+                    :title="customTitle"
+                  >
+                    {{ customLabel }}
+                  </button>
+                </template>
+                <div class="shortcut-list">
+                  <button
+                    v-for="s in CUSTOM_SHORTCUTS"
+                    :key="s.value"
+                    type="button"
+                    class="shortcut-chip"
+                    @click="applyShortcut(s.value)"
+                  >
+                    {{ s.label }}
+                  </button>
+                </div>
+                <el-date-picker
+                  v-model="customRange"
+                  type="daterange"
+                  value-format="YYYY-MM-DD"
+                  :teleported="false"
+                  start-placeholder="开始日期"
+                  end-placeholder="结束日期"
+                  style="width: 100%"
+                  @change="handleCustomRange"
+                />
+              </el-popover>
+            </div>
             <el-button :loading="loading" @click="reload">
               <el-icon><Refresh /></el-icon>
               <span>刷新</span>
@@ -52,9 +102,29 @@
             :class="{ 'is-clickable': !!card.onClick }"
             @click="card.onClick?.()"
           >
+            <svg
+              v-if="card.spark.length > 0"
+              class="metric-spark"
+              width="60"
+              height="24"
+              viewBox="0 0 60 24"
+              aria-hidden="true"
+            >
+              <!-- 两点以上画折线；只有单点时只画端点，不伪造趋势 -->
+              <polyline
+                v-if="card.spark.length > 1"
+                :points="sparkPoints(card.spark)"
+                fill="none"
+                :stroke="card.sparkColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <circle v-else cx="57" cy="12" r="2" :fill="card.sparkColor" />
+            </svg>
             <div class="metric-head">
               <span class="metric-label">{{ card.label }}</span>
-              <el-icon class="metric-icon"><component :is="card.icon" /></el-icon>
+              <Icon class="metric-icon" :icon="`lucide:${card.icon}`" />
             </div>
             <div class="metric-value" :class="card.valueClass">
               {{ card.value }}
@@ -206,18 +276,9 @@
 </template>
 
 <script setup name="MonitorPane" lang="ts">
-import {
-  AlarmClock,
-  Bell,
-  CircleCheck,
-  CircleClose,
-  Connection,
-  DataLine,
-  Odometer,
-  Refresh,
-  Timer,
-  TrendCharts
-} from '@element-plus/icons-vue';
+import { DataLine, Refresh } from '@element-plus/icons-vue';
+import { Icon } from '@iconify/vue';
+import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import * as echarts from 'echarts';
 import { ElMessage } from 'element-plus';
 import {
@@ -237,6 +298,10 @@ import type {
   MonitorTrendPointVo
 } from '@/api/databus/monitor/types';
 import { useLoading } from '@/hooks/async/useLoading';
+import { usePersisted } from '@/views/databus/workbench/composables/usePersisted';
+
+// 离线注入 lucide 子集，避免运行时联网拉图标
+useLucideSubset();
 
 /**
  * 监控大盘 pane：8 卡片 + 量质/速度双趋势图 + 链路健康全景 + 排行榜 + 错误流。
@@ -247,20 +312,115 @@ const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true }
 
 const emit = defineEmits<{ (e: 'open-alert'): void }>();
 
-interface WindowOption {
+interface WindowPreset {
   value: number;
   label: string;
 }
 
-const WINDOW_OPTIONS: WindowOption[] = [
-  { value: 1, label: '最近 1 小时' },
-  { value: 6, label: '最近 6 小时' },
-  { value: 24, label: '最近 24 小时' },
-  { value: 72, label: '最近 3 天' },
-  { value: 168, label: '最近 7 天' }
+/** 高频区间做成常驻分段项，低频区间走「自定义」日期范围 */
+const WINDOW_PRESETS: WindowPreset[] = [
+  { value: 1, label: '1 小时' },
+  { value: 6, label: '6 小时' },
+  { value: 24, label: '24 小时' },
+  { value: 168, label: '7 天' }
 ];
 
-const hours = ref(24);
+const toDateStr = (ts: number) => {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+/**
+ * 时间窗口选项：持久化「选项」而非「时间点」。昨天的日期今天看就是旧值，
+ * 预设/快捷项必须按当前时刻重算，绝对日历区间才会原样保存。
+ *  - preset：常驻分段项（1/6/24/168 小时）
+ *  - shortcut：自定义弹层里的相对快捷项（12/48/72/336/720 小时）
+ *  - custom：手动勾选的绝对日期区间
+ */
+type WindowSelection =
+  | { kind: 'preset'; hours: number }
+  | { kind: 'shortcut'; hours: number }
+  | { kind: 'custom'; range: [string, string]; hours: number };
+
+const selection = usePersisted<WindowSelection>('databus.monitor.window', {
+  kind: 'preset',
+  hours: 24
+});
+
+/** 按持久化选项反推初始自定义区间：快捷项按 now 重算，预置项为空，绝对区间原样 */
+const restoreCustomRange = (sel: WindowSelection): string[] | null => {
+  if (sel.kind === 'custom') {
+    return sel.range;
+  }
+  if (sel.kind === 'shortcut') {
+    const end = Date.now();
+    return [toDateStr(end - sel.hours * 3600000), toDateStr(end)];
+  }
+  return null;
+};
+
+const hours = ref(selection.value.hours);
+/** 自定义区间（YYYY-MM-DD 两个值），为空时表示用预设区间 */
+const customRange = ref<string[] | null>(restoreCustomRange(selection.value));
+/** 自定义弹层显隐，点快捷项后需要手动关掉 */
+const rangeVisible = ref(false);
+
+/** 自定义弹层里的常用区间：与分段项的 1 小时 / 6 小时 / 24 小时 / 7 天不重复 */
+const CUSTOM_SHORTCUTS: WindowPreset[] = [
+  { value: 12, label: '最近 12 小时' },
+  { value: 48, label: '最近 2 天' },
+  { value: 72, label: '最近 3 天' },
+  { value: 336, label: '最近 14 天' },
+  { value: 720, label: '最近 30 天' }
+];
+
+/** 点快捷区间：按「当前时刻往前推 N 小时」算，顺手把按钮文案换成实际日期；只持久化选项 */
+const applyShortcut = (h: number) => {
+  const end = Date.now();
+  customRange.value = [toDateStr(end - h * 3600000), toDateStr(end)];
+  hours.value = h;
+  selection.value = { kind: 'shortcut', hours: h };
+  rangeVisible.value = false;
+  reload();
+};
+
+/** 按钮文案只留 MM-DD，避免日期全量展开把分段控件撑宽、挤掉后面的按钮 */
+const shortDate = (date: string) => (date ?? '').slice(5);
+
+const customLabel = computed(() =>
+  customRange.value
+    ? `${shortDate(customRange.value[0])} ~ ${shortDate(customRange.value[1])}`
+    : '自定义'
+);
+
+const customTitle = computed(() =>
+  customRange.value ? customRange.value.join(' ~ ') : '自定义时间范围'
+);
+
+const selectPreset = (value: number) => {
+  const changed = hours.value !== value || !!customRange.value;
+  customRange.value = null;
+  hours.value = value;
+  selection.value = { kind: 'preset', hours: value };
+  if (changed) {
+    reload();
+  }
+};
+
+/** 日期范围折算成小时数：起止都含当天的 24 小时 */
+const handleCustomRange = (value: string[] | null) => {
+  if (!value || value.length !== 2) {
+    customRange.value = null;
+    selection.value = { kind: 'preset', hours: hours.value };
+    return;
+  }
+  const start = new Date(`${value[0]}T00:00:00`).getTime();
+  const end = new Date(`${value[1]}T23:59:59`).getTime();
+  hours.value = Math.max(24, Math.round((end - start) / 3600000));
+  selection.value = { kind: 'custom', range: [value[0], value[1]], hours: hours.value };
+  reload();
+};
 const { loading, withLoading } = useLoading(true);
 
 const overview = ref<MonitorOverviewVo | null>(null);
@@ -324,14 +484,35 @@ const buildDelta = (cur?: number | null, prev?: number | null, inverse = false) 
 interface MetricCard {
   key: string;
   label: string;
-  icon: unknown;
+  icon: string;
   value: string;
   suffix: string;
   valueClass: string;
   deltaLabel?: string;
   deltaText: string;
   deltaClass: string;
+  /** 趋势小图数据（来自整点聚合序列），少于 2 个点不画 */
+  spark: number[];
+  /** 小图描边色，跟随指标语义 */
+  sparkColor: string;
   onClick?: () => void;
+}
+
+/**
+ * 趋势小图路径：min-max 归一化铺满高度（60×24），与原型 E 的 sparklineSVG 同口径。
+ * 只算坐标，颜色与透明度由样式控制。
+ */
+function sparkPoints(data: number[], w = 60, h = 24): string {
+  if (data.length < 2) {
+    return '';
+  }
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const step = w / (data.length - 1);
+  return data
+    .map((v, i) => `${(i * step).toFixed(1)},${(h - ((v - min) / range) * h).toFixed(1)}`)
+    .join(' ');
 }
 
 const metricCards = computed<MetricCard[]>(() => {
@@ -354,11 +535,27 @@ const metricCards = computed<MetricCard[]>(() => {
       : { text: '—', cls: 'delta-flat' };
   const firing = o?.firingAlertCount ?? 0;
 
+  // 各指标的趋势序列（整点聚合，null 视为缺样本剔除，避免把缺失画成 0）
+  const series = {
+    total: trend.value.map((p) => p.totalCount),
+    rate: trend.value
+      .map((p) => p.successRate)
+      .filter((v) => v != null)
+      .map((v) => Number(v)),
+    failed: trend.value.map((p) => p.failedCount),
+    duration: trend.value.map((p) => p.avgDuration).filter((v): v is number => v != null),
+    p95: trend.value.map((p) => p.p95Duration).filter((v): v is number => v != null),
+    p99: trend.value.map((p) => p.p99Duration).filter((v): v is number => v != null),
+    chains: trend.value.map((p) => p.chainCount).filter((v): v is number => v != null)
+  };
+
   return [
     {
       key: 'total',
       label: '执行总次数',
-      icon: TrendCharts,
+      icon: 'chart-line',
+      spark: series.total,
+      sparkColor: 'var(--db-blue, #007aff)',
       value: formatInt(o?.totalCount),
       suffix: '',
       valueClass: '',
@@ -368,7 +565,9 @@ const metricCards = computed<MetricCard[]>(() => {
     {
       key: 'rate',
       label: '成功率',
-      icon: CircleCheck,
+      icon: 'circle-check',
+      spark: series.rate,
+      sparkColor: 'var(--db-green, #34c759)',
       value: o?.successRate != null ? Number(o.successRate).toFixed(2) : '—',
       suffix: o?.successRate != null ? '%' : '',
       valueClass: rateCur != null && rateCur < 90 ? 'value-warn' : 'value-good',
@@ -378,7 +577,9 @@ const metricCards = computed<MetricCard[]>(() => {
     {
       key: 'failed',
       label: '失败次数',
-      icon: CircleClose,
+      icon: 'circle-x',
+      spark: series.failed,
+      sparkColor: 'var(--db-red, #ff3b30)',
       value: formatInt(o?.failedCount),
       suffix: '',
       valueClass: o && o.failedCount > 0 ? 'value-bad' : '',
@@ -388,7 +589,9 @@ const metricCards = computed<MetricCard[]>(() => {
     {
       key: 'duration',
       label: '平均耗时',
-      icon: Timer,
+      icon: 'timer',
+      spark: series.duration,
+      sparkColor: 'var(--db-blue, #007aff)',
       value: formatDuration(o?.avgDuration),
       suffix: '',
       valueClass: '',
@@ -398,7 +601,9 @@ const metricCards = computed<MetricCard[]>(() => {
     {
       key: 'p95',
       label: 'P95 耗时',
-      icon: Odometer,
+      icon: 'gauge',
+      spark: series.p95,
+      sparkColor: 'var(--db-blue, #007aff)',
       value: formatDuration(o?.p95Duration),
       suffix: '',
       valueClass: '',
@@ -408,7 +613,9 @@ const metricCards = computed<MetricCard[]>(() => {
     {
       key: 'p99',
       label: 'P99 耗时',
-      icon: AlarmClock,
+      icon: 'alarm-clock',
+      spark: series.p99,
+      sparkColor: 'var(--db-blue, #007aff)',
       value: formatDuration(o?.p99Duration),
       suffix: '',
       valueClass: '',
@@ -418,7 +625,9 @@ const metricCards = computed<MetricCard[]>(() => {
     {
       key: 'chains',
       label: '活跃链路',
-      icon: Connection,
+      icon: 'link',
+      spark: series.chains,
+      sparkColor: 'var(--db-gray, #8e8e93)',
       value: formatInt(o?.activeChainCount),
       suffix: '',
       valueClass: '',
@@ -428,7 +637,9 @@ const metricCards = computed<MetricCard[]>(() => {
     {
       key: 'firing',
       label: '告警中',
-      icon: Bell,
+      icon: 'bell',
+      spark: [], // 告警数不在整点聚合序列里，无趋势可画
+      sparkColor: 'var(--db-red, #ff3b30)',
       value: formatInt(firing),
       suffix: '',
       valueClass: firing > 0 ? 'value-bad' : 'value-good',
@@ -447,59 +658,127 @@ const disposeChart = (instance?: echarts.ECharts) => {
   return undefined;
 };
 
+/* ------------------------------ 图表皮肤（Apple 风格） ------------------------------ */
+
+const cssVar = (el: HTMLElement, name: string, fallback: string) => {
+  const value = getComputedStyle(el).getPropertyValue(name).trim();
+  return value || fallback;
+};
+
+/** 从容器继承 --db-* 令牌，明暗主题自动跟随，不写死颜色 */
+const chartSkin = (el: HTMLElement) => ({
+  ink: cssVar(el, '--db-ink', '#1c1c1e'),
+  inkMuted: cssVar(el, '--db-ink-muted', '#6e6e73'),
+  rule: cssVar(el, '--db-rule', 'rgba(60, 60, 67, 0.12)'),
+  surface: cssVar(el, '--db-bg-solid', '#ffffff')
+});
+
+type ChartSkin = ReturnType<typeof chartSkin>;
+
+/** 坐标轴：干掉轴线和刻度，只留极浅分隔线 */
+const axisSkin = (skin: ChartSkin, withSplitLine = true) => ({
+  axisLine: { show: false },
+  axisTick: { show: false },
+  axisLabel: { color: skin.inkMuted, fontSize: 11 },
+  splitLine: withSplitLine ? { lineStyle: { color: skin.rule, width: 1 } } : { show: false }
+});
+
+/** 提示框：白卡片 + 12px 圆角 + 柔和投影 */
+const tooltipSkin = (skin: ChartSkin) => ({
+  backgroundColor: skin.surface,
+  borderWidth: 0,
+  borderRadius: 12,
+  padding: [10, 12],
+  textStyle: { color: skin.ink, fontSize: 12 },
+  extraCssText: 'box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); border-radius: 12px;'
+});
+
+/** 图例：小圆点 + 11px 弱化文字，不要默认的方形图标 */
+const legendSkin = (skin: ChartSkin) => ({
+  icon: 'circle',
+  itemWidth: 8,
+  itemHeight: 8,
+  itemGap: 16,
+  top: 0,
+  right: 0,
+  textStyle: { color: skin.inkMuted, fontSize: 11 }
+});
+
+/** 面积渐变：顶部有色 → 底部透明 */
+const areaFill = (rgb: string, alpha = 0.18) =>
+  new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+    { offset: 0, color: `rgba(${rgb}, ${alpha})` },
+    { offset: 1, color: `rgba(${rgb}, 0)` }
+  ]);
+
 const renderVolumeChart = () => {
   volumeInstance = disposeChart(volumeInstance);
   if (!hasTrend.value || !volumeEl.value) {
     return;
   }
-  volumeInstance = echarts.init(volumeEl.value, 'macarons');
+  const skin = chartSkin(volumeEl.value);
+  volumeInstance = echarts.init(volumeEl.value);
   const points = trend.value;
   volumeInstance.setOption(
     {
-      grid: { left: 48, right: 52, top: 36, bottom: 34 },
-      tooltip: { trigger: 'axis' },
-      legend: { data: ['成功', '失败', '成功率'], top: 4, right: 8 },
+      color: ['#007AFF', '#FF3B30', '#34C759'],
+      grid: { left: 8, right: 8, top: 34, bottom: 4, containLabel: true },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'line', lineStyle: { color: skin.rule } },
+        ...tooltipSkin(skin)
+      },
+      legend: { data: ['成功', '失败', '成功率'], ...legendSkin(skin) },
       xAxis: {
         type: 'category',
         boundaryGap: false,
-        data: points.map((p) => formatHour(p.statHour))
+        data: points.map((p) => formatHour(p.statHour)),
+        ...axisSkin(skin, false)
       },
       yAxis: [
-        { type: 'value', name: '次数', minInterval: 1 },
+        { type: 'value', minInterval: 1, ...axisSkin(skin) },
         {
           type: 'value',
-          name: '成功率%',
           min: 0,
           max: 100,
-          axisLabel: { formatter: '{value}%' }
+          axisLine: { show: false },
+          axisTick: { show: false },
+          splitLine: { show: false },
+          axisLabel: { formatter: '{value}%', color: skin.inkMuted, fontSize: 11 }
         }
       ],
       series: [
         {
           name: '成功',
           type: 'line',
-          smooth: true,
+          smooth: 0.35,
+          symbol: 'none',
           stack: 'count',
-          areaStyle: { opacity: 0.18 },
-          symbolSize: 4,
+          lineStyle: { width: 2 },
+          areaStyle: { color: areaFill('0, 122, 255', 0.16) },
+          emphasis: { focus: 'series' },
           data: points.map((p) => p.successCount ?? 0)
         },
         {
           name: '失败',
           type: 'line',
-          smooth: true,
+          smooth: 0.35,
+          symbol: 'none',
           stack: 'count',
-          areaStyle: { opacity: 0.35 },
-          symbolSize: 4,
+          lineStyle: { width: 2 },
+          areaStyle: { color: areaFill('255, 59, 48', 0.16) },
+          emphasis: { focus: 'series' },
           data: points.map((p) => p.failedCount ?? 0)
         },
         {
           name: '成功率',
           type: 'line',
           yAxisIndex: 1,
-          smooth: true,
-          symbolSize: 5,
+          smooth: 0.35,
+          symbol: 'none',
           connectNulls: true,
+          lineStyle: { width: 1.5 },
+          emphasis: { focus: 'series' },
           data: points.map((p) => (p.successRate != null ? Number(p.successRate) : null))
         }
       ]
@@ -513,44 +792,57 @@ const renderSpeedChart = () => {
   if (!hasTrend.value || !speedEl.value) {
     return;
   }
-  speedInstance = echarts.init(speedEl.value, 'macarons');
+  const skin = chartSkin(speedEl.value);
+  speedInstance = echarts.init(speedEl.value);
   const points = trend.value;
   speedInstance.setOption(
     {
-      grid: { left: 56, right: 24, top: 36, bottom: 34 },
-      tooltip: { trigger: 'axis', valueFormatter: (v: unknown) => formatDuration(Number(v)) },
-      legend: { data: ['平均', 'P95', 'P99'], top: 4, right: 8 },
+      color: ['#007AFF', '#FF9500', '#FF3B30'],
+      grid: { left: 8, right: 8, top: 34, bottom: 4, containLabel: true },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'line', lineStyle: { color: skin.rule } },
+        valueFormatter: (v: unknown) => formatDuration(Number(v)),
+        ...tooltipSkin(skin)
+      },
+      legend: { data: ['平均', 'P95', 'P99'], ...legendSkin(skin) },
       xAxis: {
         type: 'category',
         boundaryGap: false,
-        data: points.map((p) => formatHour(p.statHour))
+        data: points.map((p) => formatHour(p.statHour)),
+        ...axisSkin(skin, false)
       },
-      yAxis: { type: 'value', name: '毫秒' },
+      yAxis: { type: 'value', ...axisSkin(skin) },
       series: [
         {
           name: '平均',
           type: 'line',
-          smooth: true,
-          symbolSize: 4,
+          smooth: 0.35,
+          symbol: 'none',
           connectNulls: true,
+          lineStyle: { width: 2 },
+          areaStyle: { color: areaFill('0, 122, 255', 0.14) },
+          emphasis: { focus: 'series' },
           data: points.map((p) => p.avgDuration ?? null)
         },
         {
           name: 'P95',
           type: 'line',
-          smooth: true,
-          symbolSize: 4,
+          smooth: 0.35,
+          symbol: 'none',
           connectNulls: true,
-          lineStyle: { type: 'dashed' },
+          lineStyle: { width: 1.5 },
+          emphasis: { focus: 'series' },
           data: points.map((p) => p.p95Duration ?? null)
         },
         {
           name: 'P99',
           type: 'line',
-          smooth: true,
-          symbolSize: 4,
+          smooth: 0.35,
+          symbol: 'none',
           connectNulls: true,
-          lineStyle: { type: 'dashed' },
+          lineStyle: { width: 1.5 },
+          emphasis: { focus: 'series' },
           data: points.map((p) => p.p99Duration ?? null)
         }
       ]
@@ -579,29 +871,34 @@ const renderNodeBar = () => {
   if (nodes.length === 0 || !nodeBarEl.value) {
     return;
   }
-  nodeBarInstance = echarts.init(nodeBarEl.value, 'macarons');
+  const skin = chartSkin(nodeBarEl.value);
+  nodeBarInstance = echarts.init(nodeBarEl.value);
   nodeBarInstance.setOption(
     {
-      grid: { left: 8, right: 56, top: 12, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 40, top: 8, bottom: 4, containLabel: true },
       tooltip: {
         trigger: 'item',
         formatter: (p: any) => {
           const n = nodes[p.dataIndex];
           if (!n) return '';
           return [
-            `<b>${escapeHtml(n.tag)}</b> <span style="color:#909399">${escapeHtml(n.nodeType)}</span>`,
+            `<b>${escapeHtml(n.tag)}</b> <span style="color:${skin.inkMuted}">${escapeHtml(n.nodeType)}</span>`,
             `链路：#${escapeHtml(n.chainCode)}`,
             `平均：${formatDuration(n.avgDuration)} / 最大：${formatDuration(n.maxDuration)}`,
             `调用：${n.totalCount} 次`
           ].join('<br/>');
-        }
+        },
+        ...tooltipSkin(skin)
       },
-      xAxis: { type: 'value', name: '毫秒' },
+      xAxis: { type: 'value', ...axisSkin(skin) },
       yAxis: {
         type: 'category',
         inverse: true,
         data: nodes.map((_, i) => `#${i + 1}`),
+        ...axisSkin(skin, false),
         axisLabel: {
+          color: skin.inkMuted,
+          fontSize: 11,
           formatter: (val: string) => {
             const n = nodes[Number(val.slice(1)) - 1];
             return truncate(n ? n.tag : val, 12);
@@ -612,8 +909,16 @@ const renderNodeBar = () => {
         {
           name: '平均耗时',
           type: 'bar',
-          barMaxWidth: 14,
-          itemStyle: { color: '#409eff', borderRadius: [0, 4, 4, 0] },
+          barWidth: 8,
+          showBackground: true,
+          backgroundStyle: { color: 'rgba(120, 120, 128, 0.08)', borderRadius: [0, 4, 4, 0] },
+          itemStyle: {
+            borderRadius: [0, 4, 4, 0],
+            color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+              { offset: 0, color: 'rgba(0, 122, 255, 0.55)' },
+              { offset: 1, color: '#007AFF' }
+            ])
+          },
           data: nodes.map((n) => n.avgDuration ?? 0)
         }
       ]
@@ -628,10 +933,11 @@ const renderErrorBar = () => {
   if (rows.length === 0 || !errorBarEl.value) {
     return;
   }
-  errorBarInstance = echarts.init(errorBarEl.value, 'macarons');
+  const skin = chartSkin(errorBarEl.value);
+  errorBarInstance = echarts.init(errorBarEl.value);
   errorBarInstance.setOption(
     {
-      grid: { left: 8, right: 56, top: 12, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 40, top: 8, bottom: 4, containLabel: true },
       tooltip: {
         trigger: 'item',
         formatter: (p: any) => {
@@ -642,14 +948,18 @@ const renderErrorBar = () => {
             `链路：#${escapeHtml(r.chainCode)}`,
             `发生：${r.happenCount} 次`
           ].join('<br/>');
-        }
+        },
+        ...tooltipSkin(skin)
       },
-      xAxis: { type: 'value', name: '次数', minInterval: 1 },
+      xAxis: { type: 'value', minInterval: 1, ...axisSkin(skin) },
       yAxis: {
         type: 'category',
         inverse: true,
         data: rows.map((_, i) => `#${i + 1}`),
+        ...axisSkin(skin, false),
         axisLabel: {
+          color: skin.inkMuted,
+          fontSize: 11,
           formatter: (val: string) => {
             const r = rows[Number(val.slice(1)) - 1];
             return truncate(r ? r.errorFingerprint : val, 16);
@@ -660,8 +970,16 @@ const renderErrorBar = () => {
         {
           name: '发生次数',
           type: 'bar',
-          barMaxWidth: 14,
-          itemStyle: { color: '#f56c6c', borderRadius: [0, 4, 4, 0] },
+          barWidth: 8,
+          showBackground: true,
+          backgroundStyle: { color: 'rgba(120, 120, 128, 0.08)', borderRadius: [0, 4, 4, 0] },
+          itemStyle: {
+            borderRadius: [0, 4, 4, 0],
+            color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+              { offset: 0, color: 'rgba(255, 59, 48, 0.55)' },
+              { offset: 1, color: '#FF3B30' }
+            ])
+          },
           data: rows.map((r) => r.happenCount ?? 0)
         }
       ]
@@ -797,7 +1115,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--el-fill-color-light, #f5f7fa);
+  background: var(--db-bg, #f2f2f7);
 }
 
 .monitor-pane__scroll {
@@ -827,13 +1145,15 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .page-title {
   margin: 0;
   font-size: var(--app-font-size-title, 22px);
   font-weight: 700;
-  color: var(--app-text-title, #1f2937);
+  letter-spacing: -0.025em;
+  color: var(--db-ink, #1c1c1e);
 }
 
 .page-subtitle {
@@ -845,42 +1165,160 @@ onBeforeUnmount(() => {
 .header-actions {
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
   gap: 12px;
+}
 
-  .window-select {
-    width: 150px;
+/* 分段控件：4 个高频区间 + 自定义，一次点击直达（替代 9 项下拉） */
+.seg-control {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--db-r-control, 10px);
+  background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
+}
+
+.seg-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--db-ink-muted, #6e6e73);
+  cursor: pointer;
+  transition: all var(--db-dur-fast, 0.14s) var(--db-ease, ease);
+
+  &:hover:not(:disabled) {
+    color: var(--db-ink, #1c1c1e);
+  }
+
+  &.active {
+    background: var(--db-bg-solid, #ffffff);
+    color: var(--db-ink, #1c1c1e);
+    box-shadow: var(--db-shadow-xs, 0 1px 2px rgba(0, 0, 0, 0.04));
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 }
 
+/* 自定义段固定宽度：选中后文案变长也不会把整排按钮挤走 */
+.seg-item-custom {
+  width: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 自定义弹层里的常用区间快捷项 */
+.shortcut-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.shortcut-chip {
+  border: 0.5px solid var(--db-rule, rgba(60, 60, 67, 0.12));
+  background: transparent;
+  padding: 4px 10px;
+  border-radius: var(--db-r-pill, 999px);
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--db-ink-secondary, #3a3a3c);
+  cursor: pointer;
+  transition: all var(--db-dur-fast, 0.14s) var(--db-ease, ease);
+
+  &:hover {
+    border-color: var(--db-rule-strong, rgba(60, 60, 67, 0.24));
+    background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
+  }
+}
+
+/* 指标区：一整块容器，内部用 0.5px 细线分割（不是 8 张独立卡片） */
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  gap: 0;
+  background: var(--db-bg-card, #fff);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  border-radius: var(--db-r-card, 14px);
+  box-shadow:
+    var(--db-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.06)),
+    inset 0 0 0 0.5px var(--db-rule, rgba(60, 60, 67, 0.12));
+}
+
+.metric-card {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: relative;
+  box-shadow:
+    inset 1px 0 0 var(--db-rule, rgba(60, 60, 67, 0.12)),
+    inset 0 1px 0 var(--db-rule, rgba(60, 60, 67, 0.12));
+  transition:
+    transform var(--db-dur-normal, 0.22s) var(--db-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    box-shadow var(--db-dur-normal, 0.22s) var(--db-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    background var(--db-dur-normal, 0.22s) var(--db-ease, ease);
+}
+
+/* 第一列去掉左线、第一行去掉上线，避免容器边缘出现双线 */
+.metric-card:nth-child(4n + 1) {
+  box-shadow: inset 0 1px 0 var(--db-rule, rgba(60, 60, 67, 0.12));
+}
+
+.metric-card:nth-child(-n + 4) {
+  box-shadow: inset 1px 0 0 var(--db-rule, rgba(60, 60, 67, 0.12));
+}
+
+/* hover：从整块里浮起来，补回完整圆角 + 大阴影 */
+.metric-card.is-clickable {
+  cursor: pointer;
+}
+
+.metric-card:hover {
+  transform: scale(1.025) translateY(-2px);
+  border-radius: var(--db-r-card, 14px);
+  background: var(--db-bg-solid, #fff);
+  box-shadow:
+    var(--db-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.12)),
+    inset 0 0 0 0.5px var(--db-rule-strong, rgba(60, 60, 67, 0.24));
+  z-index: 5;
 }
 
 @media (max-width: 1100px) {
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-}
 
-.metric-card {
-  background: var(--app-surface-bg, #fff);
-  border: 1px solid var(--app-surface-border, #e5e7eb);
-  border-radius: var(--app-radius-lg, 14px);
-  padding: 18px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  .metric-card:nth-child(4n + 1) {
+    box-shadow:
+      inset 1px 0 0 var(--db-rule, rgba(60, 60, 67, 0.12)),
+      inset 0 1px 0 var(--db-rule, rgba(60, 60, 67, 0.12));
+  }
 
-  &.is-clickable {
-    cursor: pointer;
-    transition: border-color 0.2s, box-shadow 0.2s;
+  .metric-card:nth-child(2n + 1) {
+    box-shadow: inset 0 1px 0 var(--db-rule, rgba(60, 60, 67, 0.12));
+  }
 
-    &:hover {
-      border-color: var(--el-color-primary-light-5);
-      box-shadow: 0 4px 14px rgb(0 0 0 / 6%);
-    }
+  .metric-card:nth-child(-n + 2) {
+    box-shadow: inset 1px 0 0 var(--db-rule, rgba(60, 60, 67, 0.12));
   }
 }
 
@@ -888,68 +1326,84 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
+}
+
+.metric-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--db-ink-muted, #6e6e73);
+}
+
+/* 趋势小图：右上角，压到 0.4 透明度只做形状提示，不抢数字 */
+.metric-spark {
+  position: absolute;
+  right: var(--db-p-lg, 16px);
+  top: 40px;
+  opacity: 0.4;
+  pointer-events: none;
 }
 
 .metric-icon {
   font-size: 18px;
-  color: var(--el-color-primary-light-3);
+  color: var(--db-ink-muted, #6e6e73);
 }
 
 .metric-value {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 700;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
-  color: var(--app-text-title, #1f2937);
-  line-height: 1.1;
+  color: var(--db-ink, #1c1c1e);
+  line-height: 1;
 }
 
 .metric-suffix {
   font-size: 15px;
   font-weight: 500;
   margin-left: 2px;
-  color: var(--el-text-color-secondary);
+  color: var(--db-ink-muted, #6e6e73);
 }
 
 .value-good {
-  color: var(--el-color-success);
+  color: var(--db-green, #34c759);
 }
 
 .value-warn {
-  color: var(--el-color-warning);
+  color: var(--db-orange, #ff9500);
 }
 
 .value-bad {
-  color: var(--el-color-danger);
+  color: var(--db-red, #ff3b30);
 }
 
 .metric-foot {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .metric-foot-label {
-  color: var(--el-text-color-secondary);
+  color: var(--db-ink-muted, #6e6e73);
 }
 
 .metric-delta {
+  font-family: var(--db-font-mono, 'JetBrains Mono', 'SF Mono', monospace);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .delta-good {
-  color: var(--el-color-success);
+  color: var(--db-green, #34c759);
 }
 
 .delta-bad {
-  color: var(--el-color-danger);
+  color: var(--db-red, #ff3b30);
 }
 
 .delta-flat {
-  color: var(--el-text-color-secondary);
+  color: var(--db-ink-muted, #6e6e73);
 }
 
 .trend-grid {
@@ -965,7 +1419,7 @@ onBeforeUnmount(() => {
 }
 
 .panel {
-  border-radius: var(--app-radius-lg, 14px);
+  border-radius: var(--db-r-card, 14px);
 }
 
 .panel-head {
@@ -977,7 +1431,7 @@ onBeforeUnmount(() => {
 .panel-title {
   font-size: 15px;
   font-weight: 600;
-  color: var(--app-text-title, #1f2937);
+  color: var(--db-ink);
 }
 
 .panel-sub {
@@ -1022,7 +1476,7 @@ onBeforeUnmount(() => {
 }
 
 .mono {
-  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-family: var(--db-font-mono);
   font-size: 12px;
 }
 
@@ -1036,16 +1490,23 @@ onBeforeUnmount(() => {
   gap: 10px;
   max-height: 360px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .stream-item {
   padding: 10px 12px;
-  border: 1px solid var(--app-surface-border, #e5e7eb);
-  border-radius: var(--app-radius-md, 10px);
-  background: var(--el-fill-color-lighter, #fafafa);
+  border: none;
+  border-radius: var(--db-r-control, 10px);
+  background: var(--db-bg-solid, #fff);
+  box-shadow: inset 0 0 0 0.5px var(--db-rule, rgba(60, 60, 67, 0.12));
   display: flex;
   flex-direction: column;
   gap: 6px;
+  transition: background var(--db-dur-fast, 0.14s) var(--db-ease, ease);
+}
+
+.stream-item:hover {
+  background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
 }
 
 .stream-line1 {
@@ -1060,20 +1521,22 @@ onBeforeUnmount(() => {
 
 .stream-time {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  font-family: var(--db-font-mono, 'JetBrains Mono', 'SF Mono', monospace);
+  color: var(--db-ink-muted, #6e6e73);
   font-variant-numeric: tabular-nums;
 }
 
 .stream-duration {
   margin-left: auto;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  font-family: var(--db-font-mono, 'JetBrains Mono', 'SF Mono', monospace);
+  color: var(--db-ink-muted, #6e6e73);
   font-variant-numeric: tabular-nums;
 }
 
 .stream-msg {
   font-size: 12px;
-  color: var(--el-color-danger);
+  color: var(--db-red, #ff3b30);
   word-break: break-all;
   line-height: 1.5;
 }

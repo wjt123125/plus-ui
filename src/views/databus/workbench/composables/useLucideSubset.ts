@@ -78,6 +78,10 @@ const LUCIDE_SUBSET: IconifyJSON = {
       body: `<g ${S}><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3zM7 16.5l-4.74-2.85M7 16.5l5-3m-5 3v5.17m5-8.17V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5zm5 3l-5-3m5 3l4.74-2.85M17 16.5v5.17"/><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3l5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0zM12 8L7.26 5.15M12 8l4.74-2.85M12 13.5V8"/></g>`
     },
     'circle-alert': { body: `<g ${S}><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></g>` },
+    // 说明文案的 hover 入口（InfoHint）：问号圆，与 circle-alert 区分——那个是「有故障」，这个是「有解释」
+    'circle-help': {
+      body: `<g ${S}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></g>`
+    },
     clock: { body: `<g ${S}><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></g>` },
     folder: {
       body: `<path ${S} d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>`
@@ -105,6 +109,10 @@ const LUCIDE_SUBSET: IconifyJSON = {
     },
     // 右键菜单
     power: { body: `<path ${S} d="M12 2v10m6.4-5.4a9 9 0 1 1-12.77.04"/>` },
+    // 连接器废弃（终态退役，包与台账保留 → 归档语义）
+    archive: {
+      body: `<g ${S}><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></g>`
+    },
     trash: {
       body: `<path ${S} d="M10 11v6m4-6v6m5-11v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>`
     },
@@ -185,6 +193,28 @@ const LUCIDE_SUBSET: IconifyJSON = {
     },
     upload: {
       body: `<g ${S}><path d="M12 3v12"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 8l5-5l5 5"/></g>`
+    },
+    // 监控大盘指标卡（MonitorPane）：执行量、成功、失败、耗时、P95、P99、活跃链路、告警
+    'chart-line': {
+      body: `<g ${S}><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9l-5 5l-4-4l-3 3"/></g>`
+    },
+    'circle-check': {
+      body: `<g ${S}><circle cx="12" cy="12" r="10"/><path d="m16 9l-5.5 5.5L8 12"/></g>`
+    },
+    timer: {
+      body: `<g ${S}><path d="M10 2h4m-2 12l3-3"/><circle cx="12" cy="14" r="8"/></g>`
+    },
+    gauge: {
+      body: `<path ${S} d="m12 14l4-4M3.34 19a10 10 0 1 1 17.32 0"/>`
+    },
+    'alarm-clock': {
+      body: `<g ${S}><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M5 3L2 6m20 0l-3-3M6.38 18.7L4 21m13.64-2.33L20 21"/></g>`
+    },
+    link: {
+      body: `<g ${S}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></g>`
+    },
+    bell: {
+      body: `<path ${S} d="M10.268 21a2 2 0 0 0 3.464 0m-10.47-5.674A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>`
     }
   }
 };

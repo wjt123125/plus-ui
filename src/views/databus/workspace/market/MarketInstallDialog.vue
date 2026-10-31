@@ -1,5 +1,6 @@
 <!--
   物料安装弹窗：链路＝fork 快照（选目录 → 复制 → 进树）；组件＝共享注册 + 引用挂树（选目录归属，§十二-7）。
+  连接器＝enable 全局生效、无目录语义（§15.3），正常不经本弹窗；底部提示已按类型兜底，误传进来也不会说错语义。
   只负责选目录与提交；fork/注册与血缘由宿主调市场接口完成（loading 由父传入）。
   目录选项复用统一目录树（databus_directory 全量平表），树根为可选中的「根目录」节点（parentId=0）：
   它只作为新分组的父级（建在根目录＝与现有分组同级），安装仍须选具体分组——
@@ -82,13 +83,7 @@
         </el-form-item>
       </el-form>
 
-      <p class="mkt-install__tip">
-        {{
-          isChain
-            ? '安装即 fork：复制一份链路到「我的」目录并进资源树。此后上游原作者改动或下架，都不影响你的副本。'
-            : '安装即共享注册：与原作者共用同一份组件，按所选目录挂在你的资源树（来自市场）。上游更新与下架实时生效。'
-        }}
-      </p>
+      <p class="mkt-install__tip">{{ installTip }}</p>
     </div>
 
     <template #footer>
@@ -131,6 +126,24 @@ const creating = ref(false);
 
 /** 链路才 fork 副本选目录；组件为共享注册，不落目录 */
 const isChain = computed(() => props.item?.resourceType === 'CHAIN');
+/** 连接器无目录语义（§15.3：安装＝enable def 行、全局生效、不写 install 台账） */
+const isConnector = computed(() => props.item?.resourceType === 'CONNECTOR');
+
+/**
+ * 安装语义提示按类型三选一。连接器单列一条：它既不是 fork 也不是共享注册，
+ * 落到组件那句「安装即共享注册…挂在你的资源树」上是假话；而且 enable 只是让实现可用，
+ * 真正能跑还得去连接管理页建连接实例——这一步不写出来，用户会以为装完就能直接配连接。
+ * 目前两个调用点（MarketPane.onInstall / MarketItemPane 非连接器分支）都不把连接器送进本弹窗，
+ * 这条属防御性兜底：弹窗按 props.item 自洽，将来有人复用也不会说出错的语义。
+ */
+const installTip = computed(() => {
+  if (isConnector.value) {
+    return '连接器安装＝全局启用：不复制副本、不落你的目录，整个平台共用这一份实现。启用后请在连接管理页创建连接实例。';
+  }
+  return isChain.value
+    ? '安装即 fork：复制一份链路到「我的」目录并进资源树。此后上游原作者改动或下架，都不影响你的副本。'
+    : '安装即共享注册：与原作者共用同一份组件，按所选目录挂在你的资源树（来自市场）。上游更新与下架实时生效。';
+});
 
 const itemIcon = computed(() =>
   props.item?.resourceType === 'CHAIN' ? 'lucide:spline' : props.item?.icon || 'lucide:box'

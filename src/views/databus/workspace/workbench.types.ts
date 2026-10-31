@@ -11,7 +11,9 @@ import type { ChainFormSuccessPayload } from '../chain/ChainFormBody.vue';
 
 /**
  * 工作区 tab 形态（2026-10-20 管理页 tab 化扩展，databus-workspace-tabs.md §4.1）：
- * 链路画布 / 组件详情 / 组件编辑 / 代码变更 / 物料市场 / 物料详情 / 物料审核（组件库 grid 已废 2026-10-18）
+ * 链路画布 / 组件详情 / 组件编辑 / 代码变更 / 物料市场 / 物料管理 / 物料详情 / 物料审核 / 连接器包查看
+ * （组件库 grid 已废 2026-10-18；连接器包查看 2026-10-29 由弹窗 tab 化；
+ *   物料管理 2026-10-30 由 MarketPane 内部 view/scope 双 ref 提为独立 tab）
  * + 连接列表/连接对象 / 执行列表/执行记录 / 监控大盘 / 告警记录 / 设置（七值，key 规则见 §4.1）
  */
 export type WorkspaceTabKind =
@@ -20,8 +22,12 @@ export type WorkspaceTabKind =
   | 'form'
   | 'changes'
   | 'market'
+  // 物料管理（2026-10-30 由 MarketPane 内部 view/scope 双 ref 提为独立 tab，刷新可恢复现场）
+  | 'market-manage'
   | 'market-detail'
   | 'market-review'
+  // 连接器包查看（2026-10-29 由「看包」弹窗 tab 化，审核「看得见」§2.3）
+  | 'connector-package'
   | 'connection-list'
   | 'connection-form'
   | 'execution-list'
@@ -34,6 +40,12 @@ export type WorkspaceTabKind =
 
 /** 新建向导可选的资源类型（向导 tab 顶部分段，CreatePane 按 filetype 分发表单体） */
 export type CreateFileType = 'chain' | 'component' | 'directory' | 'connection';
+
+/**
+ * 物料管理 tab 的视角（2026-10-30）：已装管理（消费）/ 我的上架（作者）/ 待审核（治理）。
+ * 存进 tab 字段随会话落盘，故刷新后能回到上次停留的视角（不落盘则每次回落 installed）。
+ */
+export type MarketScope = 'installed' | 'mine' | 'pending';
 
 /** 新建组件 tab 的预设上下文（目录右键「新建组件」携带） */
 export interface FormPreset {
@@ -54,10 +66,23 @@ export interface WorkspaceTab extends WorkbenchTab {
   code: string;
   /** form/changes：组件 DB 行 id（编辑/代码变更必需） */
   dbId?: number;
+  /** market-manage：当前视角（pane 内切视角即回写，随会话落盘 → 刷新恢复现场） */
+  marketScope?: MarketScope;
   /** market-detail：物料主键（同 id 单例；pane 自取数，不走台账。雪花 id 超 2^53，故用字符串防精度丢失） */
   marketItemId?: string;
   /** market-review：受审物料主键（同 id 单例；雪花 id 用字符串防精度丢失，口径同 marketItemId） */
   marketReviewItemId?: string;
+  /**
+   * connector-package：连接器类型键 + 包版本号（二元组才是包的定位身份，故不复用 code/version——
+   * code 是组件编码语义且 closeByCode 按它批量关 tab，version 是 number 装不下 "1.0.0" 版本串）
+   */
+  connectorType?: string;
+  connectorVersion?: string;
+  /**
+   * connector-package：连接器来源。DEV＝开发目录装载，运行期没有 zip，
+   * 该 tab 改渲染目录装载信息（装载目录/时间 + 实现声明 + 运行时驱动），不提供原包下载
+   */
+  connectorSource?: string;
   /** changes：当前脚本版本 */
   version?: number | null;
   /** 仅新建 form tab 使用：表单初始分组/业务域/归属目录 */

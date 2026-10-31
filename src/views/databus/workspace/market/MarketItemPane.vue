@@ -165,6 +165,65 @@
             <el-empty v-else description="无法获取实现预览" :image-size="72" />
           </div>
         </el-tab-pane>
+
+        <!-- 连接器实现页（§10.3）：零内置之后「它能干什么、要填什么」只存在于包内，
+             取 def 行的 operations / configSchema（已装载时后端用运行态 describe() 覆盖 manifest 快照，§2.3） -->
+        <el-tab-pane v-if="isConnector" label="实现" name="connectorImpl" lazy>
+          <div class="mkti__body">
+            <div v-if="connectorDefLoading" v-loading="true" class="mkti__impl-loading" />
+            <template v-else-if="connectorDef">
+              <div class="mkti__impl-meta">
+                <span class="mkti__impl-meta-code">#{{ connectorDef.type }}</span>
+                <span class="mkti__impl-sep">·</span>
+                <span>{{ versionLabel(connectorDef.version) || '—' }}</span>
+                <span class="mkti__impl-sep">·</span>
+                <span>引擎档 {{ connectorDef.engine || '—' }}</span>
+                <!-- 信任档是审核结论不是来源推论（§1.3：verified 由审批人勾选，source=ADMIN 不自动带） -->
+                <el-tag size="small" :type="connectorDef.verified ? 'success' : 'warning'" effect="light">
+                  {{ connectorDef.verified ? '已核验' : '未核验' }}
+                </el-tag>
+              </div>
+
+              <!-- 两条警示照正本原文写死（§1.3）；其余引擎档没有既定结论，不臆造文案，只在上面亮出档位 -->
+              <el-alert
+                v-if="connectorDef.engine === 'jvm'"
+                class="mkti__alert"
+                type="warning"
+                :closable="false"
+                show-icon
+                title="此连接器将获得服务器权限"
+              >
+                <p class="mkti__alert-p">
+                  jvm 档＝包内实现类与它自带的驱动 jar 由 PluginClassLoader 装载进平台同一个 JVM 进程执行，没有进程隔离也没有沙箱。
+                  信任边界只有两道：上传权限（只给管理员）＋另一位管理员看过代码后勾 verified（提交人 ≠ 审批人）。
+                  审核是「人看代码」，拦得住的是上传门槛、默认未启用与留痕，拦不住蓄意破坏。
+                </p>
+                <p class="mkti__alert-p">连接器代表平台直连数据库，请使用最小权限账号。</p>
+              </el-alert>
+
+              <!-- verified 的两项放权要写清，否则这个标记只是个好看的标签，看不出它改变了什么行为 -->
+              <p class="mkti__impl-summary mkti__verified-tip">
+                {{
+                  connectorDef.verified
+                    ? '已核验：审核人看过代码并确认它不会干坏事，因此放开两项限制——试连失败回显归一化后的异常、私网地址黑名单豁免。'
+                    : '未核验：审核人还没勾信任档，试连异常按归一化处理、私网地址不放行。启停开关即治理动作（databus:connector:edit）。'
+                }}
+              </p>
+
+              <ConnectorCapabilityTables :operations="connectorDef.operations" :config-schema="connectorDef.configSchema" />
+            </template>
+            <el-empty v-else :description="connectorDefEmptyText" :image-size="72" />
+          </div>
+        </el-tab-pane>
+
+        <!-- 运行时驱动页（§4.2.1）：child-first 之后「包里那份生效」是应当的，
+             真走了父加载器没人会发现，所以把实际生效的驱动与来源摆出来 -->
+        <el-tab-pane v-if="isConnector" label="驱动" name="runtime" lazy>
+          <div class="mkti__body">
+            <!-- key 带 type 与重载序号：换物料或启停之后强制重挂重取，不拿旧装载态当现状 -->
+            <ConnectorRuntimePanel :key="`${connectorType ?? ''}-${runtimeKey}`" :type="connectorType ?? ''" />
+          </div>
+        </el-tab-pane>
       </el-tabs>
 
       <footer class="mkti__foot">
@@ -211,13 +270,17 @@
 import { computed, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { getMarketItem, getMarketPreview, installMarketItem } from '@/api/databus/market';
-import { disableConnector } from '@/api/databus/connector';
+import { disableConnector, listConnectorDefs } from '@/api/databus/connector';
+import type { ConnectorDefVo } from '@/api/databus/connector/types';
 import type { DatabusMarketItemVo, MarketItemStatus, MarketPreviewVo } from '@/api/databus/market/types';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import modal from '@/plugins/modal';
 import { useUserStore } from '@/store/modules/user';
 import { marketNavIntent, showChainInstallResult } from './useMarketData';
+import { statusMeta as itemStatusMeta, versionLabel } from './marketDisplay';
 import MarketInstallDialog from './MarketInstallDialog.vue';
+import ConnectorCapabilityTables from './ConnectorCapabilityTables.vue';
+import ConnectorRuntimePanel from './ConnectorRuntimePanel.vue';
 import JavaCodeEditor from '@/views/databus/component/form/JavaCodeEditor.vue';
 import JsonCodeEditor from '@/views/databus/editor/components/common/JsonCodeEditor.vue';
 
@@ -232,8 +295,10 @@ const emit = defineEmits<{
   (e: 'open-local', localResourceId: string | number, resourceType: 'COMPONENT' | 'CHAIN', title: string): void;
   /** 安装成功：宿主刷树与台账 */
   (e: 'installed'): void;
-  /** 请求切到物料市场 tab（作者筛选 / 已上架跳转） */
+  /** 请求切到物料市场 tab（作者筛选，意图经 marketNavIntent 传给市场 pane 消费） */
   (e: 'open-market'): void;
+  /** 请求切到物料管理 tab 的「我的上架」视角（已上架物料的治理入口） */
+  (e: 'open-manage'): void;
   /** 打开源链路只读画布（未安装也能看编排；宿主按 chainId 开画布 tab，只读由 owner 判定） */
   (e: 'open-source-canvas', chainId: string | number, title: string): void;
 }>();
@@ -253,6 +318,11 @@ const openImplSections = ref<string[]>(['script']);
 
 /** 首次切到「实现」才请求（懒加载）；仅 ONLINE 物料后端放行，失败按空态展示 */
 async function onTabChange(name: string | number) {
+  // 连接器两页各有各的取数：「实现」在本 pane 拉 def 行，「运行时驱动」由 ConnectorRuntimePanel 挂载即取
+  if (name === 'connectorImpl') {
+    await loadConnectorDef();
+    return;
+  }
   if (name !== 'impl' || previewLoaded.value) {
     return;
   }
@@ -285,6 +355,78 @@ function onOpenCanvas() {
   emit('open-source-canvas', preview.value.chainId, item.value?.name || '链路预览');
 }
 
+/* ---------------- 连接器：实现清单 + 运行时驱动（2026-10-30 收尾，§10.3 / §4.2.1） ---------------- */
+
+/** 详情物料是连接器才有这两页（组件/链路的「实现」走上面的 preview 分支） */
+const isConnector = computed(() => item.value?.resourceType === 'CONNECTOR');
+
+/**
+ * 连接器类型键：详情 pane 手上只有市场物料行，没有 defs 列表，故取展示码 `{owner}/{type}` 尾段
+ * （与 onDisableConnector、MarketPane.connectorTypeOf 的降级路径同一口径，不另立第二套推断）。
+ */
+const connectorType = computed<string | null>(() => {
+  const tail = (item.value?.codeDisplay ?? '').split('/').pop();
+  return tail && tail.length > 0 ? tail : null;
+});
+
+/* —— 实现页：def 行即 describe() 的落地形态（operations / configSchema / engine / verified 都在这一行） —— */
+
+const connectorDef = ref<ConnectorDefVo | null>(null);
+const connectorDefLoading = ref(false);
+/** 拉过就不再重复拉（同 previewLoaded 的闩）；失败或无权限也置位，避免每次切页都打一次必失败的接口 */
+const connectorDefLoaded = ref(false);
+
+async function loadConnectorDef(): Promise<void> {
+  if (connectorDefLoaded.value) {
+    return;
+  }
+  connectorDefLoaded.value = true;
+  const type = connectorType.value;
+  // defs 端点带 @SaCheckPermission("databus:connector:list")：没权限就不发这个注定 403 的请求，直接落可读空态
+  if (!type || !hasPermi('databus:connector:list')) {
+    connectorDef.value = null;
+    return;
+  }
+  connectorDefLoading.value = true;
+  try {
+    const { data } = await listConnectorDefs();
+    const defs = data ?? [];
+    const localId = item.value?.localResourceId;
+    // 先按 localResourceId（连接器＝def 行 id）命中，退化到 type：同 type 被多人上架时 id 才是唯一判据
+    connectorDef.value =
+      (localId != null ? defs.find((d) => d.id != null && String(d.id) === String(localId)) : undefined) ??
+      defs.find((d) => d.type === type) ??
+      null;
+  } catch {
+    connectorDef.value = null; // 拦截器已提示
+  } finally {
+    connectorDefLoading.value = false;
+  }
+}
+
+const connectorDefEmptyText = computed(() => {
+  if (!connectorType.value) {
+    return '缺连接器类型标识，无法定位实现清单';
+  }
+  if (!hasPermi('databus:connector:list')) {
+    return '需要连接器查看权限（databus:connector:list）才能看实现清单';
+  }
+  // 零内置之后「本机没这个包」是常态而非故障（§2.6），文案直说怎么才能看到
+  return '本机没有这个连接器的包（未上传或未安装），启用后即可看到它的操作与连接配置字段';
+});
+
+/* —— 运行时驱动页：取数、告警与空态都在 ConnectorRuntimePanel 内，本 pane 只管「何时该重取」 —— */
+
+/**
+ * 重挂序号：启停会改变装载态，旧结论不能当现状。
+ * bump 一下换掉 ConnectorRuntimePanel 的 key 让它重挂重取；换物料由 key 里的 type 覆盖，不必走这里。
+ */
+const runtimeKey = ref(0);
+
+function invalidateRuntime(): void {
+  runtimeKey.value += 1;
+}
+
 const installVisible = ref(false);
 const installLoading = ref(false);
 
@@ -308,6 +450,10 @@ watch(
     preview.value = null;
     previewLoaded.value = false;
     openImplSections.value = ['script'];
+    // 连接器两页同 pane 复用，闩与数据必须一起归零：否则切到第二个连接器会直接渲染上一个的清单
+    // 运行时驱动不必在这里管：ConnectorRuntimePanel 的 key 带 type，换物料自然重挂重取
+    connectorDef.value = null;
+    connectorDefLoaded.value = false;
     fetchItem();
   },
   { immediate: true }
@@ -335,15 +481,7 @@ function hasPermi(perm: string): boolean {
 /** 连接器停用是治理动作（§15.7 defs 启停权限 databus:connector:edit） */
 const canConnectorEdit = computed(() => hasPermi('databus:connector:edit'));
 
-const STATUS_META: Record<MarketItemStatus, { label: string; type: 'primary' | 'success' | 'warning' | 'danger' | 'info' }> = {
-  DRAFT: { label: '草稿', type: 'info' },
-  PENDING: { label: '待审核', type: 'warning' },
-  APPROVED: { label: '已通过', type: 'primary' },
-  REJECTED: { label: '已驳回', type: 'danger' },
-  ONLINE: { label: '已上架', type: 'success' },
-  OFFLINE: { label: '已下架', type: 'info' }
-};
-const statusMeta = computed(() => STATUS_META[item.value?.status as MarketItemStatus] ?? { label: item.value?.status ?? '', type: 'info' as const });
+const statusMeta = computed(() => itemStatusMeta(item.value?.status as MarketItemStatus));
 
 /* ---------------- 底部动作 ---------------- */
 
@@ -356,10 +494,9 @@ function onAuthor() {
   emit('open-market');
 }
 
-/** 已上架：请求市场 tab 落到「我的上架」管理视图 */
+/** 已上架：去物料管理 tab 的「我的上架」视角（治理动作全在那边） */
 function onMine() {
-  marketNavIntent.value = { kind: 'mine' };
-  emit('open-market');
+  emit('open-manage');
 }
 
 /** 已装：打开本地副本 */
@@ -414,6 +551,8 @@ async function onInstallConnector() {
     ElMessage.success(`已启用「${it.name}」，全局生效`);
     emit('installed'); // 复用安装成功语义：宿主刷市场数据与树
     await fetchItem(); // 刷新 installed，底部按钮切「停用/已启用」
+    // 启用＝真装载，运行时驱动从这一刻才可能有数据；重挂面板让人看到的是装载后的现状
+    invalidateRuntime();
   } catch {
     /* 拦截器已提示 */
   } finally {
@@ -428,7 +567,7 @@ async function onDisableConnector() {
     return;
   }
   // 详情页无 defs 列表，type 走展示码尾段兜底（对齐 MarketPane.connectorTypeOf 的降级路径）
-  const type = (it.codeDisplay ?? '').split('/').pop();
+  const type = connectorType.value;
   if (!type) {
     ElMessage.warning('未找到该连接器的类型标识，请先刷新重试');
     return;
@@ -443,6 +582,8 @@ async function onDisableConnector() {
     ElMessage.success('已停用');
     emit('installed'); // 复用语义：宿主重拉市场数据（installed 口径随 def 状态翻转）
     await fetchItem();
+    // 停用＝卸载，驱动表必须跟着失效（实现清单是声明式内容，不随装载态变化，故不重取它）
+    invalidateRuntime();
   } catch {
     /* 拦截器已提示 */
   }
@@ -813,5 +954,28 @@ async function onDisableConnector() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---------------- 连接器实现页（2026-10-30，§10.3） ---------------- */
+
+/* jvm 档警示：底色由 el-alert 给，这里只管与上下文的间距（操作/配置字段两张表与运行时驱动页已抽成独立组件） */
+.mkti__alert {
+  margin: 4px 0 12px;
+}
+
+.mkti__alert-p {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+/* verified 解释段复用 .mkti__impl-summary 的字形，只把它从「无外边距」里捞出来 */
+.mkti__verified-tip {
+  margin: 0 0 4px;
 }
 </style>

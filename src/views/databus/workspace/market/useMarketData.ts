@@ -37,8 +37,16 @@ export type MarketChip = 'ALL' | 'RECOMMEND' | 'MINE' | 'INSTALLED' | string | n
 /** 「最新」组容量（无 recommend 字段，按上架时间取头部） */
 const RECOMMEND_SIZE = 6;
 
-/** 跨 pane 市场导航意图（物料详情页 → 市场 tab）：市场 tab 消费后置空（模块级共享单例） */
-export type MarketNavIntent = { kind: 'owner'; ownerCode: string } | { kind: 'mine' };
+/**
+ * 跨 tab 市场导航意图（模块级共享单例）。两个 pane 各自 watch 同一个 ref，
+ * 故**只认领并清空自己的 kind**（市场 pane 认 owner、管理 pane 认 publish），
+ * 否则先消费的一方会把意图抹掉，后到的一方扑空。
+ *   owner   → 市场 tab：按作者筛选（物料详情页作者链接 / 管理页行上 @作者）
+ *   publish → 管理 tab：落到「我的上架」并直接弹上架弹窗（市场空态 CTA）
+ */
+export type MarketNavIntent =
+  | { kind: 'owner'; ownerCode: string; resourceType?: MarketResourceType }
+  | { kind: 'publish' };
 export const marketNavIntent = ref<MarketNavIntent | null>(null);
 
 /**
@@ -141,6 +149,18 @@ export function useMarketData() {
   /** 退出作者过滤（回「全部」） */
   async function clearOwner(): Promise<void> {
     ownerCode.value = '';
+    await refresh();
+  }
+
+  /**
+   * 按作者过滤并切到指定分段（管理页行上 @作者 → 浏览视图看该作者该类型作品）。
+   * 不能串 switchType 再 filterByOwner：switchType 会把 ownerCode 清空，故一次 set 再一次 refresh。
+   */
+  async function filterByOwnerInType(code: string, type: MarketResourceType): Promise<void> {
+    activeType.value = type;
+    ownerCode.value = code;
+    activeChip.value = 'ALL';
+    keyword.value = '';
     await refresh();
   }
 
@@ -253,14 +273,14 @@ export function useMarketData() {
     return result;
   });
 
-  /** 管理页计数徽标：按类型统计已装条数（连接器不写 install 台账，恒 0——其启停治理走 defs 端点，MarketPane 自行拉 defs 展示） */
+  /** 市场 chips「已安装」计数：按类型统计已装条数（连接器不写 install 台账，恒 0——其启停治理走 defs 端点，MarketPane 自行拉 defs 展示） */
   const installedCounts = computed(() => {
     const count = (type: MarketResourceType) =>
       installed.value.filter((i) => i.resourceType === type).length;
     return { COMPONENT: count('COMPONENT'), CHAIN: count('CHAIN'), CONNECTOR: count('CONNECTOR') };
   });
 
-  /** 管理页计数徽标：按类型统计我的上架条数 */
+  /** 市场 chips「我上架的」计数：按类型统计我的上架条数 */
   const mineCounts = computed(() => {
     const count = (type: MarketResourceType) =>
       mine.value.filter((i) => i.resourceType === type).length;
@@ -305,6 +325,7 @@ export function useMarketData() {
     mineCounts,
     refresh,
     filterByOwner,
+    filterByOwnerInType,
     clearOwner,
     loadCategories,
     loadInstalled,

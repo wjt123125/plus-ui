@@ -1,0 +1,75 @@
+/* =============================================================================
+ * databus 物料市场外壳（2026-10-30）
+ * 市场浏览（MarketPane）与物料管理（MarketManagePane）拆成两个工作台 tab 后，
+ * 两边共用的只是「面板外壳 + 页头 + 限宽居中 + 滚动体 + 组标题」这一层骨架；
+ * 各自独有的（卡片网格 / 行列表 / 视角分段 / 冒泡）留在各自 SFC 的 scoped 块里。
+ * 骨架放全局而非各拷一份：两个 pane 同屏并存，改一处漏一处会直接看出错位。
+ * ========================================================================== */
+
+.mkt {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--el-bg-color, #fff);
+
+  /* 宽屏下内容不铺满整屏：所有横排区块统一限宽居中，两侧留白 */
+  --mkt-max: 1200px;
+}
+
+/* 限宽居中：窄屏时 width:100% 自然铺满，宽屏时封顶并居中 */
+.mkt__head,
+.mkt__bar,
+.mkt__chips,
+.mkt__scopes,
+.mkt__body {
+  width: 100%;
+  max-width: var(--mkt-max);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.mkt__head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px 12px;
+}
+
+.mkt__titles {
+  min-width: 0;
+  flex: 1;
+}
+
+.mkt__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.mkt__sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.mkt__search {
+  width: 240px;
+  margin-left: auto;
+}
+
+.mkt__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 20px 20px;
+}
+
+.mkt__group-title {
+  margin: 6px 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}

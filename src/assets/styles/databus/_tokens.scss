@@ -1,0 +1,101 @@
+/* ============================================================
+   databus 模块设计令牌
+   ------------------------------------------------------------
+   作用域铁律：所有令牌只定义在 .db-app 上，禁止写到 :root。
+   .db-app 是 databus 页面根节点的统一类名，出了这个容器即失效。
+   风格来源：ui-prototype.html 的 E 方案（Apple HIG 系统色 + Linear 式克制）
+   ============================================================ */
+
+.db-app {
+  /* —— 画布 —— */
+  --db-bg: #f2f2f7;                       /* iOS 系统底色 */
+  --db-bg-card: rgba(255, 255, 255, 0.72); /* 卡片底（配毛玻璃） */
+  --db-bg-solid: #ffffff;
+  --db-bg-hover: rgba(120, 120, 128, 0.08);
+
+  /* —— 文字 —— */
+  --db-ink: #1c1c1e;
+  --db-ink-secondary: #3a3a3c;
+  --db-ink-muted: #6e6e73;
+
+  /* —— 分隔线（0.5px 观感，HiDPI 更锐）—— */
+  --db-rule: rgba(60, 60, 67, 0.12);
+  --db-rule-strong: rgba(60, 60, 67, 0.24);
+
+  /* —— 系统色（Apple 精确值，不要在页面里写十六进制）—— */
+  --db-blue: #007aff;
+  --db-blue-hover: #0068db;
+  --db-blue-active: #0059bd;
+  --db-green: #34c759;
+  --db-red: #ff3b30;
+  --db-orange: #ff9500;
+  --db-yellow: #ffcc00;
+  --db-purple: #af52de;
+  --db-gray: #8e8e93;
+
+  /* —— 圆角 —— */
+  --db-r-card: 14px;
+  --db-r-control: 10px;
+  --db-r-tag: 7px;
+  --db-r-pill: 999px;
+
+  /* —— 间距（严格 4px 网格）—— */
+  --db-p-xs: 4px;
+  --db-p-sm: 8px;
+  --db-p-md: 12px;
+  --db-p-lg: 16px;
+  --db-p-xl: 20px;
+  --db-p-2xl: 24px;
+  --db-p-3xl: 32px;
+
+  /* —— 阴影（低透明度，靠层级不靠重影）—— */
+  --db-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --db-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 1px rgba(0, 0, 0, 0.04);
+  --db-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --db-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06);
+
+  /* —— 动效（Apple 弹簧：只用于 hover/出现，不用于高频数据刷新）—— */
+  --db-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --db-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --db-dur-fast: 0.14s;
+  --db-dur-normal: 0.22s;
+
+  /* —— 字体 —— */
+  --db-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Segoe UI', sans-serif;
+  --db-font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+
+  /* —— 焦点环（外发光，不是硬边框）—— */
+  --db-ring: 0 0 0 3px rgba(0, 122, 255, 0.22);
+}
+
+/* 深色：只覆写变量值，组件一行不用改 */
+html.dark .db-app {
+  --db-bg: #1c1c1e;
+  --db-bg-card: rgba(44, 44, 46, 0.72);
+  --db-bg-solid: #2c2c2e;
+  --db-bg-hover: rgba(255, 255, 255, 0.08);
+
+  --db-ink: #f2f2f7;
+  --db-ink-secondary: #d1d1d6;
+  --db-ink-muted: #98989d;
+
+  --db-rule: rgba(255, 255, 255, 0.12);
+  --db-rule-strong: rgba(255, 255, 255, 0.24);
+
+  --db-blue: #0a84ff;
+  --db-blue-hover: #3d9bff;
+  --db-blue-active: #0060df;
+  --db-green: #30d158;
+  --db-red: #ff453a;
+  --db-orange: #ff9f0a;
+  --db-yellow: #ffd60a;
+  --db-purple: #bf5af2;
+  --db-gray: #8e8e93;
+
+  --db-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --db-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 1px rgba(0, 0, 0, 0.3);
+  --db-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.35);
+  --db-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.4);
+
+  --db-ring: 0 0 0 3px rgba(10, 132, 255, 0.32);
+}

@@ -28,6 +28,7 @@
       v-else-if="field.widget === 'CONNECTION_SELECT'"
       :model-value="stringValue"
       :placeholder="field.placeholder ?? undefined"
+      :connector-family="field.connectorFamily ?? undefined"
       @update:model-value="emit('update:modelValue', $event)"
     />
 

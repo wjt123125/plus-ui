@@ -1,0 +1,175 @@
+/* ============================================================
+   databus 模块内的 Element Plus 覆盖
+   ------------------------------------------------------------
+   优先用变量重绑（组件读 CSS 变量），少写具体选择器；
+   确实要改结构的地方才写 .db-app .el-xxx。
+   注意：弹层默认 teleport 到 body，会跑出 .db-app，
+        这些组件请加 popper-class="db-popper"（样式见文件末尾）。
+   ============================================================ */
+
+.db-app {
+  /* —— 变量重绑：Element Plus 组件读的就是这些 —— */
+  --el-color-primary: var(--db-blue);
+  --el-color-primary-light-3: var(--db-blue-hover);
+  --el-color-primary-light-5: var(--db-blue-hover);
+  --el-color-primary-light-7: var(--db-blue-hover);
+  --el-color-primary-light-8: var(--db-blue-hover);
+  --el-color-primary-light-9: rgba(0, 122, 255, 0.08);
+  --el-color-primary-dark-2: var(--db-blue-active);
+
+  --el-color-success: var(--db-green);
+  --el-color-danger: var(--db-red);
+  --el-color-error: var(--db-red);
+  --el-color-warning: var(--db-orange);
+
+  --el-text-color-primary: var(--db-ink);
+  --el-text-color-regular: var(--db-ink-secondary);
+  --el-text-color-secondary: var(--db-ink-muted);
+  --el-text-color-placeholder: var(--db-ink-muted);
+
+  --el-border-color: var(--db-rule);
+  --el-border-color-light: var(--db-rule);
+  --el-border-color-lighter: var(--db-rule);
+  --el-border-color-extra-light: var(--db-rule);
+
+  --el-border-radius-base: var(--db-r-control);
+  --el-border-radius-small: var(--db-r-tag);
+  --el-border-radius-round: var(--db-r-pill);
+
+  --el-bg-color: var(--db-bg-solid);
+  --el-bg-color-overlay: var(--db-bg-solid);
+  --el-fill-color-blank: transparent;
+
+  --el-font-family: var(--db-font);
+  --el-box-shadow-light: var(--db-shadow-sm);
+  --el-box-shadow: var(--db-shadow-md);
+
+  /* —— 画布 —— */
+  font-family: var(--db-font);
+  color: var(--db-ink);
+  background: var(--db-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* —— 卡片 —— */
+.db-app .el-card {
+  border: none;
+  border-radius: var(--db-r-card);
+  background: var(--db-bg-card);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  box-shadow: var(--db-shadow-sm), inset 0 0 0 0.5px var(--db-rule);
+  transition: transform var(--db-dur-normal) var(--db-spring), box-shadow var(--db-dur-normal) var(--db-spring);
+}
+.db-app .el-card.is-hover-shadow:hover,
+.db-app .el-card:hover {
+  transform: scale(1.008);
+  box-shadow: var(--db-shadow-md), inset 0 0 0 0.5px var(--db-rule-strong);
+}
+
+/* —— 按钮：hover 只做轻微缩放，不做位移/发光 —— */
+.db-app .el-button {
+  border-radius: var(--db-r-control);
+  font-weight: 500;
+  transition: transform var(--db-dur-fast) var(--db-spring),
+              box-shadow var(--db-dur-fast) var(--db-spring),
+              background-color var(--db-dur-fast) var(--db-ease);
+}
+.db-app .el-button:not(.is-text):not(.is-link):not(.is-disabled):hover {
+  transform: scale(1.02);
+}
+.db-app .el-button:not(.is-text):not(.is-link):not(.is-disabled):active {
+  transform: scale(0.97);
+}
+.db-app .el-button--primary {
+  box-shadow: 0 2px 6px rgba(0, 122, 255, 0.3);
+}
+.db-app .el-button--primary:not(.is-disabled):hover {
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.35);
+}
+
+/* —— 输入 / 选择器：0.5px 内描边 + 外发光焦点环 —— */
+.db-app .el-input__wrapper,
+.db-app .el-textarea__inner,
+.db-app .el-select__wrapper {
+  border-radius: var(--db-r-control);
+  background: var(--db-bg-solid);
+  box-shadow: inset 0 0 0 0.5px var(--db-rule);
+  transition: box-shadow var(--db-dur-fast) var(--db-ease);
+}
+.db-app .el-input__wrapper:hover,
+.db-app .el-select__wrapper:hover {
+  box-shadow: inset 0 0 0 0.5px var(--db-rule-strong);
+}
+.db-app .el-input__wrapper.is-focus,
+.db-app .el-select__wrapper.is-focused,
+.db-app .el-textarea__inner:focus {
+  box-shadow: inset 0 0 0 0.5px var(--db-blue), var(--db-ring);
+}
+
+/* —— 表格：去掉重边框，靠 0.5px 分隔线 + 表头弱化 —— */
+.db-app .el-table {
+  --el-table-border-color: var(--db-rule);
+  --el-table-header-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-row-hover-bg-color: var(--db-bg-hover);
+  background: transparent;
+  font-size: 13px;
+}
+.db-app .el-table th.el-table__cell {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--db-ink-muted);
+  background: transparent;
+}
+.db-app .el-table td.el-table__cell {
+  border-bottom: 0.5px solid var(--db-rule);
+}
+
+/* —— 标签 / 徽标 —— */
+/* 形状（圆角/去边框/字重）归所有标签；蓝色底只给默认 primary 档，且走 Element Plus 的
+   类型变量——直接写 background/color 会凭优先级把 success/warning/danger 的语义色全压成蓝，
+   故障态标签就再也看不出颜色了 */
+.db-app .el-tag {
+  border-radius: var(--db-r-tag);
+  border: none;
+  font-weight: 600;
+}
+.db-app .el-tag--primary {
+  --el-tag-bg-color: rgba(0, 122, 255, 0.08);
+  --el-tag-text-color: var(--db-blue);
+  --el-tag-border-color: transparent;
+}
+
+/* —— 弹窗 —— */
+.db-app .el-dialog {
+  border-radius: 18px;
+  box-shadow: var(--db-shadow-lg);
+  background: var(--db-bg-solid);
+}
+
+/* ============================================================
+   teleport 到 body 的弹层：给组件加 popper-class="db-popper"
+   （dialog / drawer 也可用 append-to-body=false 留在 .db-app 内）
+   ============================================================ */
+.db-popper {
+  --el-bg-color-overlay: var(--db-bg-solid);
+  --el-border-color-light: var(--db-rule);
+  --el-text-color-regular: var(--db-ink-secondary);
+  --el-box-shadow-light: var(--db-shadow-md);
+  --el-border-radius-base: var(--db-r-control);
+  border-radius: var(--db-r-control) !important;
+  box-shadow: var(--db-shadow-md) !important;
+}
+.db-popper .el-select-dropdown__item {
+  border-radius: var(--db-r-tag);
+  margin: 2px 6px;
+  font-size: 13px;
+}
+.db-popper .el-select-dropdown__item.is-hovering {
+  background: var(--db-bg-hover);
+}
+.db-popper .el-select-dropdown__item.is-selected {
+  color: var(--db-blue);
+  font-weight: 600;
+}

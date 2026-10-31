@@ -92,7 +92,7 @@
         </li>
         <li class="res-tree-ctx__divider" />
         <li
-          v-hasPermi="['databus:component:edit']"
+          v-hasPermi="['databus:component:toggle']"
           class="res-tree-ctx__item"
           :class="menu.node.disabled ? 'is-success' : 'is-warning'"
           @click="onCommand('toggle-component')"

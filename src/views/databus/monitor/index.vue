@@ -5,7 +5,7 @@
   高度：AppMain 只有 min-height 无 definite height，故瘦壳须显式吃视口（同 views/databus/execution/index.vue）。
 -->
 <template>
-  <div class="monitor-shell">
+  <div class="monitor-shell db-app">
     <MonitorPane @open-alert="goAlert" />
   </div>
 </template>

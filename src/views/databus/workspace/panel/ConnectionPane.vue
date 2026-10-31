@@ -139,29 +139,26 @@
                 </div>
               </div>
 
-              <!-- 元信息：徽标 + tag + 范围提示 -->
+              <!-- 元信息：徽标 + tag。
+                   原先这里还平铺了 endpoint/accessKey/超时/重试——那都是 bpmHttp 专属字段，
+                   连接器零内置之后平台不认识任何具体字段，卡片上只留类型信息（方案 §10.3）。 -->
               <div class="mt-meta">
                 <span class="mt-badge">{{ connectorTypeLabel(row.connectorType) }}</span>
                 <el-tag size="small" effect="plain" type="info">{{ row.connectorType || '-' }}</el-tag>
-                <span class="mt-range">{{ formatTimeout(row.timeout) }} · {{ row.retryCount ?? 0 }}次重试</span>
-              </div>
-              <div class="mt-meta mt-meta-secondary">
-                <span class="mt-meta-item">
-                  <el-icon><Link /></el-icon>{{ row.endpoint || '未配置地址' }}
-                </span>
-                <span class="mt-meta-item">
-                  <el-icon><Key /></el-icon>{{ row.accessKey || '未配置 AccessKey' }}
-                </span>
               </div>
 
               <!-- 底部操作（link 按钮，全程可见） -->
               <div class="mt-actions" @click.stop>
+                <!-- 连接器本身不健康（缺驱动 / 未装载 / 未启用）时测试必然失败：
+                     直接禁用并把原因挂在 hover 上，比让人点一下再吃一个后端异常强（§4.2.1） -->
                 <el-button
                   v-hasPermi="['databus:connection:test']"
                   link
                   type="success"
                   size="small"
                   :loading="testingId === row.id"
+                  :disabled="!!testBlockReason(row.connectorType)"
+                  :title="testBlockReason(row.connectorType)"
                   @click="handleTest(row)"
                 >
                   <el-icon><Connection /></el-icon>测试
@@ -203,12 +200,13 @@
 </template>
 
 <script setup lang="ts" name="ConnectionPane">
-import { Plus, Search, Edit, Delete, Link, Key, CopyDocument, Connection } from '@element-plus/icons-vue';
+import { Plus, Search, Edit, Delete, Link, CopyDocument, Connection } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import {
   delConnection,
   listConnection,
   testConnection,
+  testResultMessage,
   updateConnection
 } from '@/api/databus/connection';
 import type {
@@ -219,6 +217,7 @@ import type {
 import { useLoading } from '@/hooks/async/useLoading';
 import modal from '@/plugins/modal';
 import ConnectionFormBody from './ConnectionFormBody.vue';
+import { findMissingRequired } from './connectionSchema';
 import { useConnectorOptions } from './useConnectorOptions';
 import type { ConnectionSaved } from '../workbench.types';
 
@@ -251,8 +250,9 @@ const total = ref(0);
 const togglingId = ref<number | undefined>();
 const testingId = ref<number | undefined>();
 
-/* 连接器类型选项：动态 defs（无权限降级静态内置），筛选 tab 与 label 共用（§15.7） */
-const { options: connectorOptions, loadConnectorOptions, connectorLabelOf } = useConnectorOptions();
+/* 连接器清单：动态 defs（唯一来源，§15.7），筛选 tab / label / configSchema 共用 */
+const { options: connectorOptions, loadConnectorOptions, connectorLabelOf, schemaOf, healthOf } =
+  useConnectorOptions();
 
 const queryParams = ref<SysDatabusConnectionQuery>({
   pageNum: 1,
@@ -266,20 +266,13 @@ const queryParams = ref<SysDatabusConnectionQuery>({
 /** 连接器类型值转展示文案，未知类型原样显示 */
 const connectorTypeLabel = (value?: string) => connectorLabelOf(value);
 
-/** 超时毫秒值 → 人类可读文案 */
-const formatTimeout = (ms?: number) => {
-  if (!ms || ms <= 0) {
-    return '默认超时';
-  }
-  if (ms < 1000) {
-    return `${ms}ms`;
-  }
-  if (ms < 60000) {
-    return `${(ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 1)}s`;
-  }
-  const min = Math.floor(ms / 60000);
-  const sec = (ms % 60000) / 1000;
-  return sec ? `${min}min${sec}s` : `${min}min`;
+/**
+ * 连接器不可用时的人话原因（可用返回空串）：测试按钮据此禁用并说明为什么（§4.2.1）。
+ * 健康是运行态、随时会变，故每次渲染现算，不缓存。
+ */
+const testBlockReason = (value?: string) => {
+  const health = healthOf(value);
+  return health.usable ? '' : `${health.label}：${health.reason}`;
 };
 
 /** enabled → 状态圆点 class（绿=启用 / 灰=禁用） */
@@ -387,22 +380,33 @@ const handleDelete = async (row: Partial<SysDatabusConnectionVo>) => {
 };
 
 /**
- * 测试连接：直传当前列表行数据（列表行已含全量字段），
- * 后端按 BO 实测，成功 R.data 为说明文本；失败由 request 拦截器统一弹错。
+ * 测试连接：直传当前列表行数据（列表行已含 config 明文列），后端按 BO 实测。
+ * 前置校验走该连接器的 configSchema（万物皆包：平台不认识任何具体字段）；
+ * 行数据是已落库的记录，故按编辑态判定——敏感字段后端不回显，留空由
+ * mergeMissingSensitive 从库中补齐，不参与必填校验。
+ * 成功返回体形态由连接器决定（String 或结构化 Map），一律经 testResultMessage 取文案。
  */
 const handleTest = async (row: SysDatabusConnectionVo) => {
   if (!row.id || testingId.value === row.id) {
     return;
   }
-  if (!row.endpoint) {
-    ElMessage.warning('该连接未配置连接地址，无法测试');
+  const schema = schemaOf(row.connectorType);
+  const config = row.config ?? {};
+  if (Object.keys(schema).length > 0) {
+    const missing = findMissingRequired(schema, config, true);
+    if (missing) {
+      ElMessage.warning(`该连接未配置${missing}，无法测试`);
+      return;
+    }
+  } else if (Object.keys(config).length === 0) {
+    ElMessage.warning('该连接未配置连接参数，无法测试');
     return;
   }
   testingId.value = row.id;
   try {
     const bo: SysDatabusConnectionBo = { ...row };
     const { data } = await testConnection(bo);
-    ElMessage.success(data || '测试成功');
+    ElMessage.success(testResultMessage(data));
   } catch {
     // 错误提示由 request 拦截器统一处理，此处不重复弹窗
   } finally {
@@ -783,31 +787,6 @@ watch(
   color: var(--el-text-color-secondary);
 }
 
-.mt-meta-secondary {
-  border-top: 1px dashed var(--el-border-color-lighter, #ebeef5);
-  padding-top: 10px;
-}
-
-.mt-meta-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  min-width: 0;
-
-  .el-icon {
-    font-size: 13px;
-    flex-shrink: 0;
-  }
-
-  > span:not(.el-icon) {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-
 .mt-badge {
   display: inline-block;
   padding: 2px 10px;
@@ -816,13 +795,6 @@ watch(
   font-weight: 500;
   background: rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.1);
   color: var(--el-color-primary);
-}
-
-.mt-range {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  font-family: 'JetBrains Mono', Consolas, monospace;
 }
 
 .mt-actions {

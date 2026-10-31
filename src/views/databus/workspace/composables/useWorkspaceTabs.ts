@@ -3,8 +3,10 @@
  * 多 kind 同容器混排，key 规则见 workbench-unification.md §2.1：
  *   canvas:{chainId}（同链单例）/ component:detail:{code}
  *   / component:form:{id}（新建临时 component:form:new）/ component:changes:{id}
- *   / market（物料市场，全局单例）/ market-item:{id}（物料详情，同 id 单例）
+ *   / market（物料市场，全局单例）/ market:manage（物料管理，全局单例，视角存 tab.marketScope）
+ *   / market-item:{id}（物料详情，同 id 单例）
  *   / market-review:{id}（物料审核，同 id 单例，2026-10-24 审核详情弹窗 tab 化）
+ *   / connector-pkg:{type}:{version}（连接器包查看，同 type+version 单例，2026-10-29 「看包」弹窗 tab 化）
  * 会话落 localStorage：刷新恢复上次打开的 tab（无历史=空白工作台）；重复打开只聚焦。
  */
 import { watch } from 'vue';
@@ -12,12 +14,18 @@ import modal from '@/plugins/modal';
 import { usePersisted } from '@/views/databus/workbench/composables/usePersisted';
 import { useWorkbenchTabs } from '@/views/databus/workbench/composables/useWorkbenchTabs';
 import type { ComponentRegistryRow } from '@/views/databus/component/model/registry';
-import type { CreateFileType, FormPreset, WorkspaceTab } from '../workbench.types';
+import type { CreateFileType, FormPreset, MarketScope, WorkspaceTab } from '../workbench.types';
+import { versionLabel } from '../market/marketDisplay';
 
 /** 新建组件 tab 的保留 key（保存成功后 adoptNewForm 转正） */
 export const NEW_FORM_KEY = 'component:form:new';
 /** 物料市场 tab 单例 key */
 export const MARKET_TAB_KEY = 'market';
+/**
+ * 物料管理 tab 单例 key（2026-10-30）。不带视角后缀：三个视角共用**一个** tab，
+ * 视角记在 tab.marketScope 上——裂成三个 tab 会让 tab 条膨胀，且三视角本就共享同一份 pane 数据。
+ */
+export const MARKET_MANAGE_KEY = 'market:manage';
 /** 新建向导 tab 单例 key（四 filetype 分段共用一个 tab；tab 本身 v-show 保活即草稿保留，切段时 CreatePane 弹弃稿确认） */
 export const CREATE_TAB_KEY = 'create';
 
@@ -46,6 +54,10 @@ export function marketItemKey(itemId: number | string): string {
 /** 物料审核 tab key（同 id 单例；审核详情弹窗 tab 化 2026-10-24） */
 export function marketReviewKey(itemId: number | string): string {
   return `market-review:${itemId}`;
+}
+/** 连接器包查看 tab key（同 type+version 单例；「看包」弹窗 tab 化 2026-10-29） */
+export function connectorPackageKey(type: string, version: string): string {
+  return `connector-pkg:${type}:${version}`;
 }
 export function connectionFormKey(id: number | 'new'): string {
   return id === 'new' ? 'connection:form:new' : `connection:form:${id}`;
@@ -131,6 +143,35 @@ export function useWorkspaceTabs() {
     });
   }
 
+  /**
+   * 打开/聚焦物料管理 tab（全局单例，2026-10-30 由 MarketPane 内部 view/scope 双 ref 提为独立 tab）。
+   * 带 scope ＝「聚焦并切视角」（市场卡片「已上架」/ 空态「去上架」走这条）；
+   * 不带则沿用 tab 上已落盘的视角（刷新后 pane 从 tab.marketScope 恢复现场）。
+   */
+  function openMarketManage(scope?: MarketScope): string {
+    const existed = wb.tabs.value.find((t) => t.key === MARKET_MANAGE_KEY);
+    // wb.open 对已存在 tab 只刷 title，故 scope 须就地写回，否则「已上架」入口点了没反应
+    if (existed && scope) {
+      existed.marketScope = scope;
+    }
+    return wb.open({
+      key: MARKET_MANAGE_KEY,
+      kind: 'market-manage',
+      title: '物料管理',
+      code: '',
+      marketScope: scope ?? existed?.marketScope ?? 'installed',
+      dirty: false
+    });
+  }
+
+  /** pane 内切视角 → 回写 tab 字段（usePersisted 的 deep watch 自动落盘） */
+  function setMarketScope(scope: MarketScope): void {
+    const tab = wb.tabs.value.find((t) => t.key === MARKET_MANAGE_KEY);
+    if (tab) {
+      tab.marketScope = scope;
+    }
+  }
+
   /** 打开/聚焦物料详情 tab（同 id 单例；pane 自取数，不走台账） */
   function openMarketDetail(itemId: number | string, title: string): string {
     const id = String(itemId); // 雪花 id 超 2^53，勿转 Number（会丢精度）
@@ -163,6 +204,26 @@ export function useWorkspaceTabs() {
       title,
       code: '',
       marketReviewItemId: id,
+      dirty: false
+    });
+  }
+
+  /**
+   * 打开/聚焦连接器包查看 tab（kind connector-package，同 type+version 单例）。
+   * 身份是二元组：同一连接器的不同版本各占一个 tab，标题带版本以免 tab 条上分不清。
+   * pane 自取数（inspectConnectorPackage），刷新后单独恢复该 tab 也能渲染。
+   * source 透传给 pane：DEV 行没有 zip（装载目录里跑的是 target/classes），pane 据此切到目录装载视图。
+   */
+  function openConnectorPackage(type: string, version: string, source?: string): string {
+    const key = connectorPackageKey(type, version);
+    return wb.open({
+      key,
+      kind: 'connector-package',
+      title: `${type} · ${versionLabel(version)}`,
+      code: '',
+      connectorType: type,
+      connectorVersion: version,
+      connectorSource: source,
       dirty: false
     });
   }
@@ -416,8 +477,11 @@ export function useWorkspaceTabs() {
     refreshTitleIfOpen,
     openDetail,
     openMarket,
+    openMarketManage,
+    setMarketScope,
     openMarketDetail,
     openMarketReview,
+    openConnectorPackage,
     openForm,
     openCreate,
     openChanges,

@@ -86,8 +86,24 @@
             @dirty-change="(dirty: boolean) => emit('dirty-change', tab.key, dirty)"
             @filetype-change="(filetype: CreateFileType) => emit('create-filetype', tab, filetype)"
           />
+          <!-- 物料市场 tab：纯浏览（安装/详情/启停本地副本）；治理与上架在 market-manage tab -->
           <MarketPane
             v-else-if="tab.kind === 'market'"
+            :refresh-token="refreshTokens[tab.key] ?? 0"
+            @open-local="
+              (id: string | number, type: 'COMPONENT' | 'CHAIN', title: string) =>
+                emit('market-open', id, type, title)
+            "
+            @installed="emit('market-installed')"
+            @open-detail="(it: DatabusMarketItemVo) => emit('market-open-detail', it.id, it.name)"
+            @open-manage="(s?: MarketScope) => emit('market-open-manage', s)"
+          />
+          <!-- 物料管理 tab（2026-10-30 由 MarketPane 内部 view/scope 提为独立 tab）：
+               已装管理 / 我的上架 / 待审核三视角 + 连接器治理 + 上传包；
+               视角记在 tab.marketScope 上随会话落盘，刷新后原地恢复 -->
+          <MarketManagePane
+            v-else-if="tab.kind === 'market-manage'"
+            :scope="tab.marketScope"
             :refresh-token="refreshTokens[tab.key] ?? 0"
             @open-local="
               (id: string | number, type: 'COMPONENT' | 'CHAIN', title: string) =>
@@ -99,6 +115,12 @@
             @open-review="
               (id: string | number, title: string) => emit('market-open-review', id, title)
             "
+            @open-connector-package="
+              (type: string, version: string, source?: string) =>
+                emit('connector-package-open', type, version, source)
+            "
+            @scope-change="(s: MarketScope) => emit('market-manage-scope', s)"
+            @back-to-market="emit('market-open-market')"
           />
           <!-- 物料审核 tab（2026-10-24 审核详情弹窗 tab 化）：审完关 tab 并刷市场 pane 冒泡；
                「查看」同市场 pane 口径（链开画布、组件开详情） -->
@@ -111,6 +133,9 @@
             "
             @reviewed="emit('market-reviewed', tab)"
             @dep-reviewed="emit('market-dep-reviewed')"
+            @open-connector-package="
+              (type: string, version: string) => emit('connector-package-open', type, version)
+            "
           />
           <MarketItemPane
             v-else-if="tab.kind === 'market-detail' && tab.marketItemId != null"
@@ -121,9 +146,17 @@
             "
             @installed="emit('market-installed')"
             @open-market="emit('market-open-market')"
+            @open-manage="emit('market-open-manage', 'mine')"
             @open-source-canvas="
               (chainId: string | number, title: string) => emit('market-open-source-canvas', chainId, title)
             "
+          />
+          <!-- 连接器包查看 tab（2026-10-29 「看包」弹窗 tab 化）：身份是 type+version 二元组，pane 自取数 -->
+          <ConnectorPackagePane
+            v-else-if="tab.kind === 'connector-package' && tab.connectorType && tab.connectorVersion"
+            :type="tab.connectorType"
+            :version="tab.connectorVersion"
+            :source="tab.connectorSource"
           />
           <!-- 管理页 pane（2026-10-20 tab 化，§10 步骤2）：连接列表 / 连接对象 -->
           <ConnectionPane
@@ -185,7 +218,7 @@ import { useLucideSubset } from '@/views/databus/workbench/composables/useLucide
 import ChainCanvasPane from '@/views/databus/editor/ChainCanvasPane.vue';
 import type { ComponentRegistryRow } from '@/views/databus/component/model/registry';
 import type { DatabusMarketItemVo } from '@/api/databus/market/types';
-import type { ComponentSaved, ConnectionSaved, CreateFileType, CreateSavedPayload, TabMenuCommand, WorkspaceTab, WorkspaceTabKind } from '../workbench.types';
+import type { ComponentSaved, ConnectionSaved, CreateFileType, CreateSavedPayload, MarketScope, TabMenuCommand, WorkspaceTab, WorkspaceTabKind } from '../workbench.types';
 import DetailPane from './DetailPane.vue';
 import FormPane from './FormPane.vue';
 import CreatePane from './CreatePane.vue';
@@ -197,8 +230,10 @@ import AlertPane from './AlertPane.vue';
 import SettingsPane from './SettingsPane.vue';
 import TabContextMenu from './TabContextMenu.vue';
 import MarketPane from '../market/MarketPane.vue';
+import MarketManagePane from '../market/MarketManagePane.vue';
 import MarketItemPane from '../market/MarketItemPane.vue';
 import MarketReviewTab from '../market/MarketReviewTab.vue';
+import ConnectorPackagePane from '../market/ConnectorPackagePane.vue';
 
 defineOptions({ name: 'WorkspaceWorkPanel' });
 
@@ -209,9 +244,13 @@ const TAB_ICON: Record<WorkspaceTabKind, string> = {
   form: 'lucide:file-pen',
   changes: 'lucide:file-diff',
   market: 'lucide:store',
+  // 物料管理（2026-10-30 由 MarketPane 内部视图提为独立 tab）；与全局设置 tab 同图标，两者极少同屏
+  'market-manage': 'lucide:settings',
   'market-detail': 'lucide:package',
   // 物料审核（2026-10-24 审核详情弹窗 tab 化）
   'market-review': 'lucide:file-check',
+  // 连接器包查看（2026-10-29 「看包」弹窗 tab 化）；与 market-detail 的 package 错开，同屏两 tab 可辨
+  'connector-package': 'lucide:box',
   // 管理页 tab（2026-10-20 扩展，§4.1）；图标一律取自 lucide 子集现有 key（见 useLucideSubset）
   'connection-list': 'lucide:external-link',
   'connection-form': 'lucide:file-pen',
@@ -257,6 +296,8 @@ const emit = defineEmits<{
   (e: 'market-open-detail', itemId: string | number, title: string): void;
   /** 审核详情「详情」按钮：打开物料审核 tab（kind market-review，同 id 单例） */
   (e: 'market-open-review', itemId: string | number, title: string): void;
+  /** 「查看」连接器包：打开包查看 tab（kind connector-package，同 type+version 单例） */
+  (e: 'connector-package-open', type: string, version: string, source?: string): void;
   /** 物料审核完成（通过/驳回成功）：宿主关审核 tab 并刷新市场 pane 待审核冒泡 */
   (e: 'market-reviewed', tab: WorkspaceTab): void;
   /** 依赖单据就地审完（闭包联审）：审核 tab 不关，宿主只刷新市场 pane 待审核冒泡 */
@@ -264,6 +305,10 @@ const emit = defineEmits<{
   /** P1 看得见：审核「查看」——链按 sourceId 开画布、组件按 code 开详情（宿主分发，市场审核 tab 共用） */
   (e: 'market-open-source', resourceType: 'COMPONENT' | 'CHAIN', sourceId: string | number, code: string | null, title: string): void;
   (e: 'market-open-market'): void;
+  /** 去物料管理 tab（kind market-manage，全局单例）；带 scope＝顺便切到那个视角 */
+  (e: 'market-open-manage', scope?: MarketScope): void;
+  /** 管理 pane 内切视角：宿主回写 tab.marketScope（随会话落盘，刷新后原地恢复） */
+  (e: 'market-manage-scope', scope: MarketScope): void;
   /** 市场物料详情「实现」页：打开源链路只读画布（未安装也能看编排） */
   (e: 'market-open-source-canvas', chainId: string | number, title: string): void;
   /** 连接管理：列表点卡片/新增开新对象 tab；对象保存回报宿主（关 tab / 刷列表 / 改标题） */

@@ -3,7 +3,7 @@
   市场上架表单的「源资源」专用：resourceType 切换即换数据源与过滤口径——
   - COMPONENT：启用件（status='0'），归属校验在服务端，前端不预过滤；
   - CHAIN：已发布非模板件（status='1' & isTemplate='0'）；
-  - CONNECTOR：连接器 def 行（包上传/市场来源，builtin=false；内置件无 def 行不可上架）。
+  - CONNECTOR：连接器 def 行（包上传/市场来源，零内置；开发目录装载的行不可上架，不进选项）。
   视觉范式融合：ChainSelect 的 el-select+状态徽标 × CmpPickerCard 的彩色图标。
   类型切换时清值重拉（各型 id 语义不同，旧值无意义）；弹窗复用场景由外层 open 时调 refresh()。
 -->
@@ -99,10 +99,11 @@ const CHAIN_STATUS_TAG: Record<string, 'success' | 'info' | 'warning'> = {
   '2': 'warning'
 };
 /** 连接器运行层状态 → 徽标（同 MarketPane 连接器卡片口径） */
-const CONNECTOR_STATUS_TEXT: Record<string, string> = { ENABLED: '已启用', SUSPENDED: '已暂停', DEPRECATED: '已废弃' };
+const CONNECTOR_STATUS_TEXT: Record<string, string> = { INACTIVE: '未启用', ENABLED: '已启用', DISABLED: '已禁用', DEPRECATED: '已废弃' };
 const CONNECTOR_STATUS_TAG: Record<string, 'success' | 'info' | 'warning'> = {
+  INACTIVE: 'info',
   ENABLED: 'success',
-  SUSPENDED: 'warning',
+  DISABLED: 'warning',
   DEPRECATED: 'info'
 };
 
@@ -124,10 +125,12 @@ async function load(): Promise<void> {
         statusType: CHAIN_STATUS_TAG[c.status ?? ''] ?? 'info'
       }));
     } else if (props.resourceType === 'CONNECTOR') {
-      // 连接器（§15.7）：选 def 行（sourceId＝def.id）；内置件无 def 行不可上架
+      // 连接器（§15.7）：选 def 行（sourceId＝def.id）
+      // 开发目录装载的行（source='DEV'）不进选项：它的版本固定是 dev，不对应一份确定的包内容，
+      // 审核人没有可核对的对象，后端提交上架也会拒（MarketPublishService），这里直接不给选
       const { data } = await listConnectorDefs();
       options.value = (data ?? [])
-        .filter((d: ConnectorDefVo) => !d.builtin && d.id != null)
+        .filter((d: ConnectorDefVo) => d.id != null && d.source !== 'DEV')
         .map((d: ConnectorDefVo) => ({
           id: d.id as string | number,
           code: d.type,

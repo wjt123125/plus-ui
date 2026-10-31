@@ -42,7 +42,8 @@
     </div>
 
     <div class="res-tree__filter">
-      <el-input v-model="keyword" placeholder="搜索名称 / 编码 / 标签" clearable size="small">
+      <!-- 默认尺寸（32px）：small 的 24px 矮框在整棵资源树旁显得过小、不搭 -->
+      <el-input v-model="keyword" placeholder="搜索名称 / 编码 / 标签" clearable>
         <template #prefix><SvgIcon icon-class="lucide:search" /></template>
       </el-input>
     </div>

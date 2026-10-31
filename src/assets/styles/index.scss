@@ -22,6 +22,11 @@
 @use './components/query-form';
 @use './components/search-panel';
 @use './components/databus-tabs';
+@use './components/databus-market';
 
 @use './vendors/element-plus/index' as element-custom;
+
+// databus 模块样式：全部选择器限定在 .db-app / .db-popper 内，不影响其他模块
+@use './databus/index' as databus;
+
 @use 'animate.css';

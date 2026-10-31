@@ -89,7 +89,7 @@ export function addComponent(data: DatabusComponentForm) {
 }
 
 /**
- * 修改自定义组件
+ * 修改自定义组件（不含启停状态：status 由后端忽略，启停走 toggleComponent）
  * PUT /databus/component（权限 databus:component:edit）
  */
 export function updateComponent(data: DatabusComponentForm) {
@@ -97,6 +97,18 @@ export function updateComponent(data: DatabusComponentForm) {
     url: '/databus/component',
     method: 'put',
     data
+  });
+}
+
+/**
+ * 启停自定义组件（治理专属，与「修改组件」拆权限：有 edit 的操作员停不了物料投放）
+ * PUT /databus/component/{id}/status?status=0|1（权限 databus:component:toggle）
+ */
+export function toggleComponent(id: number | string, status: '0' | '1') {
+  return request({
+    url: `/databus/component/${id}/status`,
+    method: 'put',
+    params: { status }
   });
 }
 

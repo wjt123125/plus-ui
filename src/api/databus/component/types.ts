@@ -105,6 +105,12 @@ export interface PropSchema {
   valueWidget?: WidgetKind | null;
   /** KEY_VALUE_MAP 值的表达式角色 */
   valueExprRole?: ExprRole | null;
+  /**
+   * 需要的连接器能力族（仅 widget=CONNECTION_SELECT 时有值，后端 PropSchema.connectorFamily）。
+   * 存的是**族**不是具体 type：`jdbc` 覆盖 jdbc-postgresql / jdbc-oracle …，`bpmHttp` 是单成员族。
+   * ConnectionSelect 据此过滤连接下拉；为空表示不过滤（该字段不挑连接器）。
+   */
+  connectorFamily?: string | null;
 }
 
 /** schema 体 */
