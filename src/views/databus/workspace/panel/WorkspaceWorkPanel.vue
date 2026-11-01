@@ -133,6 +133,7 @@
             @installed="emit('market-installed')"
             @open-detail="(it: DatabusMarketItemVo) => emit('market-open-detail', it.id, it.name)"
             @open-manage="(s?: MarketScope) => emit('market-open-manage', s)"
+            @open-publish="emit('market-open-publish', 'market')"
           />
           <!-- 物料管理 tab（2026-10-30 由 MarketPane 内部 view/scope 提为独立 tab）：
                已装管理 / 我的上架 / 待审核三视角 + 连接器治理 + 上传包；
@@ -157,6 +158,15 @@
             "
             @scope-change="(s: MarketScope) => emit('market-manage-scope', s)"
             @back-to-market="emit('market-open-market')"
+            @open-publish="emit('market-open-publish', 'manage')"
+          />
+          <!-- 物料上架 tab（2026-11-01 由管理 pane 内部弹窗提为独立 tab）：
+               提交后原地不动＋内容保留；返回钮按来路（tab.publishFrom）回跳市场/管理 -->
+          <MarketPublishPane
+            v-else-if="tab.kind === 'market-publish'"
+            :from="tab.publishFrom"
+            @back="emit('market-publish-back', tab)"
+            @published="emit('market-published')"
           />
           <!-- 物料审核 tab（2026-10-24 审核详情弹窗 tab 化）：审完关 tab 并刷市场 pane 冒泡；
                「查看」同市场 pane 口径（链开画布、组件开详情） -->
@@ -269,6 +279,7 @@ import SettingsPane from './SettingsPane.vue';
 import TabContextMenu from './TabContextMenu.vue';
 import MarketPane from '../market/MarketPane.vue';
 import MarketManagePane from '../market/MarketManagePane.vue';
+import MarketPublishPane from '../market/MarketPublishPane.vue';
 import MarketItemPane from '../market/MarketItemPane.vue';
 import MarketReviewTab from '../market/MarketReviewTab.vue';
 import ConnectorPackagePane from '../market/ConnectorPackagePane.vue';
@@ -286,8 +297,11 @@ const TAB_META: Record<WorkspaceTabKind, { icon: string; color: string }> = {
   form: { icon: 'lucide:file-pen', color: '#2DD288' },
   changes: { icon: 'lucide:file-diff', color: '#F59E0B' },
   market: { icon: 'lucide:store', color: '#4F8EF7' },
-  // 物料管理（2026-10-30 由 MarketPane 内部视图提为独立 tab）；与全局设置 tab 同图标同色，两者极少同屏
-  'market-manage': { icon: 'lucide:settings', color: '#2DD288' },
+  // 物料管理（2026-10-30 由 MarketPane 内部视图提为独立 tab）；2026-11-01 进 launcher 清单后
+  // 与「设置」入口在菜单/空态卡必同屏，故换独立图标色（对齐 launcherEntries 同入口同色口径）
+  'market-manage': { icon: 'lucide:boxes', color: '#F59E0B' },
+  // 物料上架（2026-11-01 由管理 pane 内部弹窗提为独立 tab）；send＝提交进待审的动作语义
+  'market-publish': { icon: 'lucide:send', color: '#2DD288' },
   'market-detail': { icon: 'lucide:package', color: '#22B8CF' },
   // 物料审核（2026-10-24 审核详情弹窗 tab 化）
   'market-review': { icon: 'lucide:file-check', color: '#F59E0B' },
@@ -353,6 +367,12 @@ const emit = defineEmits<{
   (e: 'market-open-manage', scope?: MarketScope): void;
   /** 管理 pane 内切视角：宿主回写 tab.marketScope（随会话落盘，刷新后原地恢复） */
   (e: 'market-manage-scope', scope: MarketScope): void;
+  /** 上架入口（管理页头/我的上架空态/市场空态）：开物料上架 tab（kind market-publish，全局单例）；from＝来路（返回钮回跳用） */
+  (e: 'market-open-publish', from: 'market' | 'manage'): void;
+  /** 上架 tab 返回钮：宿主按来路聚焦市场/管理 tab（上架 tab 不关，表单内容保留） */
+  (e: 'market-publish-back', tab: WorkspaceTab): void;
+  /** 上架 tab 提交成功：宿主广播市场刷新令牌（市场列表与管理 pane「我的上架」重取） */
+  (e: 'market-published'): void;
   /** 市场物料详情「实现」页：打开源链路只读画布（未安装也能看编排） */
   (e: 'market-open-source-canvas', chainId: string | number, title: string): void;
   /** 连接管理：列表点卡片/新增开新对象 tab；对象保存回报宿主（关 tab / 刷列表 / 改标题） */
@@ -681,6 +701,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
+  /* 中栏面板底色＝白（--el-bg-color），tab 条与内容区都吃这一层。
+     不要换成 --db-bg（#f2f2f7）：会从白变淡灰，2026-11-01 用户反馈「颜色不正」（decisions.md §十六） */
   background: var(--el-bg-color, #fff);
 }
 
@@ -695,8 +717,8 @@ onBeforeUnmount(() => {
   padding: 0 4px;
   border-radius: var(--app-radius-lg, 14px);
   background: var(--wb-tab-track-bg);
-  backdrop-filter: blur(16px) saturate(1.6);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  /* 原先这里挂着 backdrop-filter，但它的 backdrop 是父面板的不透明白底——糊纯色等于没糊（decisions.md §十六-1/5）。
+     等 tab 条真做吸顶改造、背后有内容流过了再加回来。 */
 }
 
 .ws-panel__tabs {
@@ -855,11 +877,12 @@ onBeforeUnmount(() => {
 
 /*
   tab 条「+」按钮本体：定位与钉边由外层壳承担，这里只管方块视觉。
-  底色必须不透明（--wb-tab-add-bg 为轨道色叠在页面底上的实色），
-  否则滚到加号底下的 tab 文字会透出来；左缘 12px 渐隐做截断层次。
+  底色与轨道同构（轨道色叠在面板底上，两层与 .ws-panel__strip 完全一致），所以视觉上
+  看不出一个方块；最底层是不透明面板色，滚到加号底下的 tab 仍然被挡住。
+  （旧版用比轨道亮一档的实色 + 12px 左渐隐，末个 tab 与「+」之间留出一条灰块显得脏，
+   2026-11-01 用户反馈后改为同色、去掉渐隐。）
 */
 .wb-tab-add {
-  /* 左缘渐隐伪元素以按钮自身为锚，不随 sticky 外壳漂移 */
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -870,29 +893,19 @@ onBeforeUnmount(() => {
   border: 0;
   /* 方形小圆角（Trae 同款）：24px 见方配 6px，再大就成圆点/胶囊 */
   border-radius: 6px;
-  background: var(--wb-tab-add-bg, var(--el-bg-color, #fff));
+  background:
+    linear-gradient(var(--wb-tab-track-bg), var(--wb-tab-track-bg)),
+    var(--el-bg-color, #fff);
   color: var(--el-text-color-secondary);
   cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    right: 100%;
-    width: 12px;
-    pointer-events: none;
-    background: linear-gradient(to right, transparent, var(--wb-tab-add-bg, var(--el-bg-color, #fff)));
-  }
+  transition: color 0.15s ease;
 
   &:hover {
     /* 半透明叠加层压在不透明底上：保住轨道质感，又不会让底下滚过的 tab 透出来 */
     background:
       linear-gradient(var(--wb-tab-hover-bg), var(--wb-tab-hover-bg)),
-      var(--wb-tab-add-bg, var(--el-bg-color, #fff));
+      linear-gradient(var(--wb-tab-track-bg), var(--wb-tab-track-bg)),
+      var(--el-bg-color, #fff);
     color: var(--el-text-color-primary, #1d2129);
   }
 
@@ -935,6 +948,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   position: relative;
+  /* 不再自铺底色：吃父层 .ws-panel 的白底 */
 }
 
 .ws-panel__pane {

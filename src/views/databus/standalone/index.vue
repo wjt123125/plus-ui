@@ -7,7 +7,8 @@
   同源同站，localStorage token 自动共享，新窗打开不要求重新登录。
 -->
 <template>
-  <div class="standalone-shell">
+  <!-- db-app：databus 令牌作用域根（_tokens.scss 铁律），平底色由此统一铺，同 execution/index.vue -->
+  <div class="standalone-shell db-app">
     <header class="standalone-toolbar">
       <button class="standalone-back" @click="goWorkspace">
         <el-icon><Back /></el-icon>
@@ -39,7 +40,8 @@ function goWorkspace() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--el-bg-color, #fff);
+  /* 不写 background：本节点自身就是 .db-app 根，平底色由 _tokens.scss 统一铺，
+     scoped 权重更高，写了会盖掉平底色（decisions.md §十六） */
 }
 
 .standalone-toolbar {

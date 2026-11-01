@@ -92,44 +92,54 @@
             </button>
           </div>
 
-          <!-- 记录表：首屏用骨架屏占位，翻页/筛选仍走表格遮罩 loading -->
-          <div class="table-card">
-            <div v-if="loading && recordList.length === 0" class="table-skeleton">
+          <!-- 行列表（连接器管理同款）替代 el-table：一次执行一行，右侧起止时间与耗时，行尾详情/重跑。
+               首屏用骨架屏占位，翻页/筛选仍走容器遮罩 loading -->
+          <div v-loading="loading && recordList.length > 0" class="list-body">
+            <div v-if="loading && recordList.length === 0" class="list-skeleton">
               <el-skeleton animated :rows="9" />
             </div>
-            <el-table v-else v-loading="loading" :data="recordList" @row-click="openDetail">
-              <el-table-column prop="chainCode" label="链路编码" min-width="180" show-overflow-tooltip>
-                <template #default="{ row }">
-                  <span class="mono">#{{ row.chainCode }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="状态" width="92" align="center">
-                <template #default="{ row }">
-                  <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="开始时间" width="172" class-name="num-cell">
-                <template #default="{ row }">{{ formatTime(row.startTime) }}</template>
-              </el-table-column>
-              <el-table-column label="结束时间" width="172" class-name="num-cell">
-                <template #default="{ row }">{{ formatTime(row.endTime) }}</template>
-              </el-table-column>
-              <el-table-column label="总耗时" width="100" align="right" class-name="num-cell">
-                <template #default="{ row }">{{ formatDuration(row.duration) }}</template>
-              </el-table-column>
-              <el-table-column prop="errorMsg" label="错误信息" min-width="200" show-overflow-tooltip>
-                <template #default="{ row }">
-                  <span :class="{ 'error-text': row.errorMsg }">{{ row.errorMsg || '-' }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="120" align="center" fixed="right">
-                <template #default="{ row }">
+            <el-empty
+              v-else-if="recordList.length === 0"
+              description="暂无执行记录（手动执行一条已发布链路产生首条记录）"
+              :image-size="80"
+            />
+            <ul v-else class="db-list">
+              <li
+                v-for="row in recordList"
+                :key="String(row.id)"
+                class="db-row exec-row"
+                @click="openDetail(row)"
+              >
+                <Icon
+                  :icon="statusIcon(row.status)"
+                  class="db-row__icon exec-icon"
+                  :class="statusIconClass(row.status)"
+                />
+                <div class="db-row__meta">
+                  <div class="db-row__line">
+                    <span class="db-row__name db-mono">#{{ row.chainCode }}</span>
+                    <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+                  </div>
+                  <div
+                    class="db-row__summary"
+                    :class="{ 'exec-error': !!row.errorMsg }"
+                    :title="row.errorMsg || undefined"
+                  >
+                    {{ row.errorMsg || '—' }}
+                  </div>
+                </div>
+                <div class="db-row__aside db-mono">
+                  <span>开始 {{ formatTime(row.startTime) }}</span>
+                  <span>结束 {{ formatTime(row.endTime) }} · {{ formatDuration(row.duration) }}</span>
+                </div>
+                <!-- ops 区阻断冒泡：行点击=详情，行内按钮各管各的 -->
+                <div class="db-row__ops" @click.stop>
                   <el-button
                     v-hasPermi="['databus:execution:query']"
                     link
                     type="primary"
                     size="small"
-                    @click.stop="openDetail(row as DatabusExecutionVo)"
+                    @click="openDetail(row)"
                   >
                     详情
                   </el-button>
@@ -138,16 +148,13 @@
                     link
                     type="success"
                     size="small"
-                    @click.stop="handleRerunRow(row as DatabusExecutionVo)"
+                    @click="handleRerunRow(row)"
                   >
                     重跑
                   </el-button>
-                </template>
-              </el-table-column>
-              <template #empty>
-                <el-empty description="暂无执行记录（手动执行一条已发布链路产生首条记录）" />
-              </template>
-            </el-table>
+                </div>
+              </li>
+            </ul>
           </div>
 
           <pagination
@@ -179,6 +186,7 @@
 
 <script setup lang="ts" name="ExecutionPane">
 import { ArrowLeft, Delete, VideoPlay } from '@element-plus/icons-vue';
+import { Icon } from '@iconify/vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { cleanupExecution, listExecution, rerunExecution } from '@/api/databus/execution';
 import type {
@@ -190,7 +198,11 @@ import type {
 import { useChainOptions } from '@/views/databus/editor/composables/useChainOptions';
 import { useLoading } from '@/hooks/async/useLoading';
 import ManualExecuteDialog from '@/views/databus/execution/ManualExecuteDialog.vue';
+import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import ExecutionRecordBody from './ExecutionRecordBody.vue';
+
+/* 行图标走离线 lucide 子集，否则内网环境图标空白（详见 useLucideSubset 注释） */
+useLucideSubset();
 
 const props = defineProps<{
   /** 记录视图主键（雪花 id 超 2^53，故与 VO 同宽）；embedded 时忽略，改由内部状态驱动 */
@@ -416,6 +428,19 @@ const statusLabel = (status: string) => {
   return status;
 };
 
+/** 行首状态图标（子集见 useLucideSubset，勿写未注入的图标名） */
+const statusIcon = (status: string) => {
+  if (status === 'SUCCESS') return 'lucide:circle-check';
+  if (status === 'FAILED') return 'lucide:circle-x';
+  return 'lucide:alarm-clock';
+};
+
+const statusIconClass = (status: string) => {
+  if (status === 'SUCCESS') return 'is-ok';
+  if (status === 'FAILED') return 'is-bad';
+  return 'is-running';
+};
+
 const formatTime = (t?: string | null) => {
   if (!t) return '-';
   return t.replace('T', ' ').slice(0, 19);
@@ -453,7 +478,8 @@ watch(
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--el-bg-color, #fff);
+  /* 透明：pane 根铺实色白会把上层底色盖死，玻璃采样就只剩白 */
+  background: transparent;
 }
 
 /* 列表视图：滚动区吃满 pane 高度（内层滚动，外层不出现双滚动条） */
@@ -468,7 +494,8 @@ watch(
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  background: var(--el-fill-color-light, #f5f7fa);
+  /* 透明：底色由上层统一铺（_tokens.scss 的 --db-bg） */
+  background: transparent;
 }
 
 /* 记录视图：正文（ExecutionRecordBody）自吃剩余高度并内层滚动 */
@@ -603,11 +630,26 @@ watch(
   }
 }
 
+/* 吸顶玻璃筛选条（decisions.md §十六-4 试点）：滚动容器就是外层 .exec-list__scroll，
+   列表行从这条玻璃下面流过——背后有内容在动，backdrop-filter 才看得出材质。
+   负 margin 抵掉 .db-pane-inner 的 gap 与左右 24px 内边距做成通栏，上下再用等量 padding 补回间距，
+   否则行会在吸顶条四周的缝隙里露头。 */
 .filter-bar {
+  position: sticky;
+  top: 0;
+  /* 高于行 hover 的 z-index: 5（_primitives.scss 浮起规则），不然浮起的行会盖到吸顶条上 */
+  z-index: 10;
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+  margin: -16px -24px;
+  padding: 16px 24px;
+  /* 底用卡片玻璃色（亮色即 72% 白），不要用 --db-bg #f2f2f7：面板本身已垫白，
+     灰底罩在白面板上会浮出一条淡灰带（2026-11-01 用户反馈「颜色不正」） */
+  background: var(--db-bg-card);
+  backdrop-filter: saturate(180%) blur(16px);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
 }
 
 .chain-select {
@@ -683,28 +725,48 @@ watch(
   }
 }
 
-.table-card {
-  background: var(--app-surface-bg, #fff);
-  border: 1px solid var(--app-surface-border, #e5e7eb);
-  border-radius: var(--app-radius-lg, 14px);
-  padding: 8px;
+/* 列表区：一层框原则——框由 .list-body 提供，列表自身不画框（见 _primitives.scss .db-list）。
+   行 padding 与容器左缘即 16px，无需再补偿。
+   框与「物料管理-连接器管理」的 .mkt__list 完全同一套：1px 实边 + 10px 圆角 + overflow 裁角。
+   不要改成 0.5px 内阴影发丝线：容器是纯白、页面是浅灰，0.5px 在普通屏上被四舍五入，
+   会出现"有的边有、有的边没有"的残框；而且行分隔线是 1px，外框比内线还细也不成体统。 */
+.list-body {
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--db-r-control, 10px);
+  overflow: hidden;
 }
 
-.table-skeleton {
-  padding: 16px 16px 8px;
+.list-skeleton {
+  padding: 16px;
 }
 
-/* 时间/耗时等数字列：等宽数字，翻页时列宽不抖动 */
-:deep(.num-cell) {
-  font-variant-numeric: tabular-nums;
+/* 整行可点＝打开记录详情（唯一入口）；行内 ops 区 @click.stop 各自处理 */
+.exec-row {
+  cursor: pointer;
 }
 
-.mono {
-  font-family: 'JetBrains Mono', Consolas, monospace;
-  font-size: 12px;
+.exec-icon.is-ok {
+  color: var(--el-color-success);
 }
 
-.error-text {
+.exec-icon.is-bad {
   color: var(--el-color-danger);
+}
+
+.exec-icon.is-running {
+  color: var(--el-color-warning);
+}
+
+/* 错误摘要：失败行是这条记录最要紧的信息，压过副标题的中性色 */
+.db-row__summary.exec-error {
+  color: var(--el-color-danger);
+}
+
+.db-row__ops {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 </style>

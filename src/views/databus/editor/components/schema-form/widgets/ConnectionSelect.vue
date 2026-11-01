@@ -8,6 +8,7 @@
     :placeholder="placeholder || '请选择连接'"
     clearable
     filterable
+    popper-class="db-select-popper"
     style="width: 100%"
     @update:model-value="emit('update:modelValue', $event)"
   >

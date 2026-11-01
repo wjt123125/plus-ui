@@ -68,49 +68,53 @@
           </div>
         </div>
 
-        <div class="table-card">
-          <div v-if="recordLoading && recordList.length === 0" class="table-skeleton">
+        <!-- 行列表（连接器管理同款）替代 el-table：一次告警一行，右侧触发/恢复时间 -->
+        <div v-loading="recordLoading && recordList.length > 0" class="record-body">
+          <div v-if="recordLoading && recordList.length === 0" class="record-skeleton">
             <el-skeleton animated :rows="7" />
           </div>
-          <el-table v-else v-loading="recordLoading" :data="recordList">
-            <el-table-column prop="ruleName" label="规则名称" min-width="150" show-overflow-tooltip />
-            <el-table-column label="目标链路" min-width="140" show-overflow-tooltip>
-              <template #default="{ row }"><span class="mono">#{{ row.chainCode }}</span></template>
-            </el-table-column>
-            <el-table-column label="类型" width="120">
-              <template #default="{ row }">
-                <el-tag size="small" effect="plain">{{ ruleTypeLabel(row.alertType) }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" width="90" align="center">
-              <template #default="{ row }">
-                <el-tag :type="row.status === 'FIRING' ? 'danger' : 'success'" size="small">
-                  {{ row.status === 'FIRING' ? '触发中' : '已恢复' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="message" label="告警摘要" min-width="200" show-overflow-tooltip />
-            <el-table-column label="通知" width="100" align="center">
-              <template #default="{ row }">
-                <el-tooltip
-                  :content="notifyDetailText(row.notifyDetail)"
-                  :disabled="!row.notifyDetail"
-                  placement="top"
-                >
-                  <span :class="notifyCls(row.notifyStatus)">{{ notifyLabel(row.notifyStatus) }}</span>
-                </el-tooltip>
-              </template>
-            </el-table-column>
-            <el-table-column label="触发时间" width="170" class-name="num-cell">
-              <template #default="{ row }">{{ formatTime(row.triggerTime) }}</template>
-            </el-table-column>
-            <el-table-column label="恢复时间" width="170" class-name="num-cell">
-              <template #default="{ row }">{{ formatTime(row.recoverTime) }}</template>
-            </el-table-column>
-            <template #empty>
-              <el-empty description="暂无告警记录（规则命中后产生首条）" />
-            </template>
-          </el-table>
+          <el-empty
+            v-else-if="recordList.length === 0"
+            description="暂无告警记录（规则命中后产生首条）"
+            :image-size="80"
+          />
+          <ul v-else class="db-list">
+            <li v-for="row in recordList" :key="String(row.id)" class="db-row">
+              <Icon
+                icon="lucide:bell"
+                class="db-row__icon record-icon"
+                :class="row.status === 'FIRING' ? 'is-firing' : 'is-recovered'"
+              />
+              <div class="db-row__meta">
+                <div class="db-row__line">
+                  <span class="db-row__name">{{ row.ruleName || '-' }}</span>
+                  <el-tag size="small" effect="plain">{{ ruleTypeLabel(row.alertType) }}</el-tag>
+                  <el-tag size="small" :type="row.status === 'FIRING' ? 'danger' : 'success'">
+                    {{ row.status === 'FIRING' ? '触发中' : '已恢复' }}
+                  </el-tag>
+                  <el-tooltip
+                    v-if="row.notifyStatus"
+                    :content="notifyDetailText(row.notifyDetail)"
+                    :disabled="!row.notifyDetail"
+                    placement="top"
+                  >
+                    <el-tag size="small" effect="plain" :type="notifyTagType(row.notifyStatus)">
+                      {{ notifyLabel(row.notifyStatus) }}
+                    </el-tag>
+                  </el-tooltip>
+                </div>
+                <div class="db-row__summary">
+                  <span class="db-mono">#{{ row.chainCode }}</span>
+                  <span class="record-sep">·</span>
+                  <span :title="row.message || undefined">{{ row.message || '（无摘要）' }}</span>
+                </div>
+              </div>
+              <div class="db-row__aside db-mono">
+                <span>触发 {{ formatTime(row.triggerTime) }}</span>
+                <span :class="{ 'is-pending': !row.recoverTime }">恢复 {{ formatTime(row.recoverTime) }}</span>
+              </div>
+            </li>
+          </ul>
         </div>
 
         <pagination
@@ -127,6 +131,7 @@
 
 <script setup name="AlertPane" lang="ts">
 import { Bell } from '@element-plus/icons-vue';
+import { Icon } from '@iconify/vue';
 import { ElMessage } from 'element-plus';
 import {
   ALERT_NOTIFY_TYPE_OPTIONS,
@@ -140,10 +145,14 @@ import type {
   DatabusAlertRecordVo
 } from '@/api/databus/alert/types';
 import { useLoading } from '@/hooks/async/useLoading';
+import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 
 /**
  * 告警记录 pane：只读历史告警列表（分页/筛选）+ 手动评估。
  */
+
+/* 行图标走离线 lucide 子集，否则内网环境图标空白（详见 useLucideSubset 注释） */
+useLucideSubset();
 
 const STATUS_OPTIONS = [
   { value: '', label: '全部' },
@@ -226,11 +235,12 @@ const notifyLabel = (status?: string | null) => {
   return '-';
 };
 
-const notifyCls = (status?: string | null) => {
-  if (status === 'SUCCESS' || status === 'DISPATCHED') return 'notify-ok';
-  if (status === 'FAILED') return 'notify-bad';
-  if (status === 'PARTIAL') return 'notify-warn';
-  return '';
+/** 通知结果标签色（行列表改用 el-tag，替代原表格里的裸文字着色） */
+const notifyTagType = (status?: string | null): 'success' | 'warning' | 'danger' | 'info' => {
+  if (status === 'SUCCESS' || status === 'DISPATCHED') return 'success';
+  if (status === 'PARTIAL') return 'warning';
+  if (status === 'FAILED') return 'danger';
+  return 'info';
 };
 
 const notifyTypeLabel = (type: string) =>
@@ -267,7 +277,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--el-fill-color-light, #f5f7fa);
+  /* 透明：底色由工作台面板 .ws-panel 统一铺，pane 自身透明（decisions.md §十六） */
+  background: transparent;
 }
 
 .alert-pane__scroll {
@@ -359,35 +370,34 @@ onMounted(() => {
   }
 }
 
-.table-card {
-  background: var(--app-surface-bg, #fff);
-  border: 1px solid var(--app-surface-border, #e5e7eb);
-  border-radius: var(--app-radius-lg, 14px);
-  padding: 8px;
+/* 列表区：一层框原则——框由 .record-body 提供，列表自身不画框（见 _primitives.scss .db-list）。
+   行 padding 与容器左缘即 16px，无需再补偿。
+   框型必须与执行记录的 .list-body / 连接器管理的 .mkt__list 一致：1px 实边 + 10px 圆角。 */
+.record-body {
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--db-r-control, 10px);
+  overflow: hidden;
 }
 
-.table-skeleton {
-  padding: 16px 16px 8px;
+.record-skeleton {
+  padding: 16px;
 }
 
-:deep(.num-cell) {
-  font-variant-numeric: tabular-nums;
+.record-icon.is-firing {
+  color: var(--el-color-danger);
 }
 
-.mono {
-  font-family: 'JetBrains Mono', Consolas, monospace;
-  font-size: 12px;
-}
-
-.notify-ok {
+.record-icon.is-recovered {
   color: var(--el-color-success);
 }
 
-.notify-warn {
-  color: var(--el-color-warning);
+.record-sep {
+  margin: 0 6px;
 }
 
-.notify-bad {
-  color: var(--el-color-danger);
+/* FIRING 尚未收线，恢复时间是占位符 */
+.db-row__aside .is-pending {
+  color: var(--el-text-color-placeholder);
 }
 </style>

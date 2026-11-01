@@ -248,7 +248,8 @@ const ownerTip = (row: { depth?: number | null; ownerChain?: string | null }) =>
   gap: 20px;
   overflow-y: auto;
   padding: 20px 24px 32px;
-  background: var(--el-bg-color, #fff);
+  /* 透明：原为不透明白（中间白层截胡采样的典型，decisions.md §十六-3）；底色由上层统一铺 */
+  background: transparent;
 }
 
 .section {

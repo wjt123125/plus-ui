@@ -11,12 +11,11 @@
   border-radius: var(--db-r-card);
   padding: var(--db-p-lg) var(--db-p-xl);
   box-shadow: var(--db-shadow-sm), inset 0 0 0 0.5px var(--db-rule);
-  transition: transform var(--db-dur-normal) var(--db-spring),
-              box-shadow var(--db-dur-normal) var(--db-spring);
 }
-.db-card--hoverable:hover {
-  transform: scale(1.015);
-  box-shadow: var(--db-shadow-md), inset 0 0 0 0.5px var(--db-rule-strong);
+/* 浮起数值统一走文件末尾的「hover 浮起」规则；卡片体积大，放大收一档 */
+.db-card--hoverable {
+  position: relative;
+  --db-zoom: 1.015;
 }
 
 /* —— 面板（含标题栏的区块）—— */
@@ -47,7 +46,7 @@
 /* —— 内容区骨架：管理/列表类 pane 的统一限宽居中列（2026-10-31 收敛）。
      各 pane 的列表/管理内容列直接挂此类，禁止再自写 max-width —— */
 .db-pane-inner {
-  max-width: var(--db-content-max, 1200px);
+  max-width: var(--db-content-max, 92%);
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -72,19 +71,14 @@
   gap: 2px;
   position: relative;
   box-shadow: inset 1px 0 0 var(--db-rule), inset 0 1px 0 var(--db-rule);
-  transition: transform var(--db-dur-normal) var(--db-spring),
-              box-shadow var(--db-dur-normal) var(--db-spring),
-              background var(--db-dur-normal) var(--db-ease);
   cursor: pointer;
 }
 .db-metric:nth-child(4n + 1) { box-shadow: inset 0 1px 0 var(--db-rule); }
 .db-metric:nth-child(-n + 4) { box-shadow: inset 1px 0 0 var(--db-rule); }
+/* 位移/阴影/抬层由末尾的「hover 浮起」规则统一给；格子本身透明，浮起后要补实心底与圆角 */
 .db-metric:hover {
-  transform: scale(1.025) translateY(-2px);
   border-radius: var(--db-r-card);
   background: var(--db-bg-solid);
-  box-shadow: var(--db-shadow-lg), inset 0 0 0 0.5px var(--db-rule-strong);
-  z-index: 5;
 }
 .db-metric__label {
   font-size: 12px;
@@ -144,6 +138,92 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* —— 行列表（连接器管理同款）——
+   发丝线分隔行 + 左图标 / 两行主体 / 右侧信息，替代 el-table 与一堆带间隙的浮动卡片。
+
+   规则：一层框。列表只负责排版与分隔线，自身**不画边框 / 圆角 / 底色**；
+   框一律由最外层容器提供（页面级列表由 .mkt__list 这类容器自带，卡片内由 el-card
+   或 .record-body 提供）。两层容器各画一个框就是「框里套框」，视觉上必然脏。
+   嵌入容器时把容器 padding 归零，行随之全宽贴边，行左右 padding 与容器标题左缘对齐。 */
+.db-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.db-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  position: relative;
+  /* 满宽行左右贴边，放大即被容器裁掉，故只位移不缩放（见文件末尾「hover 浮起」） */
+  --db-lift: -1px;
+  --db-zoom: 1;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  /* 浮起后成一张圆角「芯片」：补圆角并隐掉本行底线，否则底线会在圆角处翘出两小道 */
+  &:hover {
+    background-color: var(--el-fill-color-light);
+    border-radius: var(--db-r-control);
+    border-bottom-color: transparent;
+  }
+
+  &__icon {
+    flex-shrink: 0;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+  }
+
+  &__meta {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &__name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__summary {
+    margin-top: 3px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 右侧信息位：时间 / 耗时一类，右对齐可两行 */
+  &__aside {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+}
+
 /* —— 加载骨架 —— */
 .db-skeleton {
   border-radius: var(--db-r-tag);
@@ -182,4 +262,45 @@
   flex-shrink: 0;
   background: rgba(0, 122, 255, 0.12);
   color: var(--db-blue);
+}
+
+/* ============================================================
+   hover 浮起（统一规则）
+   ------------------------------------------------------------
+   所有"可悬停的承载物"hover 时做同一件事：向上位移 + 放大 + 大阴影
+   + 0.5px 加强描边 + 抬层，视觉上从背景里浮起来，与相邻元素拉开层次。
+   数值只认 --db-lift / --db-zoom，页面不要再自写一套位移与阴影。
+
+   缩放按体积分档（大块放大明显，故收档）：
+     .db-card--hoverable 1.015   .db-metric 1.025   .db-row 1（不放大）
+   行为什么不放大：行左右贴边，scale 会把两侧内容一起裁掉，所以只做 -1px 位移，
+   阴影仍会盖住上下相邻行，手感与卡片一致但不丢内容。
+   为什么必须 z-index：影子要压在相邻行之上，否则浮起的那一行会被后一行盖住。
+   为什么浮起后不再加描边：边界交给光影。行/卡本来就带分隔线或 0.5px 发丝边框，
+   浮起再套一圈描边就成了"框里框"，看着脏。
+   ============================================================ */
+.db-float,
+.db-card--hoverable,
+.db-metric,
+.db-row {
+  transition: transform var(--db-dur-normal) var(--db-spring),
+              box-shadow var(--db-dur-normal) var(--db-spring),
+              background-color var(--db-dur-normal) var(--db-ease);
+}
+
+.db-float:hover,
+.db-card--hoverable:hover,
+.db-metric:hover,
+.db-row:hover {
+  transform: translateY(var(--db-lift)) scale(var(--db-zoom));
+  box-shadow: var(--db-shadow-lg);
+  z-index: 5;
+}
+
+/* 行浮起的顶边补丁：--db-shadow-lg 是纯下投投影，而行的顶边自身无框、
+   浮起上移 1px 后又恰好盖住上一行的底线，顶边会一点光影都不剩、与上一行黏连
+   （底边有下投阴影压着下一行，分离清楚）。故行单独叠一层薄的上投投影补出顶边分离；
+   卡片/度量块自带发丝边框，无此问题，不受影响。 */
+.db-row:hover {
+  box-shadow: var(--db-shadow-lg), 0 -3px 8px rgba(0, 0, 0, 0.06);
 }

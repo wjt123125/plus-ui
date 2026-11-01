@@ -450,7 +450,8 @@ watch(
   height: 100%;
   min-width: 0;
   overflow: hidden;
-  background: var(--el-bg-color, #fff);
+  /* 透明：底色由工作台面板 .ws-panel 统一铺，pane 自身透明（decisions.md §十六） */
+  background: transparent;
 }
 
 /* 列表视图：滚动区吃满 pane 高度（内层滚动，外层不出现双滚动条） */
@@ -464,7 +465,7 @@ watch(
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  background: var(--el-fill-color-light, #f5f7fa);
+  background: transparent;
 }
 
 .page-header {

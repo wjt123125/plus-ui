@@ -38,15 +38,12 @@ export type MarketChip = 'ALL' | 'RECOMMEND' | 'MINE' | 'INSTALLED' | string | n
 const RECOMMEND_SIZE = 6;
 
 /**
- * 跨 tab 市场导航意图（模块级共享单例）。两个 pane 各自 watch 同一个 ref，
- * 故**只认领并清空自己的 kind**（市场 pane 认 owner、管理 pane 认 publish），
- * 否则先消费的一方会把意图抹掉，后到的一方扑空。
- *   owner   → 市场 tab：按作者筛选（物料详情页作者链接 / 管理页行上 @作者）
- *   publish → 管理 tab：落到「我的上架」并直接弹上架弹窗（市场空态 CTA）
+ * 跨 tab 市场导航意图（模块级共享单例）。消费方 watch 后**认领并清空**，防止重复消费。
+ *   owner → 市场 tab：按作者筛选（物料详情页作者链接 / 管理页行上 @作者）
+ * publish 意图已退役（2026-11-01 上架 tab 化：市场空态「去上架」直开 market-publish tab，
+ * 不再经管理 pane 递接弹弹窗）。
  */
-export type MarketNavIntent =
-  | { kind: 'owner'; ownerCode: string; resourceType?: MarketResourceType }
-  | { kind: 'publish' };
+export type MarketNavIntent = { kind: 'owner'; ownerCode: string; resourceType?: MarketResourceType };
 export const marketNavIntent = ref<MarketNavIntent | null>(null);
 
 /**

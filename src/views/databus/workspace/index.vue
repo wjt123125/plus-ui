@@ -73,6 +73,9 @@
           @market-open-market="onMarketOpenMarket"
           @market-open-manage="onMarketOpenManage"
           @market-manage-scope="onMarketManageScope"
+          @market-open-publish="onMarketOpenPublish"
+          @market-publish-back="onMarketPublishBack"
+          @market-published="bumpMarketTokens"
           @market-open-source-canvas="onMarketOpenSourceCanvas"
           @open-connection="onOpenConnection"
           @connection-saved="onConnectionSaved"
@@ -248,6 +251,10 @@ function onLauncherCommand(cmd: LauncherCommand) {
   switch (cmd) {
     case 'market':
       wb.openMarket();
+      break;
+    // 物料管理（2026-11-01 补入口）：全局单例 tab，沿用 tab 上已落盘的视角
+    case 'market-manage':
+      wb.openMarketManage();
       break;
     // 新建四合一（2026-10-21 入口收敛）：开向导 create tab，filetype 段内向导里选
     case 'new':
@@ -673,6 +680,21 @@ function onMarketOpenManage(scope?: MarketScope) {
 /** 管理 pane 内切视角：回写 tab.marketScope，随会话落盘（刷新后原地恢复） */
 function onMarketManageScope(scope: MarketScope) {
   wb.setMarketScope(scope);
+}
+
+/** 上架入口（管理页头/我的上架空态/市场空态，2026-11-01 上架 tab 化）：
+ *  开物料上架 tab（kind market-publish，全局单例）；from＝来路，返回钮据此回跳 */
+function onMarketOpenPublish(from: 'market' | 'manage') {
+  wb.openMarketPublish(from);
+}
+
+/** 上架 tab 返回钮：按来路聚焦市场/管理 tab（上架 tab 不关、表单内容保留——定案 2026-11-01） */
+function onMarketPublishBack(tab: WorkspaceTab) {
+  if (tab.publishFrom === 'market') {
+    wb.openMarket();
+  } else {
+    wb.openMarketManage();
+  }
 }
 
 /**
@@ -1167,7 +1189,9 @@ onBeforeUnmount(() => {
 <style lang="scss" scoped>
 /* 页面级 wrapper：吃满视口高度（2026-10-20 剥壳后不再缩后台 header 高度，§7 改造点2）。
    整页垫白成壳内一张大卡：header 带与工作区同底，避免顶部 tab 条灰轨道与壳灰底
-   （#f5f7fa）近邻时色阶几乎相同、糊成一块 */
+   （#f5f7fa）近邻时色阶几乎相同、糊成一块。
+   底色用 --el-bg-color（白），不要用 .db-app 的灰底 --db-bg #f2f2f7——
+   2026-11-01 用户反馈「颜色不正」，即由灰底透出所致（decisions.md §十六）。 */
 .wsp-page {
   display: flex;
   flex-direction: column;

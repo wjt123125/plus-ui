@@ -1384,7 +1384,8 @@ defineExpose({ reload, focusSection });
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--el-bg-color, #fff);
+  /* 透明：底色由页面 .db-app 统一平铺，本栏不铺底（decisions.md §十六） */
+  background: transparent;
   min-width: 0;
 
   &__head {

@@ -190,11 +190,13 @@ function onConnectionSaved(payload: ConnectionSaved) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--el-bg-color, #fff);
-  --create-max: 1200px;
+  /* 透明：底色由工作台面板 .ws-panel 统一铺，pane 自身透明（decisions.md §十六） */
+  background: transparent;
+  /* 内容列宽复用全局统一列宽（工作区固定比例），与市场/管理等 pane 同宽 */
+  --create-max: var(--db-content-max, 92%);
 }
 
-/* 限宽居中：窄屏 width:100% 铺满，宽屏封顶居中（照 MarketPane） */
+/* 限宽居中：取统一列宽并居中，两侧留白与市场/管理等 pane 对齐 */
 .create__head,
 .create__bar,
 .create__body {

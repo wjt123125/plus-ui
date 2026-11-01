@@ -123,7 +123,8 @@
 }
 
 .el-popper.is-light .el-popper__arrow::before {
-  background: var(--app-surface-bg);
+  /* 玻璃浮层的箭头要跟面板同底色，否则箭头是一块实色补丁（--popper-glass-bg 由下方玻璃块定义并继承下来） */
+  background: var(--popper-glass-bg, var(--app-surface-bg));
   border-color: var(--app-surface-border);
 }
 
@@ -233,6 +234,29 @@
 
 .el-popconfirm__action .el-button {
   margin-left: 0 !important;
+}
+
+/* --- 玻璃浮层（decisions.md §十六-3，全站唯一一条）---
+   浮层压在整页内容上，backdrop 天然有内容，是毛玻璃唯一稳定见效的场景。
+   popper 全家 + dialog + drawer 都收在这一组里，别处不再为浮层单独写底色
+   （_overrides.scss 的实色面板组只剩 .el-card，防止晚载入盖掉这里的玻璃底）。
+   底色用 color-mix 从 --app-surface-bg 掺透明，亮/暗色自动跟随，不必各写一份。
+   :not(.is-dark) 是为了不误伤深色 tooltip/popover（它们的实色底在下面 html.dark 段另有覆写）。
+   dialog 压在遮罩上，而遮罩本身已 blur(10px)（_dialog.scss）——双层模糊即 macOS sheet 手感，
+   所以 dialog 这里同样掺透明；drawer 从侧边压住整页内容，同理。 */
+.el-select__popper.el-popper:not(.is-dark),
+.el-picker__popper.el-popper:not(.is-dark),
+.el-autocomplete__popper.el-popper:not(.is-dark),
+.el-cascader__dropdown.el-popper:not(.is-dark),
+.el-dropdown__popper.el-popper:not(.is-dark),
+.el-popover.el-popper:not(.is-dark),
+.el-dialog,
+.el-drawer {
+  --popper-glass-bg: color-mix(in srgb, var(--app-surface-bg) 78%, transparent);
+
+  background: var(--popper-glass-bg);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
 html.dark {

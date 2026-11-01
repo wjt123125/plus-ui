@@ -47,7 +47,8 @@
   /* —— 画布 —— */
   font-family: var(--db-font);
   color: var(--db-ink);
-  background: var(--db-bg);
+  /* 不在此写 background：.db-app 的平底色由 _tokens.scss 统一负责。
+     本文件晚于 _tokens 载入，若用 background 简写会把 background-image 等子属性重置掉。 */
   -webkit-font-smoothing: antialiased;
 }
 
@@ -65,6 +66,14 @@
 .db-app .el-card:hover {
   transform: scale(1.008);
   box-shadow: var(--db-shadow-md), inset 0 0 0 0.5px var(--db-rule-strong);
+}
+/* 卡片里装着可浮起的行（.db-row / .mkt-row）时，悬停行不要连整张卡一起缩放：
+   两层同时位移会让行从卡片的圆角边里"跳"出来，看着像边框被撑开了（见 _primitives.scss「hover 浮起」）。
+   判定用 :has()，只有行被悬停的那一刻才生效，鼠标落在卡片空白处仍旧整卡微浮。 */
+.db-app .el-card:has(.db-row:hover),
+.db-app .el-card:has(.mkt-row:hover) {
+  transform: none;
+  box-shadow: var(--db-shadow-sm), inset 0 0 0 0.5px var(--db-rule);
 }
 
 /* —— 按钮：hover 只做轻微缩放，不做位移/发光 —— */
@@ -126,6 +135,14 @@
   border-bottom: 0.5px solid var(--db-rule);
 }
 
+/* —— 分页器 ——
+   列表容器自己已经画了一层框，分页组件默认还会在顶部压一道通栏 1px 线，
+   在圆角列表下面就像表格时代遗留的第二道外框（一层框原则见 _primitives.scss）。
+   选择器多带一级 .db-pane-inner 是为了压过 Pagination 组件 scoped 的同名规则。 */
+.db-app .db-pane-inner .pagination-container {
+  border-top: none;
+}
+
 /* —— 标签 / 徽标 —— */
 /* 形状（圆角/去边框/字重）归所有标签；蓝色底只给默认 primary 档，且走 Element Plus 的
    类型变量——直接写 background/color 会凭优先级把 success/warning/danger 的语义色全压成蓝，
@@ -141,11 +158,12 @@
   --el-tag-border-color: transparent;
 }
 
-/* —— 弹窗 —— */
+/* —— 弹窗 ——
+   不写 background：玻璃底统一由 _popper.scss「玻璃浮层」组提供（.el-dialog 全局生效），
+   这里若再给实色（特异度 0,2,0 更高）会把玻璃盖死。 */
 .db-app .el-dialog {
   border-radius: 18px;
   box-shadow: var(--db-shadow-lg);
-  background: var(--db-bg-solid);
 }
 
 /* ============================================================
@@ -172,4 +190,26 @@
 .db-popper .el-select-dropdown__item.is-selected {
   color: var(--db-blue);
   font-weight: 600;
+}
+/* 下拉面板宽度跟随最长选项：EP 给下拉根节点写内联 min-width＝输入框宽，
+   属性面板的 select 是 width:100%（约 370px），选项却普遍只有几个字，
+   空面板浪费且分散视线。收宽到内容宽，!important 压内联值，max-width 兜超长选项。
+   单独用 db-select-popper 而非 db-popper：弹层 teleport 到 body，出了 .db-app
+   读不到 --db-* 令牌，套 db-popper 皮肤会丢圆角/阴影/底色，这里只改宽度。 */
+.db-select-popper.el-select-dropdown {
+  width: max-content !important;
+  min-width: 96px !important;
+  max-width: min(360px, 90vw);
+}
+/* 行高协调：EP 默认 item 34px 对触发器 32px，本是协调的；是全局
+   vendors/_popper.scss 把 item 撑到 min-height/line-height 38px + 2px 外边距
+   （行距 40px），属性面板触发器只有 32px，弹层行就显得笨重。全局那份是管理页
+   要的大行高，不能动，只在 databus 下拉作用域内收回到 30px 行高 + 13px 字号。
+   特异度 (0,2,0) 压过 vendor 的 (0,1,0)。 */
+.db-select-popper .el-select-dropdown__item {
+  height: 30px;
+  min-height: 30px;
+  line-height: 30px;
+  font-size: 13px;
+  border-radius: 7px;
 }

@@ -19,9 +19,12 @@
       box-shadow: var(--app-shadow-md);
       overflow: hidden;
       border: 1px solid var(--app-surface-border);
+      /* 玻璃底：--popper-glass-bg 由 _popper.scss 的「玻璃浮层」组设在 .el-dialog 上；
+         本条特异度更高（0,3,0），若在这里写实色会把玻璃盖死，只能引用同一变量。
+         弹窗压在已 blur(10px) 的遮罩上，双层模糊即 macOS sheet 手感。 */
       background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)) padding-box,
-        var(--app-surface-bg);
+        var(--popper-glass-bg, color-mix(in srgb, var(--app-surface-bg) 78%, transparent));
 
       .el-dialog__header {
         position: relative;

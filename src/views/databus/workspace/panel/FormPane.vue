@@ -477,7 +477,8 @@ defineExpose({ reload });
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
-  background: var(--el-bg-color, #fff);
+  /* 透明：底色由工作台面板 .ws-panel 统一铺，pane 自身透明（decisions.md §十六） */
+  background: transparent;
 }
 
 .cf-head {

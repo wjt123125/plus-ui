@@ -4,7 +4,8 @@
   高度：AppMain 只有 min-height 无 definite height，故瘦壳须显式吃视口（同 views/databus/execution/index.vue）。
 -->
 <template>
-  <div class="conn-shell">
+  <!-- db-app：databus 令牌作用域根（_tokens.scss 铁律），平底色由此统一铺，同 execution/index.vue -->
+  <div class="conn-shell db-app">
     <ConnectionPane embedded />
   </div>
 </template>

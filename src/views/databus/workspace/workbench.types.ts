@@ -11,9 +11,10 @@ import type { ChainFormSuccessPayload } from '../chain/ChainFormBody.vue';
 
 /**
  * 工作区 tab 形态（2026-10-20 管理页 tab 化扩展，databus-workspace-tabs.md §4.1）：
- * 链路画布 / 组件详情 / 组件编辑 / 代码变更 / 物料市场 / 物料管理 / 物料详情 / 物料审核 / 连接器包查看
+ * 链路画布 / 组件详情 / 组件编辑 / 代码变更 / 物料市场 / 物料管理 / 物料上架 / 物料详情 / 物料审核 / 连接器包查看
  * （组件库 grid 已废 2026-10-18；连接器包查看 2026-10-29 由弹窗 tab 化；
- *   物料管理 2026-10-30 由 MarketPane 内部 view/scope 双 ref 提为独立 tab）
+ *   物料管理 2026-10-30 由 MarketPane 内部 view/scope 双 ref 提为独立 tab；
+ *   物料上架 2026-11-01 由管理 pane 内部弹窗提为独立 tab）
  * + 连接列表/连接对象 / 执行列表/执行记录 / 监控大盘 / 告警记录 / 设置（七值，key 规则见 §4.1）
  */
 export type WorkspaceTabKind =
@@ -24,6 +25,8 @@ export type WorkspaceTabKind =
   | 'market'
   // 物料管理（2026-10-30 由 MarketPane 内部 view/scope 双 ref 提为独立 tab，刷新可恢复现场）
   | 'market-manage'
+  // 物料上架（2026-11-01 由管理 pane 内部上架弹窗提为独立 tab，全局单例；来路记 tab.publishFrom）
+  | 'market-publish'
   | 'market-detail'
   | 'market-review'
   // 连接器包查看（2026-10-29 由「看包」弹窗 tab 化，审核「看得见」§2.3）
@@ -68,6 +71,8 @@ export interface WorkspaceTab extends WorkbenchTab {
   dbId?: number;
   /** market-manage：当前视角（pane 内切视角即回写，随会话落盘 → 刷新恢复现场） */
   marketScope?: MarketScope;
+  /** market-publish：来路（返回钮回跳市场/管理 tab；随会话落盘，刷新后回跳目标不丢） */
+  publishFrom?: 'market' | 'manage';
   /** market-detail：物料主键（同 id 单例；pane 自取数，不走台账。雪花 id 超 2^53，故用字符串防精度丢失） */
   marketItemId?: string;
   /** market-review：受审物料主键（同 id 单例；雪花 id 用字符串防精度丢失，口径同 marketItemId） */
@@ -139,6 +144,8 @@ export type ResourceMark = 'error' | 'modified' | 'deprecated';
 export type LauncherCommand =
   | 'new'
   | 'market'
+  // 物料管理（2026-11-01 补入口：审核人/上传人从空态卡与「+」菜单一键进管理 tab）
+  | 'market-manage'
   // 管理页入口（§8 步骤8「同步补 launcher 卡」，开对应功能 tab，先立后破防功能失踪）
   | 'admin-connection'
   | 'admin-execution'

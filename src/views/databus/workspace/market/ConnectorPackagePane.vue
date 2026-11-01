@@ -364,7 +364,8 @@ function formatSize(size?: number): string {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--el-bg-color, #fff);
+  /* 透明：底色由工作台面板 .ws-panel 统一铺，pane 自身透明（decisions.md §十六） */
+  background: transparent;
   /* 与物料详情 pane 同宽：清单表格四列 + 展开行代码块，900px 才不挤 */
   --cpk-max: 900px;
 }

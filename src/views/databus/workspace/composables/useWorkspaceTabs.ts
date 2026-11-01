@@ -4,6 +4,7 @@
  *   canvas:{chainId}（同链单例）/ component:detail:{code}
  *   / component:form:{id}（新建临时 component:form:new）/ component:changes:{id}
  *   / market（物料市场，全局单例）/ market:manage（物料管理，全局单例，视角存 tab.marketScope）
+ *   / market:publish（物料上架，全局单例，来路存 tab.publishFrom，2026-11-01 弹窗 tab 化）
  *   / market-item:{id}（物料详情，同 id 单例）
  *   / market-review:{id}（物料审核，同 id 单例，2026-10-24 审核详情弹窗 tab 化）
  *   / connector-pkg:{type}:{version}（连接器包查看，同 type+version 单例，2026-10-29 「看包」弹窗 tab 化）
@@ -26,6 +27,12 @@ export const MARKET_TAB_KEY = 'market';
  * 视角记在 tab.marketScope 上——裂成三个 tab 会让 tab 条膨胀，且三视角本就共享同一份 pane 数据。
  */
 export const MARKET_MANAGE_KEY = 'market:manage';
+/**
+ * 物料上架 tab 单例 key（2026-11-01 由管理 pane 内部上架弹窗提为独立 tab）。
+ * 来路记在 tab.publishFrom（market/manage），返回钮据此回跳；
+ * 表单内容不落盘（刷新后重进是空表，定案边界：不做草稿）。
+ */
+export const MARKET_PUBLISH_KEY = 'market:publish';
 /** 新建向导 tab 单例 key（四 filetype 分段共用一个 tab；tab 本身 v-show 保活即草稿保留，切段时 CreatePane 弹弃稿确认） */
 export const CREATE_TAB_KEY = 'create';
 
@@ -170,6 +177,27 @@ export function useWorkspaceTabs() {
     if (tab) {
       tab.marketScope = scope;
     }
+  }
+
+  /**
+   * 打开/聚焦物料上架 tab（全局单例，2026-11-01 由管理 pane 内部弹窗提为独立 tab）。
+   * 带 from ＝记录来路（返回钮回跳市场/管理）；不带则沿用 tab 上已落盘的来路。
+   * 已开时只聚焦+改来路，表单内容保活（v-show 壳不销毁 pane），提交后原地不动。
+   */
+  function openMarketPublish(from?: WorkspaceTab['publishFrom']): string {
+    const existed = wb.tabs.value.find((t) => t.key === MARKET_PUBLISH_KEY);
+    // wb.open 对已存在 tab 只刷 title，故 from 须就地写回（口径同 openMarketManage 的 scope）
+    if (existed && from) {
+      existed.publishFrom = from;
+    }
+    return wb.open({
+      key: MARKET_PUBLISH_KEY,
+      kind: 'market-publish',
+      title: '上架物料',
+      code: '',
+      publishFrom: from ?? existed?.publishFrom ?? 'manage',
+      dirty: false
+    });
   }
 
   /** 打开/聚焦物料详情 tab（同 id 单例；pane 自取数，不走台账） */
@@ -479,6 +507,7 @@ export function useWorkspaceTabs() {
     openMarket,
     openMarketManage,
     setMarketScope,
+    openMarketPublish,
     openMarketDetail,
     openMarketReview,
     openConnectorPackage,

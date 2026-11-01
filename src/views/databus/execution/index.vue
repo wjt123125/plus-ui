@@ -4,7 +4,9 @@
   高度：AppMain 只有 min-height 无 definite height，故瘦壳须显式吃视口（同 views/databus/workspace/index.vue）。
 -->
 <template>
-  <div class="exec-shell">
+  <!-- db-app：databus 令牌作用域根（_tokens.scss 铁律）。漏了它，pane 只能吃 fallback 值，
+       暗色下 --db-bg-card 也退回白色 -->
+  <div class="exec-shell db-app">
     <ExecutionPane embedded />
   </div>
 </template>

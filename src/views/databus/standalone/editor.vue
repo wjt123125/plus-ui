@@ -160,7 +160,8 @@ function goWorkspace() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--el-bg-color, #fff);
+  /* 透明：本页吃 .db-app 的统一平底色（decisions.md §十六） */
+  background: transparent;
 }
 
 .sa-editor-head {

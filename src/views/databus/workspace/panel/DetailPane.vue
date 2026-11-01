@@ -581,6 +581,7 @@ async function copyCode() {
   gap: 8px;
   padding: 10px 20px;
   border-top: 1px solid var(--el-border-color-lighter, #ebeef5);
+  /* 底栏是嵌套区块，保留实色底：pane 级透明只针对最外层容器/滚动面（decisions.md §十六） */
   background: var(--el-bg-color, #fff);
 }
 

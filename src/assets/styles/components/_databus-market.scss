@@ -11,13 +11,17 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--el-bg-color, #fff);
+  /* 透明：底色由工作台面板 .ws-panel 统一铺，pane 自身透明（decisions.md §十六） */
+  background: transparent;
 
-  /* 宽屏下内容不铺满整屏：所有横排区块统一限宽居中，两侧留白 */
-  --mkt-max: 1200px;
+  /* 内容宽度直接复用全局统一列宽 --db-content-max（工作区固定比例，非写死像素）：
+     市场/管理/上架以及其它挂 .db-pane-inner 的面板同源同宽，随工作区与右侧栏收放同比伸缩 */
+  --mkt-max: var(--db-content-max, 92%);
 }
 
-/* 限宽居中：窄屏时 width:100% 自然铺满，宽屏时封顶并居中 */
+/* 限宽居中：所有横排区块取统一列宽并居中，两侧留白一致。
+   topbar（返回钮条）也须在组内——否则返回钮贴容器最左、而页头/表单体已居中，两侧留白不对齐 */
+.mkt__topbar,
 .mkt__head,
 .mkt__bar,
 .mkt__chips,

@@ -1,7 +1,7 @@
 <!--
   标签平铺点选器（market §四 2026-10-23 定稿：候选平铺点选，非下拉 select）。
   专做多选标签：chips 点选 toggle ＋输入回车新建；已选值不在候选集时补渲染 chip
-  （切换分类换池不丢已选）。分类单选场景由 MarketPublishDialog 内联 chips 承担。
+  （切换分类换池不丢已选）。分类单选场景由 MarketPublishPane 内联 chips 承担。
 -->
 <template>
   <div class="tag-select">

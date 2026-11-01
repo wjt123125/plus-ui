@@ -394,9 +394,10 @@ onMounted(() => {
   min-width: 0;
   display: flex;
   overflow: hidden;
-  background: var(--el-fill-color-light, #f5f7fa);
+  /* 透明：底色由工作台面板 .ws-panel 统一铺，pane 自身透明（decisions.md §十六） */
+  background: transparent;
   /* 限宽居中：动态 padding 撑出两侧留白，导航+内容整体位于中央限宽列内（与 .db-pane-inner 同口径） */
-  padding: 0 max(0px, calc((100% - var(--db-content-max, 1200px)) / 2));
+  padding: 0 max(0px, calc((100% - var(--db-content-max, 92%)) / 2));
 }
 
 .settings-nav {

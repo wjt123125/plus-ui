@@ -596,7 +596,8 @@ async function onDisableConnector() {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--el-bg-color, #fff);
+  /* 透明：底色由工作台面板 .ws-panel 统一铺，pane 自身透明（decisions.md §十六） */
+  background: transparent;
   /* 720px 对纯文本够用，但代码/JSON 太窄；统一放到 900px，代码区实际可读宽度提升约 1/4 */
   --mkti-max: 900px;
 }

@@ -109,7 +109,7 @@
         <template #description>
           <span>{{ browseFiltered ? '没有匹配的物料' : '还没有物料，去上架第一个吧' }}</span>
         </template>
-        <el-button v-if="!browseFiltered" v-hasPermi="['databus:market:publish']" type="primary" @click="goPublishFirst">
+        <el-button v-if="!browseFiltered" v-hasPermi="['databus:market:publish']" type="primary" @click="emit('open-publish')">
           <SvgIcon icon-class="lucide:plus" /><span>去上架</span>
         </el-button>
       </el-empty>
@@ -243,6 +243,8 @@ const emit = defineEmits<{
   (e: 'open-detail', item: DatabusMarketItemVo): void;
   /** 去物料管理 tab（kind market-manage，全局单例）；带 scope＝顺便切到那个视角 */
   (e: 'open-manage', scope?: MarketScope): void;
+  /** 空态「去上架」：开物料上架 tab（2026-11-01 上架 tab 化，不再经管理 pane 弹窗递接） */
+  (e: 'open-publish'): void;
 }>();
 
 const market = useMarketData();
@@ -302,7 +304,7 @@ onMounted(async () => {
 });
 
 /* 消费跨 tab 导航意图（物料详情 tab / 物料管理 tab → 本 pane）：按作者筛选。
-   只认领 owner，publish 意图归管理 pane（两边都清会让后到的一方扑空）；消费后置空 */
+   publish 意图已退役（2026-11-01 上架 tab 化：市场空态 CTA 直开 market-publish tab）；消费后置空 */
 watch(
   marketNavIntent,
   async (intent) => {
@@ -336,12 +338,6 @@ const browseSub = computed(() => {
 
 /** 市场空态是否由筛选造成（关键字 / 非「全部」chip / 作者过滤） */
 const browseFiltered = computed(() => !!keyword.value.trim() || activeChip.value !== 'ALL' || !!ownerCode.value);
-
-/** 空市场 CTA：开管理 tab 的「我的上架」视角，并让它落地就弹上架弹窗（意图跨 tab 传递） */
-function goPublishFirst() {
-  marketNavIntent.value = { kind: 'publish' };
-  emit('open-manage', 'mine');
-}
 
 /* ---------------- 安装 / 使用 ---------------- */
 

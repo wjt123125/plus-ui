@@ -4,7 +4,8 @@
   padding: 8px;
   border-radius: 14px;
   border: 1px solid var(--app-surface-border);
-  background: var(--app-surface-bg);
+  /* 透明：外层 .el-dropdown__popper 已上玻璃（_popper.scss），这里再铺实色会把玻璃整块盖死 */
+  background: transparent;
   box-shadow: var(--app-shadow-md);
 
   .el-dropdown-menu__item {

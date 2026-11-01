@@ -15,9 +15,9 @@
 }
 
 // --- 实体「面板」背景 ---
-.el-card,
-.el-dialog,
-.el-drawer {
+// 只留 .el-card：dialog / drawer 已并入 _popper.scss 的「玻璃浮层」唯一一条规则。
+// 本文件晚于 _popper.scss 载入，这里若再给它们写实色底会把玻璃盖死，禁止加回。
+.el-card {
   background: var(--app-surface-bg);
 }
 

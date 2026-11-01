@@ -86,6 +86,7 @@
       :model-value="modelValue ?? ''"
       :placeholder="field.placeholder ?? '请选择'"
       clearable
+      popper-class="db-select-popper"
       style="width: 100%"
       @update:model-value="emit('update:modelValue', $event)"
     >
@@ -106,6 +107,7 @@
       allow-create
       default-first-option
       :placeholder="field.placeholder ?? '输入后回车添加'"
+      popper-class="db-select-popper"
       style="width: 100%"
       @update:model-value="emit('update:modelValue', $event)"
     >

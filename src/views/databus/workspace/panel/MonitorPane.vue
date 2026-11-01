@@ -170,58 +170,73 @@
         </div>
 
         <!-- 链路健康全景 -->
-        <el-card shadow="never" class="panel">
+        <el-card shadow="never" class="panel panel--flush">
           <template #header>
             <div class="panel-head">
               <span class="panel-title">链路健康</span>
               <span class="panel-sub">窗口内每个链路的量质速度全景（按调用量倒序，成功率低于 90% 标红）</span>
             </div>
           </template>
-          <el-table v-if="chainHealth.length > 0" :data="chainHealth" size="small">
-            <el-table-column prop="chainCode" label="链路编码" min-width="170" show-overflow-tooltip>
-              <template #default="{ row }"><span class="mono">#{{ row.chainCode }}</span></template>
-            </el-table-column>
-            <el-table-column prop="totalCount" label="调用量" width="90" align="right" />
-            <el-table-column prop="successCount" label="成功" width="80" align="right" />
-            <el-table-column prop="failedCount" label="失败" width="80" align="right">
-              <template #default="{ row }">
-                <span :class="{ 'text-bad': row.failedCount > 0 }">{{ row.failedCount }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="成功率" width="110" align="right">
-              <template #default="{ row }">
-                <span :class="{ 'rate-bad': isBadRate(row.successRate) }">{{ formatRate(row.successRate) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="平均耗时" width="110" align="right">
-              <template #default="{ row }">{{ formatDuration(row.avgDuration) }}</template>
-            </el-table-column>
-            <el-table-column label="P95 耗时" width="110" align="right">
-              <template #default="{ row }">{{ formatDuration(row.p95Duration) }}</template>
-            </el-table-column>
-          </el-table>
-          <el-empty v-else description="窗口内暂无链路执行" :image-size="80" />
+          <el-empty v-if="chainHealth.length === 0" description="窗口内暂无链路执行" :image-size="80" />
+          <ul v-else class="db-list">
+            <li v-for="row in chainHealth" :key="row.chainCode" class="db-row">
+              <Icon
+                :icon="isBadRate(row.successRate) ? 'lucide:circle-alert' : 'lucide:circle-check'"
+                class="db-row__icon health-icon"
+                :class="isBadRate(row.successRate) ? 'is-bad' : 'is-ok'"
+              />
+              <div class="db-row__meta">
+                <div class="db-row__line">
+                  <span class="db-row__name db-mono">#{{ row.chainCode }}</span>
+                  <el-tag size="small" effect="plain" :type="isBadRate(row.successRate) ? 'danger' : 'success'">
+                    {{ formatRate(row.successRate) }}
+                  </el-tag>
+                </div>
+                <div class="db-row__summary">
+                  调用 <span class="db-mono">{{ row.totalCount }}</span> · 成功
+                  <span class="db-mono">{{ row.successCount }}</span> · 失败
+                  <span class="db-mono" :class="{ 'text-bad': row.failedCount > 0 }">{{ row.failedCount }}</span>
+                </div>
+              </div>
+              <div class="db-row__aside db-mono">
+                <span>平均 {{ formatDuration(row.avgDuration) }}</span>
+                <span>P95 {{ formatDuration(row.p95Duration) }}</span>
+              </div>
+            </li>
+          </ul>
         </el-card>
 
         <!-- 排行榜：失败榜表格 + 节点耗时/错误热点条形图 -->
         <div class="rank-grid">
-          <el-card shadow="never" class="panel">
+          <el-card shadow="never" class="panel panel--flush">
             <template #header>
               <div class="panel-head">
                 <span class="panel-title">链路失败 Top</span>
                 <span class="panel-sub">失败次数倒序</span>
               </div>
             </template>
-            <el-table :data="ranking.chainFailures" size="small" :show-header="true" empty-text="暂无失败链路">
-              <el-table-column prop="chainCode" label="链路编码" min-width="150" show-overflow-tooltip>
-                <template #default="{ row }"><span class="mono">#{{ row.chainCode }}</span></template>
-              </el-table-column>
-              <el-table-column prop="failedCount" label="失败" width="70" align="right" />
-              <el-table-column prop="totalCount" label="总数" width="70" align="right" />
-              <el-table-column label="成功率" width="90" align="right">
-                <template #default="{ row }">{{ formatRate(row.successRate) }}</template>
-              </el-table-column>
-            </el-table>
+            <el-empty
+              v-if="ranking.chainFailures.length === 0"
+              description="暂无失败链路"
+              :image-size="60"
+            />
+            <ul v-else class="db-list">
+              <li v-for="row in ranking.chainFailures" :key="row.chainCode" class="db-row">
+                <Icon icon="lucide:circle-x" class="db-row__icon rank-fail-icon" />
+                <div class="db-row__meta">
+                  <div class="db-row__line">
+                    <span class="db-row__name db-mono">#{{ row.chainCode }}</span>
+                  </div>
+                  <div class="db-row__summary">
+                    共 <span class="db-mono">{{ row.totalCount }}</span> 次 · 成功率
+                    <span class="db-mono">{{ formatRate(row.successRate) }}</span>
+                  </div>
+                </div>
+                <div class="db-row__aside db-mono">
+                  <span class="text-bad">失败 {{ row.failedCount }}</span>
+                </div>
+              </li>
+            </ul>
           </el-card>
 
           <el-card shadow="never" class="panel">
@@ -248,27 +263,31 @@
         </div>
 
         <!-- 实时错误流 -->
-        <el-card shadow="never" class="panel">
+        <el-card shadow="never" class="panel panel--flush">
           <template #header>
             <div class="panel-head">
               <span class="panel-title">实时错误流</span>
               <span class="panel-sub">最近失败执行（直读总账，不等整点聚合）</span>
             </div>
           </template>
-          <div v-if="errorStream.length === 0" class="stream-empty">
-            <el-empty description="暂无失败执行" :image-size="80" />
-          </div>
-          <div v-else class="stream-list">
-            <div v-for="item in errorStream" :key="String(item.id)" class="stream-item">
-              <div class="stream-line1">
-                <el-tag type="danger" size="small" effect="plain">FAILED</el-tag>
-                <span class="mono stream-chain">#{{ item.chainCode }}</span>
-                <span class="stream-time">{{ formatTime(item.startTime) }}</span>
-                <span class="stream-duration">{{ formatDuration(item.duration) }}</span>
+          <el-empty v-if="errorStream.length === 0" description="暂无失败执行" :image-size="80" />
+          <ul v-else class="db-list stream-list">
+            <li v-for="item in errorStream" :key="String(item.id)" class="db-row">
+              <Icon icon="lucide:circle-x" class="db-row__icon stream-icon" />
+              <div class="db-row__meta">
+                <div class="db-row__line">
+                  <span class="db-row__name db-mono">#{{ item.chainCode }}</span>
+                  <el-tag type="danger" size="small" effect="plain">FAILED</el-tag>
+                  <span class="db-mono stream-time">{{ formatTime(item.startTime) }}</span>
+                </div>
+                <!-- 行列表风格单行省略，全量错误信息挂 title -->
+                <div class="db-row__summary stream-msg" :title="item.errorMsg || undefined">
+                  {{ item.errorMsg || '（无错误信息）' }}
+                </div>
               </div>
-              <div class="stream-msg">{{ item.errorMsg || '（无错误信息）' }}</div>
-            </div>
-          </div>
+              <div class="db-row__aside db-mono">{{ formatDuration(item.duration) }}</div>
+            </li>
+          </ul>
         </el-card>
       </div>
     </div>
@@ -1115,7 +1134,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--db-bg, #f2f2f7);
+  /* 透明：底色由工作台面板 .ws-panel 统一铺，pane 再铺一层实色都会截胡玻璃采样 */
+  background: transparent;
 }
 
 .monitor-pane__scroll {
@@ -1263,10 +1283,6 @@ onBeforeUnmount(() => {
   box-shadow:
     inset 1px 0 0 var(--db-rule, rgba(60, 60, 67, 0.12)),
     inset 0 1px 0 var(--db-rule, rgba(60, 60, 67, 0.12));
-  transition:
-    transform var(--db-dur-normal, 0.22s) var(--db-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
-    box-shadow var(--db-dur-normal, 0.22s) var(--db-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
-    background var(--db-dur-normal, 0.22s) var(--db-ease, ease);
 }
 
 /* 第一列去掉左线、第一行去掉上线，避免容器边缘出现双线 */
@@ -1278,21 +1294,7 @@ onBeforeUnmount(() => {
   box-shadow: inset 1px 0 0 var(--db-rule, rgba(60, 60, 67, 0.12));
 }
 
-/* hover：从整块里浮起来，补回完整圆角 + 大阴影 */
-.metric-card.is-clickable {
-  cursor: pointer;
-}
-
-.metric-card:hover {
-  transform: scale(1.025) translateY(-2px);
-  border-radius: var(--db-r-card, 14px);
-  background: var(--db-bg-solid, #fff);
-  box-shadow:
-    var(--db-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.12)),
-    inset 0 0 0 0.5px var(--db-rule-strong, rgba(60, 60, 67, 0.24));
-  z-index: 5;
-}
-
+/* 窄屏改 2 列时网格线重排：第一列去左线、第一行去上线 */
 @media (max-width: 1100px) {
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1311,6 +1313,35 @@ onBeforeUnmount(() => {
   .metric-card:nth-child(-n + 2) {
     box-shadow: inset 1px 0 0 var(--db-rule, rgba(60, 60, 67, 0.12));
   }
+}
+
+.metric-card.is-clickable {
+  cursor: pointer;
+}
+
+.metric-card {
+  transition:
+    transform var(--db-dur-normal, 0.22s) var(--db-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    box-shadow var(--db-dur-normal, 0.22s) var(--db-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    background-color var(--db-dur-normal, 0.22s) var(--db-ease, ease);
+}
+
+/* hover：从整块里浮起来，补回完整圆角 + 大阴影。
+   数值取全局「hover 浮起」令牌（_primitives.scss / _tokens.scss），不在这里另立一套；
+   本块必须放在上面网格线的 :nth-child 规则与窄屏重排之后，否则同级选择器会把它盖回去。
+
+   第一层 0 0 0 1px 底色不是描边，是「垫片」：网格线由每张卡自己画内阴影，
+   卡片浮起时底边上移 1px，正好把下一行卡的上线露出一道，隔着半透明阴影看就是
+   "原来的边框还在"。用一圈与底色同色的实边把这 1px 盖掉，大阴影再从这个实边外散开。
+   浮起后不再叠 0.5px 加强描边（见 _primitives.scss「hover 浮起」），边界只由光影定义。 */
+.metric-card:hover {
+  transform: translateY(var(--db-lift, -2px)) scale(var(--db-zoom, 1.025));
+  border-radius: var(--db-r-card, 14px);
+  background: var(--db-bg-solid, #fff);
+  box-shadow:
+    0 0 0 1px var(--db-bg-solid, #fff),
+    var(--db-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.12));
+  z-index: 5;
 }
 
 .metric-head {
@@ -1461,74 +1492,42 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
-.rate-bad {
-  color: var(--el-color-danger);
-  font-weight: 700;
+/* 行列表卡片：一层框原则——框由 el-card 提供，列表自身不画框（见 _primitives.scss .db-list）。
+   故卡片 body 去掉内边距让行全宽贴边，行左右 padding 对齐卡片标题左缘（20px）。 */
+.panel--flush :deep(.el-card__body) {
+  padding: 0;
 }
 
-.mono {
-  font-family: var(--db-font-mono);
-  font-size: 12px;
+.panel--flush .db-row {
+  padding-right: 20px;
+  padding-left: 20px;
 }
 
-.stream-empty {
-  padding: 8px 0;
-}
-
-.stream-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.db-list.stream-list {
   max-height: 360px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden auto;
 }
 
-.stream-item {
-  padding: 10px 12px;
-  border: none;
-  border-radius: var(--db-r-control, 10px);
-  background: var(--db-bg-solid, #fff);
-  box-shadow: inset 0 0 0 0.5px var(--db-rule, rgba(60, 60, 67, 0.12));
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  transition: background var(--db-dur-fast, 0.14s) var(--db-ease, ease);
+.stream-icon {
+  color: var(--db-red, #ff3b30);
 }
 
-.stream-item:hover {
-  background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
+.health-icon.is-ok {
+  color: var(--el-color-success);
 }
 
-.stream-line1 {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.stream-chain {
-  font-weight: 600;
+.health-icon.is-bad,
+.rank-fail-icon {
+  color: var(--el-color-danger);
 }
 
 .stream-time {
   font-size: 12px;
-  font-family: var(--db-font-mono, 'JetBrains Mono', 'SF Mono', monospace);
   color: var(--db-ink-muted, #6e6e73);
-  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.stream-duration {
-  margin-left: auto;
-  font-size: 12px;
-  font-family: var(--db-font-mono, 'JetBrains Mono', 'SF Mono', monospace);
-  color: var(--db-ink-muted, #6e6e73);
-  font-variant-numeric: tabular-nums;
-}
-
-.stream-msg {
-  font-size: 12px;
+.db-row__summary.stream-msg {
   color: var(--db-red, #ff3b30);
-  word-break: break-all;
-  line-height: 1.5;
 }
 </style>

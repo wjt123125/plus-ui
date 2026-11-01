@@ -26,7 +26,7 @@
       <el-button v-hasPermi="['databus:connector:upload']" :loading="packageUploading" @click="pickPackage">
         <SvgIcon icon-class="lucide:upload" /><span>上传连接器包</span>
       </el-button>
-      <el-button v-hasPermi="['databus:market:publish']" type="primary" @click="openPublish">
+      <el-button v-hasPermi="['databus:market:publish']" type="primary" @click="emit('open-publish')">
         <SvgIcon icon-class="lucide:plus" /><span>上架物料</span>
       </el-button>
     </header>
@@ -70,7 +70,7 @@
               v-for="row in grp.items"
               :key="row.id"
               class="mkt-row"
-              :class="{ 'is-clickable': canOpenInstalled(row) }"
+              :class="{ 'is-clickable db-float': canOpenInstalled(row) }"
               @click="canOpenInstalled(row) && onOpenInstalled(row)"
             >
               <SvgIcon
@@ -119,7 +119,7 @@
               v-for="row in connectorRows"
               :key="row.type"
               class="mkt-row"
-              :class="{ 'is-clickable': canInspectDef(row) }"
+              :class="{ 'is-clickable db-float': canInspectDef(row) }"
               @click="canInspectDef(row) && onInspectDefPackage(row)"
             >
               <SvgIcon class="mkt-row__icon" :icon-class="row.icon || 'lucide:plug'" :style="{ color: 'var(--el-color-primary)' }" />
@@ -220,7 +220,7 @@
           </div>
           <ul class="mkt__list">
             <!-- 整行可点＝打开物料详情 tab（唯一入口）；不渲染 @作者（恒为自己，纯噪声） -->
-            <li v-for="row in grp.items" :key="row.id" class="mkt-row is-clickable" @click="emit('open-detail', row)">
+            <li v-for="row in grp.items" :key="row.id" class="mkt-row is-clickable db-float" @click="emit('open-detail', row)">
               <SvgIcon
                 class="mkt-row__icon"
                 :icon-class="itemIcon(row)"
@@ -250,7 +250,7 @@
           </ul>
         </template>
         <el-empty v-if="!mineGroups.length" description="你还没有上架过物料" :image-size="72">
-          <el-button v-hasPermi="['databus:market:publish']" type="primary" @click="openPublish">
+          <el-button v-hasPermi="['databus:market:publish']" type="primary" @click="emit('open-publish')">
             <SvgIcon icon-class="lucide:plus" /><span>上架第一个</span>
           </el-button>
         </el-empty>
@@ -301,13 +301,6 @@
 
     <!-- 连接器包上传通道（页头按钮与连接器组空态共用；同 type 升版本＝热更新） -->
     <input ref="packageInputRef" type="file" accept=".zip" class="mkt__hidden-input" @change="onPackageChange" />
-
-    <MarketPublishDialog
-      v-model:visible="publishVisible"
-      :categories="categories"
-      :loading="publishLoading"
-      @confirm="onPublishConfirm"
-    />
   </section>
 </template>
 
@@ -316,7 +309,7 @@ import { computed, h, onMounted, ref, watch } from 'vue';
 import { ElCheckbox, ElMessage, ElMessageBox } from 'element-plus';
 import modal from '@/plugins/modal';
 import { useUserStore } from '@/store/modules/user';
-import type { DatabusMarketInstallVo, DatabusMarketItemVo, MarketPublishForm, MarketResourceType } from '@/api/databus/market/types';
+import type { DatabusMarketInstallVo, DatabusMarketItemVo, MarketResourceType } from '@/api/databus/market/types';
 import type { ConnectorDefVo } from '@/api/databus/connector/types';
 import {
   deprecateConnector,
@@ -342,7 +335,6 @@ import {
   statusMeta,
   versionLabel
 } from './marketDisplay';
-import MarketPublishDialog from './MarketPublishDialog.vue';
 
 defineOptions({ name: 'MarketManagePane' });
 
@@ -372,10 +364,12 @@ const emit = defineEmits<{
   (e: 'scope-change', scope: MarketScope): void;
   /** 返回市场＝聚焦已开的市场 tab，本 tab 不关（两 tab 并存） */
   (e: 'back-to-market'): void;
+  /** 页头 / 我的上架空态「上架物料」：宿主开物料上架 tab（2026-11-01 上架 tab 化，内部弹窗已退役） */
+  (e: 'open-publish'): void;
 }>();
 
 const market = useMarketData();
-const { categories, installed, mine, pending, loading } = market;
+const { installed, mine, pending, loading } = market;
 
 /** 当前视角；初值取 tab 上落盘的 scope，宿主改 tab.marketScope 时经 watch 跟上 */
 const scope = ref<MarketScope>(props.scope ?? 'installed');
@@ -387,15 +381,10 @@ const userStore = useUserStore();
 function hasPermi(perm: string): boolean {
   return userStore.permissions.some((p: string) => p === '*:*:*' || p === perm);
 }
-const canPublish = computed(() => hasPermi('databus:market:publish'));
 /* 连接器运行层权限（§15.7）：list 驱动 defs 分组显隐（启停/卸载/上传按钮走 v-hasPermi 指令） */
 const canConnectorList = computed(() => hasPermi('databus:connector:list'));
 /** 当前用户 id（禁自审判定：待审核列表全量展示，自己上架的项整行不可点，decisions §七-7.1） */
 const currentUserId = computed(() => userStore.userId);
-
-/* ---------------- 弹窗状态 ---------------- */
-const publishVisible = ref(false);
-const publishLoading = ref(false);
 
 /* ---------------- 数据装载 ---------------- */
 
@@ -438,25 +427,10 @@ watch(
   }
 );
 
-/* 市场 tab 空态「去上架」跨 tab 递来的意图：落到本 pane 就开上架弹窗。
-   只认领 publish，别的意图（owner）归市场 tab 消费——两边都清会让后到的一方扑空 */
-watch(
-  marketNavIntent,
-  (intent) => {
-    if (intent?.kind !== 'publish') {
-      return;
-    }
-    marketNavIntent.value = null;
-    if (scope.value !== 'mine') {
-      void switchScope('mine');
-    }
-    publishVisible.value = true;
-  },
-  { immediate: true }
-);
+/* 市场 tab 空态「去上架」的 publish 意图递接链已退役（2026-11-01 上架 tab 化：
+   三处上架入口一律直开 market-publish tab，不再经本 pane 弹弹窗） */
 
 onMounted(async () => {
-  await market.loadCategories();
   await loadScope(scope.value);
 });
 
@@ -803,27 +777,8 @@ async function onDeleteItem(row: DatabusMarketItemVo) {
 }
 
 /* ---------------- 上架提交 ---------------- */
-
-/** 打开上架弹窗（页头按钮与「我的上架」空态 CTA 共用入口） */
-function openPublish() {
-  publishVisible.value = true;
-}
-
-async function onPublishConfirm(form: MarketPublishForm) {
-  publishLoading.value = true;
-  try {
-    await market.publish(form);
-    ElMessage.success('已提交，等待治理审核');
-    publishVisible.value = false;
-    if (scope.value !== 'mine') {
-      await switchScope('mine');
-    }
-  } catch {
-    /* 拦截器已提示 */
-  } finally {
-    publishLoading.value = false;
-  }
-}
+/* 上架表单已提为独立 market-publish tab（2026-11-01）：页头/空态「上架物料」emit open-publish
+   由宿主开 tab；提交与成功提示都在 MarketPublishPane 内完成，本 pane 经 refreshToken 令牌看到新单。 */
 
 /* ---------------- 待审核操作 ---------------- */
 /* 审核动作（通过/驳回、B 口径依赖知情确认、依赖查看留痕）已随详情 tab 化整体迁入
@@ -935,12 +890,19 @@ async function onPublishConfirm(form: MarketPublishForm) {
     border-bottom: none;
   }
 
-  /* 整行可点（唯一入口）：hover 背景 + 手型。不可点行不挂此修饰类，保持默认光标、无 hover、无 chevron */
+  /* 整行可点（唯一入口）：hover 背景 + 手型 + 浮起。不可点行不挂此修饰类，保持默认光标、无 hover、无 chevron */
   &.is-clickable {
     cursor: pointer;
+    position: relative;
+    /* 满宽行左右贴边，放大即被列表容器裁掉，故只位移不缩放（同 .db-row） */
+    --db-lift: -1px;
+    --db-zoom: 1;
 
+    /* 浮起后成一张圆角芯片：补圆角并隐掉本行底线，否则底线会在圆角处翘出两小道 */
     &:hover {
       background-color: var(--el-fill-color-light);
+      border-radius: var(--db-r-control, 10px);
+      border-bottom-color: transparent;
     }
   }
 
