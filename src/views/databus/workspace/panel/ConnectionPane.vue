@@ -9,13 +9,14 @@
 -->
 <template>
   <div class="conn-pane">
-    <ConnectionFormBody
-      v-if="objectId !== undefined"
-      :connection-id="objectId"
-      @saved="onObjectSaved"
-      @cancel="onObjectCancel"
-      @dirty-change="(d) => emit('dirty-change', d)"
-    />
+    <div v-if="objectId !== undefined" class="conn-pane__form db-pane-gutter">
+      <ConnectionFormBody
+        :connection-id="objectId"
+        @saved="onObjectSaved"
+        @cancel="onObjectCancel"
+        @dirty-change="(d) => emit('dirty-change', d)"
+      />
+    </div>
 
     <div v-else v-loading="loading" class="conn-list">
       <div class="conn-list__scroll">
@@ -452,6 +453,11 @@ watch(
   overflow: hidden;
   /* 透明：底色由工作台面板 .ws-panel 统一铺，pane 自身透明（decisions.md §十六） */
   background: transparent;
+}
+
+/* 对象视图（编辑/新建连接）：挂全局 .db-pane-gutter 撑出与列表同比的两侧留白（此前表单直接贴容器两边） */
+.conn-pane__form {
+  height: 100%;
 }
 
 /* 列表视图：滚动区吃满 pane 高度（内层滚动，外层不出现双滚动条） */

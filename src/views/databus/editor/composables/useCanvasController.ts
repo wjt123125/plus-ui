@@ -72,6 +72,9 @@ const PASTE_OFFSET = 30;
 
 export interface CanvasController {
   selectedId: Ref<string | null>;
+  /** 选中动作序号：每次 select() 自增。selectedId 值不变时（重复点同一节点）
+   *  仍会变，供右侧抽屉区分「选中态翻转」与「又点了一次」 */
+  selectSeq: Ref<number>;
   canPaste: Ref<boolean>;
   picker: PickerState;
   menu: MenuState;
@@ -143,6 +146,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
   } = useVueFlow();
 
   const selectedId = ref<string | null>(null);
+  const selectSeq = ref(0);
   const clipboard = ref<ClipboardItem[] | null>(null);
   const canPaste = ref(false);
 
@@ -168,6 +172,8 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
 
   function select(id: string | null) {
     selectedId.value = id;
+    // 无条件自增：重复点同一节点时 selectedId 不变，靠序号把「又点了一次」传出去
+    selectSeq.value += 1;
   }
 
   /** 单选节点并居中（300ms 动画）；画布外调用方（右侧抽屉）经控制器间接操作视图 */
@@ -1026,6 +1032,7 @@ export function createCanvasController(options: CreateControllerOptions): Canvas
 
   const controller: CanvasController = {
     selectedId,
+    selectSeq,
     canPaste,
     picker,
     menu,

@@ -54,6 +54,14 @@
   padding: 24px 24px 32px;
 }
 
+/* —— 内容列两侧留白：编辑/对象视图（表单类满高 pane）用，与 .db-pane-inner 同口径，
+     动态 padding 撑出两侧，随工作区收放同比伸缩 —— */
+.db-pane-gutter {
+  box-sizing: border-box;
+  padding-left: max(0px, calc((100% - var(--db-content-max, 92%)) / 2));
+  padding-right: max(0px, calc((100% - var(--db-content-max, 92%)) / 2));
+}
+
 /* —— 指标区：整块容器 + 内部 0.5px 网格分割（不是一堆独立卡片）—— */
 .db-metric-grid {
   display: grid;

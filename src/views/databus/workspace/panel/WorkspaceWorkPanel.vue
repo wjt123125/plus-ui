@@ -95,6 +95,7 @@
           />
           <FormPane
             v-else-if="tab.kind === 'form'"
+            class="db-pane-gutter"
             :db-id="tab.dbId"
             :tag-suggestions="tagSuggestions"
             :refresh-token="refreshTokens[tab.key] ?? 0"

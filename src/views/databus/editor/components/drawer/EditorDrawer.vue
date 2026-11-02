@@ -83,7 +83,7 @@ const emit = defineEmits<{ fold: [] }>();
 /** 属性/EL/大纲三 tab 是否露出（仅画布 kind；全屏编辑器默认 canvas，行为不变） */
 const showCanvasTabs = computed(() => props.kind === 'canvas');
 
-// 抽屉壳单例，tab 状态只此一份；树/大纲手动停靠不被选中态抢走
+// 抽屉壳单例，tab 状态只此一份；大纲手动停靠不被选中态抢走
 const activeTab = ref<DrawerTabKey>(props.defaultTab);
 
 // 非画布 kind：三画布 tab 不渲染，强制停在资源树，避免 v-model 指向不存在的 pane
@@ -103,17 +103,26 @@ const selectedEdge = computed<Edge | null>(() => props.port?.selectedEdge.value 
 const outlineItems = computed<OutlineItem[]>(() => props.port?.outline.items.value ?? []);
 const outlineSelectedId = computed<string | null>(() => props.port?.outline.selectedId.value ?? null);
 
-// 选中/取消选中自动切换仅在 props↔el 之间；停在 tree/outline 时不抢 tab。
-// 源随 port 切换重算：切到有选中节点的画布也会联动。
+// 选中「动作」驱动自动切 tab，而非选中态翻转：controller.selectSeq 每次 select() 自增，
+// 所以手动切回资源树后再点组件、或重复点同一组件，都会重新触发（布尔源做不到）。
+// tree/el → props（outline 手动停靠不抢）；取消选中回抢占前的 tab，不丢上下文。
+// 源里拼 port.uid：切画布时基准变化，切到已有选中节点的画布同样联动。
+let prevTabBeforeSelect: DrawerTabKey | null = null;
 watch(
   () => {
     const p = props.port;
-    return p ? !!(p.selectedNode.value || p.selectedEdge.value) : false;
+    return p ? `${p.uid}:${p.controller.selectSeq.value}` : '';
   },
-  (hasSel) => {
+  () => {
     if (!showCanvasTabs.value) return;
-    if (hasSel && activeTab.value === 'el') activeTab.value = 'props';
-    else if (!hasSel && activeTab.value === 'props') activeTab.value = 'el';
+    const hasSel = !!(selectedNode.value || selectedEdge.value);
+    if (hasSel && (activeTab.value === 'tree' || activeTab.value === 'el')) {
+      prevTabBeforeSelect = activeTab.value;
+      activeTab.value = 'props';
+    } else if (!hasSel && activeTab.value === 'props' && prevTabBeforeSelect) {
+      activeTab.value = prevTabBeforeSelect;
+      prevTabBeforeSelect = null;
+    }
   },
   { immediate: true }
 );
@@ -167,10 +176,21 @@ watch(
   min-height: 0;
 }
 
-/* 页签胶囊样式统一走全局 .db-tabs（databus-tabs），此处只留抽屉内的边距与滚动 */
+/* 页签胶囊样式统一走全局 .db-tabs（databus-tabs），此处只留抽屉内的边距与居中。
+   页签条与内容黏合成一个整体（参照 Trae 侧栏）：header 变成与面板同色面的通栏横条，
+   与内容之间的空白改用发丝线收口——「浮岛胶囊 + 一段空白」是割裂感的来源 */
 .editor-drawer__tabs :deep(.el-tabs__header) {
-  margin: 0 0 10px;
-  padding: 0 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+/* 胶囊居中：fit-content 收宽 + margin auto 居中，左右留白对称后页签条读作面板标题栏
+   而非左靠浮件；窄栏触发 is-scrollable 时 margin auto 自然退化为 0，不影响 EP 滚动位移 */
+.editor-drawer__tabs :deep(.el-tabs__nav) {
+  float: none;
+  width: fit-content;
+  margin: 0 auto;
 }
 
 /* 非画布形态只剩资源树一个 tab：单颗「资源」胶囊是纯噪声，隐掉页签头，
