@@ -129,9 +129,9 @@ const displayTitle = computed(() => {
 const statusDotColor = computed(() => {
   if (!isChain.value) return '';
   switch (chainInfo.value?.status) {
-    case '1':
+    case 'ENABLED':
       return 'var(--el-color-success)';
-    case '2':
+    case 'DISABLED':
       return 'var(--el-color-warning)';
     default:
       return 'var(--el-text-color-placeholder)';

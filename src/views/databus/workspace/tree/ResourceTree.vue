@@ -336,23 +336,26 @@ function byLabel(a: ResourceTreeNode, b: ResourceTreeNode): number {
 
 /* ---------------- 状态计算（生命周期轴 + 装饰轴） ---------------- */
 
-/** 链路状态码 → 生命周期轴：'0'草稿 / '1'已发布 / '2'已下线 */
+/** 链路状态码 → 生命周期轴：DRAFT 草稿 / ENABLED 已发布 / DISABLED 已下线 */
 const STATUS_LIFECYCLE: Record<string, ResourceLifecycle> = {
-  '0': 'draft',
-  '1': 'published',
-  '2': 'offline'
+  DRAFT: 'draft',
+  ENABLED: 'published',
+  DISABLED: 'offline'
 };
 
 function lifecycleOfChain(status?: string): ResourceLifecycle | undefined {
   return status == null ? undefined : STATUS_LIFECYCLE[status];
 }
 
-/** 自建组件生命周期：停用=已下线；未发布库存脚本件=草稿；其余=已发布 */
+/** 自建组件生命周期：按 DB 行 status 判定（DRAFT 草稿 / DISABLED 已下线 / 其余已发布） */
 function lifecycleOfComponent(r: ComponentRegistryRow): ResourceLifecycle {
+  if (r.db?.status === 'DRAFT') {
+    return 'draft';
+  }
   if (r.disabled) {
     return 'offline';
   }
-  return r.source === 'CUSTOM' && !r.scripted ? 'draft' : 'published';
+  return 'published';
 }
 
 /** 自建组件装饰码：异常 → 会话脏 → 废弃（顺序固定，多标记按此拼接） */

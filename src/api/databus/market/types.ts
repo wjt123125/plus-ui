@@ -10,8 +10,8 @@ export type MarketResourceType = 'COMPONENT' | 'CHAIN' | 'CONNECTOR';
 /** 源资源选择器三型（施工清单 d2）：市场两型 + 连接器（包上传型，接 defs 端点） */
 export type SelectorResourceType = MarketResourceType;
 
-/** 上架状态机：草稿 → 待审 → 通过 / 驳回 → 上线 → 下线 */
-export type MarketItemStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'ONLINE' | 'OFFLINE';
+/** 上架状态机：待审 → 上线 / 驳回 → 下线（与后端 MarketStates 一致，无草稿态） */
+export type MarketItemStatus = 'PENDING' | 'REJECTED' | 'ONLINE' | 'OFFLINE';
 
 /** 安装模式（同构引用层：收藏＝星标，fork＝链路快照落地，shared＝组件共享注册不落副本） */
 export type MarketInstallMode = 'FORK' | 'SHARED' | 'FAVORITE';

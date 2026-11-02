@@ -1,8 +1,8 @@
 <!--
   统一资源选择器（三型：组件 / 链路 / 连接器）。
   市场上架表单的「源资源」专用：resourceType 切换即换数据源与过滤口径——
-  - COMPONENT：启用件（status='0'），归属校验在服务端，前端不预过滤；
-  - CHAIN：已发布非模板件（status='1' & isTemplate='0'）；
+  - COMPONENT：启用件（status='ENABLED'），归属校验在服务端，前端不预过滤；
+  - CHAIN：已发布非模板件（status='ENABLED' & isTemplate='0'）；
   - CONNECTOR：连接器 def 行（包上传/市场来源，零内置；开发目录装载的行不可上架，不进选项）。
   视觉范式融合：ChainSelect 的 el-select+状态徽标 × CmpPickerCard 的彩色图标。
   类型切换时清值重拉（各型 id 语义不同，旧值无意义）；弹窗复用场景由外层 open 时调 refresh()。
@@ -92,16 +92,16 @@ interface ResourceOption {
   statusType?: 'success' | 'info' | 'warning';
 }
 
-const CHAIN_STATUS_TEXT: Record<string, string> = { '0': '草稿', '1': '已发布', '2': '已下线' };
+const CHAIN_STATUS_TEXT: Record<string, string> = { DRAFT: '草稿', ENABLED: '已发布', DISABLED: '已下线' };
 const CHAIN_STATUS_TAG: Record<string, 'success' | 'info' | 'warning'> = {
-  '0': 'info',
-  '1': 'success',
-  '2': 'warning'
+  DRAFT: 'info',
+  ENABLED: 'success',
+  DISABLED: 'warning'
 };
 /** 连接器运行层状态 → 徽标（同 MarketPane 连接器卡片口径） */
-const CONNECTOR_STATUS_TEXT: Record<string, string> = { INACTIVE: '未启用', ENABLED: '已启用', DISABLED: '已禁用', DEPRECATED: '已废弃' };
+const CONNECTOR_STATUS_TEXT: Record<string, string> = { PENDING: '未启用', ENABLED: '已启用', DISABLED: '已禁用', DEPRECATED: '已废弃' };
 const CONNECTOR_STATUS_TAG: Record<string, 'success' | 'info' | 'warning'> = {
-  INACTIVE: 'info',
+  PENDING: 'info',
   ENABLED: 'success',
   DISABLED: 'warning',
   DEPRECATED: 'info'
@@ -116,7 +116,7 @@ async function load(): Promise<void> {
   failed.value = false;
   try {
     if (props.resourceType === 'CHAIN') {
-      const { data } = await listChain({ status: '1', isTemplate: '0', pageNum: 1, pageSize: 999 });
+      const { data } = await listChain({ status: 'ENABLED', isTemplate: '0', pageNum: 1, pageSize: 999 });
       options.value = (data?.rows ?? []).map((c) => ({
         id: c.id ?? '',
         code: c.chainCode,
@@ -140,7 +140,7 @@ async function load(): Promise<void> {
           statusType: CONNECTOR_STATUS_TAG[d.status ?? ''] ?? 'info'
         }));
     } else {
-      const { data } = await listComponent({ status: '0', pageNum: 1, pageSize: 999 });
+      const { data } = await listComponent({ status: 'ENABLED', pageNum: 1, pageSize: 999 });
       options.value = (data?.rows ?? []).map((c) => ({
         id: c.id ?? 0,
         code: c.componentCode,

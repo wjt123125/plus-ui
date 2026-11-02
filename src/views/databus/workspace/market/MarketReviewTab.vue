@@ -324,9 +324,7 @@ function statusLabel(status?: MarketItemStatus | null): string {
       ONLINE: '已上架',
       PENDING: '待审',
       REJECTED: '已驳回',
-      OFFLINE: '已下架',
-      DRAFT: '草稿',
-      APPROVED: '已通过'
+      OFFLINE: '已下架'
     } as Record<string, string>
   )[status] ?? status;
 }

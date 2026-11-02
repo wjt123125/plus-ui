@@ -83,7 +83,7 @@ export function delChain(ids: number | string | Array<number | string>) {
 }
 
 /**
- * 发布链路：status 0草稿/2已下线 → 1已发布 + version+1；
+ * 发布链路：status DRAFT草稿/DISABLED已下线 → ENABLED已发布 + version+1；
  * 后端先推 EL（含脚本）到 Rule-DB lf_chain/lf_script，再改状态。
  * 响应携带发布引导清单（decisions §十四-6）：闭包内自有未上架物料，前端弹窗确认后调批量提审。
  * POST /databus/chain/publish/{id}（权限 databus:editor:publish）
@@ -96,7 +96,7 @@ export function publishChain(id: number | string): AxiosPromise<ChainPublishResu
 }
 
 /**
- * 下线链路：status 1已发布 → 2已下线；后端先改状态再移除 Rule-DB lf_chain。
+ * 下线链路：status ENABLED已发布 → DISABLED已下线；后端先改状态再移除 Rule-DB lf_chain。
  * POST /databus/chain/offline/{id}（权限 databus:editor:offline）
  */
 export function offlineChain(id: number | string) {

@@ -11,13 +11,13 @@
   <div class="cf-pane">
     <header class="cf-head">
       <el-tooltip
-        :content="form.status === '0' ? '已启用' : '已停用'"
+        :content="form.status === 'ENABLED' ? '已启用' : '已停用'"
         placement="top"
         :show-after="200"
       >
         <span
           class="cf-head__dot"
-          :class="form.status === '0' ? 'is-enabled' : 'is-disabled'"
+          :class="form.status === 'ENABLED' ? 'is-enabled' : 'is-disabled'"
           aria-hidden="true"
         />
       </el-tooltip>
@@ -46,8 +46,8 @@
       <el-switch
         v-hasPermi="['databus:component:toggle']"
         :model-value="form.status"
-        active-value="0"
-        inactive-value="1"
+        active-value="ENABLED"
+        inactive-value="DISABLED"
         size="small"
         @update:model-value="onStatusSwitch"
       />
@@ -293,7 +293,7 @@ async function loadDetail(id: number) {
       scriptLang: data.scriptLang ?? '',
       scriptBody: data.scriptBody ?? '',
       version: data.version ?? null,
-      status: data.status ?? '0',
+      status: data.status ?? 'ENABLED',
       deprecated: data.deprecated ?? '0',
       deprecateNote: data.deprecateNote ?? '',
       docUrl: data.docUrl ?? '',
@@ -420,12 +420,12 @@ async function handleSubmit() {
  * 停用与卡片/树开关同口径二次确认（停后编辑器面板不再投放该件，已发布链路继续跑）。
  */
 async function onStatusSwitch(val: string | number | boolean | undefined) {
-  const next = val === '1' ? '1' : '0';
+  const next: 'ENABLED' | 'DISABLED' = val === 'DISABLED' ? 'DISABLED' : 'ENABLED';
   if (!isEdit.value || form.value.id == null) {
     form.value.status = next;
     return;
   }
-  if (next === '1') {
+  if (next === 'DISABLED') {
     const confirmed = await modal
       .confirm(
         `确认停用「${form.value.componentName || form.value.componentCode}」？` +
@@ -443,7 +443,7 @@ async function onStatusSwitch(val: string | number | boolean | undefined) {
   form.value.status = next;
   try {
     await toggleComponent(form.value.id, next);
-    modal.msgSuccess(next === '0' ? '已启用' : '已停用');
+    modal.msgSuccess(next === 'ENABLED' ? '已启用' : '已停用');
     markBaseline();
     // 上抛宿主刷台账/资源树，否则左树状态点还停在旧值
     emitSaved();

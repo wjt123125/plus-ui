@@ -27,7 +27,7 @@
           ref="chainSelectRef"
           v-model="chainId"
           value-key="id"
-          status="1"
+          status="ENABLED"
           :clearable="false"
           :show-status-tag="false"
           :disabled="lockedChainId !== undefined"

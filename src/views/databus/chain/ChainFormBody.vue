@@ -158,7 +158,7 @@ const form = ref<DatabusChainBo>(buildInitFormData());
 const isEdit = computed(() => props.chainId != null && props.chainId !== '');
 
 /** 模板运营区所需状态（通用保存表单不含这些字段，单独从详情同步） */
-const STATUS_PUBLISHED = '1';
+const STATUS_PUBLISHED = 'ENABLED';
 
 interface TemplateMetaState {
   isTemplate: boolean;

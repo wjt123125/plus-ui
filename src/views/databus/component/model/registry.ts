@@ -130,7 +130,7 @@ export function buildRegistry(
       tags: db.tags ?? undefined,
       deprecated: db.deprecated === '1',
       deprecateNote: db.deprecateNote || undefined,
-      disabled: db.status === '1',
+      disabled: db.status === 'DISABLED',
       scripted: !!db.scriptBody
     });
   }

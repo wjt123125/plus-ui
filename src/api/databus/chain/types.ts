@@ -36,7 +36,7 @@ export interface DatabusChainVo {
   chainName: string;
   /** 版本号（每次发布递增，草稿阶段恒为 1，不存历史快照） */
   version?: number;
-  /** 状态（0草稿 1已发布 2已下线） */
+  /** 状态（DRAFT 草稿 / ENABLED 已发布 / DISABLED 已下线） */
   status?: string;
   /** LiteFlow EL 表达式（后端从 cmpProperty 权威生成，不接受前端传入） */
   elExpression?: string;
@@ -130,7 +130,7 @@ export interface DatabusChainQuery extends PageQuery {
   chainCode?: string;
   /** 链路名称（后端模糊匹配） */
   chainName?: string;
-  /** 状态（0草稿 1已发布 2已下线，精确匹配） */
+  /** 状态（DRAFT 草稿 / ENABLED 已发布 / DISABLED 已下线，精确匹配） */
   status?: string;
   /** 是否精选模板（0我的链路 1精选模板，双 tab 必传其一；不传则不过滤） */
   isTemplate?: string;
@@ -170,10 +170,10 @@ export interface ChainPublishResultVo {
 export interface ChainStatsVo {
   /** 总链路数 */
   total?: number;
-  /** 待发布草稿数（status=0） */
+  /** 待发布草稿数（status=DRAFT） */
   draft?: number;
-  /** 运行中已发布数（status=1） */
+  /** 运行中已发布数（status=ENABLED） */
   published?: number;
-  /** 已下线数（status=2） */
+  /** 已下线数（status=DISABLED） */
   offline?: number;
 }

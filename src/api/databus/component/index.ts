@@ -102,9 +102,9 @@ export function updateComponent(data: DatabusComponentForm) {
 
 /**
  * 启停自定义组件（治理专属，与「修改组件」拆权限：有 edit 的操作员停不了物料投放）
- * PUT /databus/component/{id}/status?status=0|1（权限 databus:component:toggle）
+ * PUT /databus/component/{id}/status?status=ENABLED|DISABLED（权限 databus:component:toggle）
  */
-export function toggleComponent(id: number | string, status: '0' | '1') {
+export function toggleComponent(id: number | string, status: 'ENABLED' | 'DISABLED') {
   return request({
     url: `/databus/component/${id}/status`,
     method: 'put',

@@ -4,7 +4,7 @@
 
   可配置要点：
   - valueKey：选中值用表主键 id（执行场景）还是 chainCode（CHAIN 引用，Rule-DB 身份），默认 chainCode；
-  - status：按状态过滤（'1' 仅已发布等），不传=全部状态；
+  - status：按状态过滤（'ENABLED' 仅已发布等），不传=全部状态；
   - includeTemplate：默认只列普通链（模板恒草稿不可发布，运行时永远无法被引用）；
   - excludeId：按表主键排除（CHAIN 引用时排除当前编辑链，防直接递归）；
   - showStatusTag：候选项右侧状态徽标（执行弹窗只选已发布时可关）；
@@ -96,7 +96,7 @@ const props = withDefaults(
     modelValue?: SelectValue | null;
     /** 值语义：chainCode=Rule-DB 链路编码（默认）；id=表主键 */
     valueKey?: 'chainCode' | 'id';
-    /** 状态精确过滤（0草稿 1已发布 2已下线）；不传=全部 */
+    /** 状态精确过滤（DRAFT 草稿 / ENABLED 已发布 / DISABLED 已下线）；不传=全部 */
     status?: string;
     /** 是否包含精选模板，默认 false（只列普通链） */
     includeTemplate?: boolean;
@@ -127,11 +127,11 @@ const emit = defineEmits<{
   (e: 'change', value: SelectValue): void;
 }>();
 
-const STATUS_TEXT: Record<string, string> = { '0': '草稿', '1': '已发布', '2': '已下线' };
+const STATUS_TEXT: Record<string, string> = { DRAFT: '草稿', ENABLED: '已发布', DISABLED: '已下线' };
 const STATUS_TAG: Record<string, 'success' | 'info' | 'warning'> = {
-  '0': 'info',
-  '1': 'success',
-  '2': 'warning'
+  DRAFT: 'info',
+  ENABLED: 'success',
+  DISABLED: 'warning'
 };
 
 const query = computed<DatabusChainQuery>(() => ({

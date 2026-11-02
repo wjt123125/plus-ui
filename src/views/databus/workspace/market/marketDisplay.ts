@@ -41,9 +41,7 @@ export function rowIcon(row: DatabusMarketInstallVo): string {
 
 /** 上架状态标签映射 */
 const STATUS_META: Record<MarketItemStatus, { label: string; type: 'primary' | 'success' | 'warning' | 'danger' | 'info' }> = {
-  DRAFT: { label: '草稿', type: 'info' },
   PENDING: { label: '待审核', type: 'warning' },
-  APPROVED: { label: '已通过', type: 'primary' },
   REJECTED: { label: '已驳回', type: 'danger' },
   ONLINE: { label: '已上架', type: 'success' },
   OFFLINE: { label: '已下架', type: 'info' }
@@ -54,7 +52,7 @@ export function statusMeta(status: MarketItemStatus) {
 
 /** 连接器 def 状态标签映射 */
 const CONNECTOR_STATUS_META: Record<ConnectorDefVo['status'], { label: string; type: 'success' | 'warning' | 'info' }> = {
-  INACTIVE: { label: '未启用', type: 'info' },
+  PENDING: { label: '未启用', type: 'info' },
   ENABLED: { label: '已启用', type: 'success' },
   DISABLED: { label: '已禁用', type: 'warning' },
   DEPRECATED: { label: '已废弃', type: 'info' }

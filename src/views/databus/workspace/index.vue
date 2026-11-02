@@ -541,7 +541,7 @@ async function handleDelete(row: ComponentRegistryRow) {
 }
 
 /**
- * 卡片开关：val=true 启用（status 0）/ false 停用（status 1）。
+ * 卡片开关：val=true 启用（status ENABLED）/ false 停用（status DISABLED）。
  * 停用不硬拦：仅提示面板不可见、已发布链路继续跑（库存脚本件重启后不再注册，重启用恢复）。
  * 走独立启停端点（databus:component:toggle，治理专属）：不再借「修改组件」整包提交改 status，
  * 否则操作员凭 edit 权限也能停物料投放。入口显隐由 v-hasRoles(['databus_gov']) / v-hasPermi 同源门控。
@@ -558,7 +558,7 @@ async function toggleEnabled(row: ComponentRegistryRow, val: boolean) {
   }
   togglingCode.value = row.code;
   try {
-    await toggleComponent(row.db.id, val ? '0' : '1');
+    await toggleComponent(row.db.id, val ? 'ENABLED' : 'DISABLED');
     modal.msgSuccess(val ? '已启用' : '已停用');
     await getList();
   } finally {

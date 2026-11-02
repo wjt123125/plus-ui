@@ -42,7 +42,7 @@ export const defaultForm = (): ComponentFormModel => ({
   scriptLang: '',
   scriptBody: '',
   version: null,
-  status: '0',
+  status: 'ENABLED',
   deprecated: '0',
   deprecateNote: '',
   docUrl: '',

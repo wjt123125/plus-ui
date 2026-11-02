@@ -206,7 +206,7 @@ export interface DatabusComponentVo {
   scriptBody?: string | null;
   /** 脚本版本（已保存版本号，无脚本为空）【工件】 */
   version?: number | null;
-  /** 启停状态（0 启用 1 停用） */
+  /** 启停状态（DRAFT 草稿 / ENABLED 启用 / DISABLED 停用） */
   status: string;
   /** 废弃标记（0 正常 1 废弃；废弃≠停用） */
   deprecated?: string | null;

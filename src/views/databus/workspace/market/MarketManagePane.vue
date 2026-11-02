@@ -172,7 +172,7 @@
                     size="small"
                     @change="(v: string | number | boolean) => onToggleDef(row, Boolean(v))"
                   />
-                  <!-- 废弃只从可执行态进入（ENABLED / DISABLED）；INACTIVE 从未启用，直接卸载即可 -->
+                  <!-- 废弃只从可执行态进入（ENABLED / DISABLED）；PENDING 从未启用，直接卸载即可 -->
                   <el-button
                     v-if="row.status === 'ENABLED' || row.status === 'DISABLED'"
                     v-hasPermi="['databus:connector:edit']"

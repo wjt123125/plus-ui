@@ -207,7 +207,7 @@ import type { ResourceMenuCommand, ResourceMenuState } from '../workbench.types'
 defineOptions({ name: 'ResourceTreeContextMenu' });
 
 /** 已发布状态（发布/下线/执行菜单项按此显隐，与 DatabusChainVo.status 对齐） */
-const STATUS_PUBLISHED = '1';
+const STATUS_PUBLISHED = 'ENABLED';
 
 const props = defineProps<{ menu: ResourceMenuState }>();
 

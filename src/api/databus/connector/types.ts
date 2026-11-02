@@ -5,7 +5,7 @@
  */
 
 /** 运行层状态机（def 行） */
-export type ConnectorDefStatus = 'INACTIVE' | 'ENABLED' | 'DISABLED' | 'DEPRECATED';
+export type ConnectorDefStatus = 'PENDING' | 'ENABLED' | 'DISABLED' | 'DEPRECATED';
 
 /** def 来源（MARKET / UPLOAD / AI / ADMIN / DEV） */
 export type ConnectorDefSource = 'MARKET' | 'UPLOAD' | 'AI' | 'ADMIN' | 'DEV';
@@ -103,7 +103,7 @@ export interface ConnectorDefVo {
   label?: string;
   /** 图标名（Iconify 字符串） */
   icon?: string;
-  /** 运行层状态（INACTIVE / ENABLED / DISABLED / DEPRECATED） */
+  /** 运行层状态（PENDING / ENABLED / DISABLED / DEPRECATED） */
   status: ConnectorDefStatus | string;
   /**
    * 运行态健康（派生，不落库）。配色规则：status≠ENABLED 一律灰；

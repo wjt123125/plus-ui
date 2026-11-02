@@ -21,7 +21,7 @@ export function listConnectorDefs(): AxiosPromise<ConnectorDefVo[]> {
 
 /**
  * 上传连接器包（zip＝manifest.json + lib/）：校验 + 落盘 + 入库。
- * 同 type 升版本＝热更新；新 type 默认 INACTIVE，enable 是治理者显式动作。
+ * 同 type 升版本＝热更新；新 type 默认 PENDING，enable 是治理者显式动作。
  * POST /databus/connector/packages（权限 databus:connector:upload）
  */
 export function uploadConnectorPackage(file: File): AxiosPromise<ConnectorDefVo> {

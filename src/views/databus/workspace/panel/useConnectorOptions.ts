@@ -11,7 +11,7 @@ import { connectorHealthMeta, type ConnectorHealthMeta } from '../market/marketD
  * bpmHttp 兜底等于把已删掉的内置概念又请回来（方案 §10.3 明确要求删除 CONNECTOR_OPTIONS）。
  * 无权限 / 请求失败时选项为空，表单落到空态提示，不假装能连。
  *
- * 不筛 status：INACTIVE/DISABLED/DEPRECATED 只挡新建（§15.3），
+ * 不筛 status：PENDING/DISABLED/DEPRECATED 只挡新建（§15.3），
  * 存量连接的类型筛选、label 展示与 configSchema 回显仍需可见。
  */
 export interface ConnectorTypeOption {
