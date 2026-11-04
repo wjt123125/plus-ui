@@ -2,13 +2,14 @@
   物料管理 tab 面板（工作区中栏 kind market-manage，全局单例；设计正本 §二/§3.2）。
   2026-10-30 由 MarketPane 内部的 view/scope 双 ref 提为独立 tab：管理页刷新后仍在，
   不必再「进市场 → 点管理 → 切视角」重走一遍。视角落在 tab.marketScope 上随会话持久化。
-  三个视角（视角是本 pane 唯一一层 tab）：
-    · 已装管理（消费）——类型平铺成「组件 → 链路 → 连接器」分组列表，空组整组隐藏；
-      连接器组例外：有 list 权限即常驻，空态自带上传引导（§2.6）；
+  四个视角（视角是本 pane 唯一一层 tab）：
+    · 已装管理（消费）——类型平铺成「组件 → 链路 → 连接器」分组列表，空组整组隐藏。
+      三条都只认安装台账：没有自己的安装记录就不会出现在这里，不分角色；
     · 我的上架（作者）——下架 / 删除，驳回理由与修改说明就地展示；
-    · 待审核（治理，按权限串显隐）——数量红色冒泡（未读消息式，>99 显 99+）。
-  连接器（万物皆包 §15.3）：已装治理走 defs 端点（不写 install 台账），def 行是模块级共享单例，
-  与市场 tab 卡片的启停态同源；整行点开连接器包查看 tab。
+    · 待审核（审核，按权限串显隐）——数量红色冒泡（未读消息式，>99 显 99+）。只管审核；
+    · 治理（运行态，按治理员角色显隐）——当前是连接器：启停 / 废弃 / 卸载 / dev 重载，
+      数据是全部 def 行，和「装没装过」无关。审核与治理视角分开，两套职责。
+  整行点开连接器包查看 tab（清单＋反编译预览）。
   面板自身零 API：数据走 useMarketData，打开/卸载/启停/开 tab 一律上抛宿主（与本工作台「树不闭环」同范式）。
 -->
 <template>
@@ -23,9 +24,6 @@
         <h2 class="mkt__title">{{ manageTitle }}</h2>
         <p class="mkt__sub">{{ manageSub }}</p>
       </div>
-      <el-button v-hasPermi="['databus:connector:upload']" :loading="packageUploading" @click="pickPackage">
-        <SvgIcon icon-class="lucide:upload" /><span>上传连接器包</span>
-      </el-button>
       <el-button v-hasPermi="['databus:market:publish']" type="primary" @click="emit('open-publish')">
         <SvgIcon icon-class="lucide:plus" /><span>上架物料</span>
       </el-button>
@@ -39,6 +37,17 @@
         </button>
         <button type="button" class="db-seg__item" :class="{ 'is-active': scope === 'mine' }" @click="switchScope('mine')">
           我的上架
+        </button>
+        <!-- 全局治理入口：与「审核」分开——审核管物料能不能上市场，治理管运行时能不能跑。
+             先只放连接器（启停/废弃/卸载），后续组件、链路的治理项也收到这里 -->
+        <button
+          v-if="canGovern"
+          type="button"
+          class="db-seg__item"
+          :class="{ 'is-active': scope === 'governance' }"
+          @click="switchScope('governance')"
+        >
+          物料治理
         </button>
         <button
           v-hasPermi="['databus:market:review']"
@@ -79,11 +88,20 @@
                 :style="{ color: row.color || 'var(--el-color-primary)' }"
               />
               <div class="mkt-row__meta">
-                <div class="mkt-row__name">{{ row.name }}</div>
-                <div class="mkt-row__summary">{{ row.summary }}</div>
-                <button v-if="row.ownerCode" type="button" class="mkt-row__author" @click.stop="onAuthor(row.ownerCode!, row.resourceType)">
-                  @{{ row.ownerCode }}
-                </button>
+                <div class="mkt-row__line">
+                  <StatusDot
+                    :tone="installRowStatus(row).tone"
+                    :label="installRowStatus(row).label"
+                    :title="installRowStatus(row).reason"
+                  />
+                  <span class="mkt-row__name">{{ row.name }}</span>
+                </div>
+                <div class="mkt-row__summary">
+                  {{ row.summary }}
+                  <button v-if="row.ownerCode" type="button" class="mkt-row__author" @click.stop="onAuthor(row.ownerCode!, row.resourceType)">
+                    @{{ row.ownerCode }}
+                  </button>
+                </div>
               </div>
               <div class="mkt-row__ops" @click.stop>
                 <!-- 启停仅对组件有意义（链路生命周期由发布/下线管），故链路只留卸载 -->
@@ -102,109 +120,6 @@
             </li>
           </ul>
         </template>
-        <!-- 连接器组：已装治理走 defs 端点（§15.3：不写 install 台账，enable 即安装），行模板与台账行不同故单列。
-             本组不随「空组整组隐藏」消失（有 list 权限即常驻）：零内置之后一件连接器都没有是全新部署的常态
-             （§2.6），整组藏起来用户只会以为货架是空的，看不到「该去上传包」这条出路 -->
-        <template v-if="canConnectorList">
-          <div class="mkt__group-title">
-            连接器 <span class="mkt__group-count">{{ connectorRows.length }}</span>
-          </div>
-          <ul v-if="connectorRows.length" class="mkt__list">
-            <!-- 整行可点＝打开连接器包查看 tab（清单＋反编译预览，唯一入口）；
-                 「下载」「查看」按钮已从行上撤掉：看包只此一个入口，下载原包收进包查看 tab 头部；
-                 ops 区只留治理动作 ⟨启停⟩[废弃][卸载]，@click.stop 阻断冒泡到行。
-                 开发目录装载的行同样可点（进去看装载目录/装载时间 + 实现声明 + 运行时驱动），
-                 但只给 [重新加载]，其余治理动作一律不出现 -->
-            <li
-              v-for="row in connectorRows"
-              :key="row.type"
-              class="mkt-row"
-              :class="{ 'is-clickable db-float': canInspectDef(row) }"
-              @click="canInspectDef(row) && onInspectDefPackage(row)"
-            >
-              <SvgIcon class="mkt-row__icon" :icon-class="row.icon || 'lucide:plug'" :style="{ color: 'var(--el-color-primary)' }" />
-              <div class="mkt-row__meta">
-                <div class="mkt-row__line">
-                  <span class="mkt-row__name">{{ row.label || row.type }}</span>
-                  <el-tag size="small" :type="connectorHealthMeta(row).type" effect="light" :title="connectorHealthMeta(row).reason">
-                    {{ connectorHealthMeta(row).label }}
-                  </el-tag>
-                  <el-tag
-                    v-if="isDevDef(row)"
-                    size="small"
-                    type="warning"
-                    effect="plain"
-                    title="开发目录装载：跑的是本地编译输出，不是上传的包；改代码后点「重新加载」即可生效"
-                  >
-                    开发装载
-                  </el-tag>
-                </div>
-                <!-- 来源只在副标题说一次：dev 行上一行已有「开发装载」标签（带 hover 解释），再拼一遍是重复信息 -->
-                <div class="mkt-row__summary">
-                  #{{ row.type }}{{ row.version ? ` · ${versionLabel(row.version)}` : ''
-                  }}{{ isDevDef(row) ? '' : ` · ${connectorSourceLabel(row)}` }}
-                </div>
-                <button v-if="row.ownerCode" type="button" class="mkt-row__author" @click.stop="onAuthor(row.ownerCode!, 'CONNECTOR')">
-                  @{{ row.ownerCode }}
-                </button>
-              </div>
-              <div class="mkt-row__ops" @click.stop>
-                <!-- 开发目录装载的行只给「重新加载」：它跑的是本地编译输出，运行期没有包可下载可看，
-                     启停/废弃改了下次启动又被开发通道覆盖，卸载也删不到真正的来源（开发目录由配置决定），
-                     所以这些按钮一律不出现；整行仍可点进查看页（看装载信息与实现声明，不是看 zip） -->
-                <el-button
-                  v-if="isDevDef(row)"
-                  v-hasPermi="['databus:connector:edit']"
-                  size="small"
-                  :loading="devReloadingType === row.type"
-                  @click="onReloadDevDef(row)"
-                >
-                  <SvgIcon icon-class="lucide:refresh-cw" /><span>重载</span>
-                </el-button>
-                <template v-else>
-                  <!-- 零内置：全部连接器都有 def 行，启停/卸载一律走 defs 端点 -->
-                  <!-- 启停/废弃/卸载一律治理专属：门控用权限串（与后端 @SaCheckPermission 同源，看得到即调得动） -->
-                  <!-- DEPRECATED 是终态（不可逆）：不给开关也不给废弃，只留卸载 -->
-                  <el-switch
-                    v-if="row.status !== 'DEPRECATED'"
-                    v-hasPermi="['databus:connector:edit']"
-                    :model-value="row.status === 'ENABLED'"
-                    size="small"
-                    @change="(v: string | number | boolean) => onToggleDef(row, Boolean(v))"
-                  />
-                  <!-- 废弃只从可执行态进入（ENABLED / DISABLED）；PENDING 从未启用，直接卸载即可 -->
-                  <el-button
-                    v-if="row.status === 'ENABLED' || row.status === 'DISABLED'"
-                    v-hasPermi="['databus:connector:edit']"
-                    size="small"
-                    type="warning"
-                    plain
-                    @click="onDeprecateDef(row)"
-                  >
-                    <SvgIcon icon-class="lucide:archive" /><span>废弃</span>
-                  </el-button>
-                  <el-button v-hasPermi="['databus:connector:remove']" size="small" type="danger" plain @click="onUninstallDef(row)">
-                    <SvgIcon icon-class="lucide:trash" /><span>卸载</span>
-                  </el-button>
-                </template>
-              </div>
-              <SvgIcon v-if="canInspectDef(row)" class="mkt-row__chevron" icon-class="lucide:chevron-right" />
-            </li>
-          </ul>
-          <!-- 空态给的是出路不是安慰（§2.6）：文案见 connectorEmptyText，
-               上传按钮复用页头那个隐藏 input 的选包入口，只在真·一个包都没有时出现 -->
-          <el-empty v-if="connectorEmptyText" :description="connectorEmptyText" :image-size="72">
-            <el-button
-              v-if="!connectorDefs.length"
-              v-hasPermi="['databus:connector:upload']"
-              type="primary"
-              :loading="packageUploading"
-              @click="pickPackage"
-            >
-              <SvgIcon icon-class="lucide:upload" /><span>上传连接器包</span>
-            </el-button>
-          </el-empty>
-        </template>
         <el-empty v-if="installedEmpty" description="还没有安装任何物料" :image-size="72">
           <el-button @click="emit('back-to-market')">
             <SvgIcon icon-class="lucide:store" /><span>去市场逛逛</span>
@@ -220,7 +135,14 @@
           </div>
           <ul class="mkt__list">
             <!-- 整行可点＝打开物料详情 tab（唯一入口）；不渲染 @作者（恒为自己，纯噪声） -->
-            <li v-for="row in grp.items" :key="row.id" class="mkt-row is-clickable db-float" @click="emit('open-detail', row)">
+            <li
+              v-for="row in grp.items"
+              :key="row.id"
+              class="mkt-row is-clickable db-float"
+              :data-market-item-id="row.id"
+              :class="{ 'is-flash': flashItemId === String(row.id) }"
+              @click="emit('open-detail', row)"
+            >
               <SvgIcon
                 class="mkt-row__icon"
                 :icon-class="itemIcon(row)"
@@ -228,10 +150,8 @@
               />
               <div class="mkt-row__meta">
                 <div class="mkt-row__line">
+                  <StatusDot :tone="marketItemRowStatus(row.status).tone" :label="marketItemRowStatus(row.status).label" :title="marketItemRowStatus(row.status).reason" />
                   <span class="mkt-row__name">{{ row.name }}</span>
-                  <el-tag size="small" :type="statusMeta(row.status).type" effect="light">
-                    {{ statusMeta(row.status).label }}
-                  </el-tag>
                 </div>
                 <div class="mkt-row__summary">{{ row.summary || row.codeDisplay }}</div>
                 <div v-if="row.status === 'REJECTED' && row.remark" class="mkt-row__remark">驳回理由：{{ row.remark }}</div>
@@ -250,14 +170,11 @@
           </ul>
         </template>
         <el-empty v-if="!mineGroups.length" description="你还没有上架过物料" :image-size="72">
-          <el-button v-hasPermi="['databus:market:publish']" type="primary" @click="emit('open-publish')">
-            <SvgIcon icon-class="lucide:plus" /><span>上架第一个</span>
-          </el-button>
         </el-empty>
       </template>
 
-      <!-- 视角三：待审核（治理队列）。类型平铺，空组隐藏；审核动作一律进审核 tab 就地完成 -->
-      <template v-else>
+      <!-- 视角三：待审核（审核队列）。类型平铺，空组隐藏；审核动作一律进审核 tab 就地完成 -->
+      <template v-else-if="scope === 'pending'">
         <template v-for="grp in pendingGroups" :key="grp.type">
           <div class="mkt__group-title">
             {{ grp.label }} <span class="mkt__group-count">{{ grp.items.length }}</span>
@@ -283,10 +200,13 @@
                 <div class="mkt-row__name">{{ row.name }}</div>
                 <!-- 简介为空不回退编码：下一行固定显示 codeDisplay，回退会重复显示（闭包联审连带单据无简介） -->
                 <div v-if="row.summary" class="mkt-row__summary">{{ row.summary }}</div>
-                <div class="mkt-row__code">{{ row.codeDisplay }}</div>
-                <button v-if="row.ownerCode" type="button" class="mkt-row__author" @click.stop="onAuthor(row.ownerCode!, row.resourceType)">
-                  @{{ row.ownerCode }}
-                </button>
+                <div class="mkt-row__code">
+                  {{ row.codeDisplay }}
+                  <!-- 作者跟在编码同一行：待审核行没有 DEV 概念，单独占行会让行高比其它 tab 高 -->
+                  <button v-if="row.ownerCode" type="button" class="mkt-row__author" @click.stop="onAuthor(row.ownerCode!, row.resourceType)">
+                    @{{ row.ownerCode }}
+                  </button>
+                </div>
               </div>
               <div v-if="isSelfPending(row)" class="mkt-row__ops">
                 <span class="mkt-row__self-pending">自己上架 · 待审核（禁自审）</span>
@@ -297,18 +217,131 @@
         </template>
         <el-empty v-if="!pendingGroups.length" description="暂无待审核物料" :image-size="72" />
       </template>
-    </div>
 
-    <!-- 连接器包上传通道（页头按钮与连接器组空态共用；同 type 升版本＝热更新） -->
-    <input ref="packageInputRef" type="file" accept=".zip" class="mkt__hidden-input" @change="onPackageChange" />
+      <!-- 视角四：治理（全局运行态，与审核分开）。当前只有连接器：启停 / 废弃 / 卸载 / dev 重载。
+           数据是全部 def 行，不受「是否安装过」影响——治理看的是这台机器装了哪些包。
+           v-else-if 再兜一层：权限被收回但 tab 还记着 governance 时不渲染治理内容 -->
+      <template v-else-if="canGovern">
+        <template v-if="canConnectorList">
+          <div class="mkt__group-title">
+            连接器 <span class="mkt__group-count">{{ connectorRows.length }}</span>
+          </div>
+          <ul v-if="connectorRows.length" class="mkt__list">
+            <!-- 整行可点＝打开连接器包查看 tab（清单＋反编译预览，唯一入口）；
+                 ops 区只留治理动作 ⟨启停⟩[废弃][卸载]，@click.stop 阻断冒泡到行 -->
+            <li
+              v-for="row in connectorRows"
+              :key="row.type"
+              class="mkt-row"
+              :class="{ 'is-clickable db-float': canInspectDef(row) }"
+              @click="canInspectDef(row) && onInspectDefPackage(row)"
+            >
+              <SvgIcon class="mkt-row__icon" :icon-class="row.icon || 'lucide:plug'" :style="{ color: 'var(--el-color-primary)' }" />
+              <div class="mkt-row__meta">
+                <div class="mkt-row__line">
+                  <StatusDot
+                    :tone="connectorRowStatus(row).tone"
+                    :label="connectorRowStatus(row).label"
+                    :title="connectorRowStatus(row).reason"
+                    :dev="isDevDef(row)"
+                  />
+                  <span class="mkt-row__name">{{ row.label || row.type }}</span>
+                </div>
+                <!-- 来源只在副标题说一次：dev 行的来源由行内 DEV 角标表达（带 hover 解释），再拼一遍是重复信息。
+                     作者跟在副标题同一行：DEV 行没有作者，单独一行会导致有/无作者的行高不一致 -->
+                <div class="mkt-row__summary">
+                  #{{ row.type }}{{ row.version ? ` · ${versionLabel(row.version)}` : ''
+                  }}{{ isDevDef(row) ? '' : ` · ${connectorSourceLabel(row)}` }}
+                  <button v-if="row.ownerCode" type="button" class="mkt-row__author" @click.stop="onAuthor(row.ownerCode!, 'CONNECTOR')">
+                    @{{ row.ownerCode }}
+                  </button>
+                </div>
+              </div>
+              <div class="mkt-row__ops" @click.stop>
+                <!-- 治理动作全部收纳进「更多」菜单：行上只留状态与名称，避免一排放四个按钮 -->
+                <el-dropdown
+                  trigger="click"
+                  placement="bottom-end"
+                  popper-class="db-menu-popper"
+                  @command="(cmd: string) => onGovernCommand(row, cmd)"
+                >
+                  <el-button
+                    size="small"
+                    text
+                    class="mkt-row__more"
+                    :loading="isDevDef(row) && devReloadingType === row.type"
+                    aria-label="更多治理动作"
+                  >
+                    <!-- 实心竖排三点：直接内联 SVG，不吃图标字体/子集 -->
+                    <svg class="mkt-row__dots" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                      <circle cx="12" cy="5" r="2.4" fill="currentColor" />
+                      <circle cx="12" cy="12" r="2.4" fill="currentColor" />
+                      <circle cx="12" cy="19" r="2.4" fill="currentColor" />
+                    </svg>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <!-- 开发目录装载的行跑的是本地编译输出，治理动只剩重载与卸载 -->
+                      <el-dropdown-item
+                        v-if="isDevDef(row) && hasPermi('databus:connector:edit')"
+                        class="db-menu-item is-primary"
+                        command="reload"
+                      >
+                        <SvgIcon icon-class="lucide:refresh-cw" /><span>重载</span>
+                      </el-dropdown-item>
+                      <template v-else>
+                        <el-dropdown-item
+                          v-if="row.status === 'ENABLED' && hasPermi('databus:connector:edit')"
+                          class="db-menu-item is-warning"
+                          command="disable"
+                        >
+                          <SvgIcon icon-class="lucide:pause" /><span>停用</span>
+                        </el-dropdown-item>
+                        <el-dropdown-item
+                          v-if="row.status === 'DISABLED' && hasPermi('databus:connector:edit')"
+                          class="db-menu-item is-success"
+                          command="enable"
+                        >
+                          <SvgIcon icon-class="lucide:play" /><span>启用</span>
+                        </el-dropdown-item>
+                        <!-- 废弃是终态（不可逆）：只从可执行态进入，PENDING 已不在治理列表 -->
+                        <el-dropdown-item
+                          v-if="(row.status === 'ENABLED' || row.status === 'DISABLED') && hasPermi('databus:connector:edit')"
+                          class="db-menu-item is-warning"
+                          command="deprecate"
+                        >
+                          <SvgIcon icon-class="lucide:archive" /><span>废弃</span>
+                        </el-dropdown-item>
+                      </template>
+                      <el-dropdown-item
+                        v-if="hasPermi('databus:connector:remove')"
+                        class="db-menu-item is-danger"
+                        command="uninstall"
+                        :divided="!isDevDef(row)"
+                      >
+                        <SvgIcon icon-class="lucide:trash" /><span>卸载</span>
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </div>
+              <SvgIcon v-if="canInspectDef(row)" class="mkt-row__chevron" icon-class="lucide:chevron-right" />
+            </li>
+          </ul>
+          <el-empty v-if="connectorEmptyText" :description="connectorEmptyText" :image-size="72">
+          </el-empty>
+        </template>
+      </template>
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, ref, watch } from 'vue';
+import { computed, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { ElCheckbox, ElMessage, ElMessageBox } from 'element-plus';
 import modal from '@/plugins/modal';
 import { useUserStore } from '@/store/modules/user';
+import { checkRole } from '@/utils/permission';
 import type { DatabusMarketInstallVo, DatabusMarketItemVo, MarketResourceType } from '@/api/databus/market/types';
 import type { ConnectorDefVo } from '@/api/databus/connector/types';
 import {
@@ -316,23 +349,26 @@ import {
   disableConnector,
   enableConnector,
   reloadDevConnector,
-  uninstallConnector,
-  uploadConnectorPackage
+  uninstallConnector
 } from '@/api/databus/connector';
+import { listConnection } from '@/api/databus/connection';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
+import StatusDot from '../components/StatusDot.vue';
 import type { MarketScope } from '../workbench.types';
 import { useMarketData, marketNavIntent } from './useMarketData';
 import {
   TYPE_LABELS,
   TYPE_ORDER,
   connectorDefs,
-  connectorHealthMeta,
+  connectorRowStatus,
   connectorSourceLabel,
+  installRowStatus,
   isDevDef,
   itemIcon,
   loadConnectorDefs,
+  marketHighlightId,
+  marketItemRowStatus,
   rowIcon,
-  statusMeta,
   versionLabel
 } from './marketDisplay';
 
@@ -383,6 +419,9 @@ function hasPermi(perm: string): boolean {
 }
 /* 连接器运行层权限（§15.7）：list 驱动 defs 分组显隐（启停/卸载/上传按钮走 v-hasPermi 指令） */
 const canConnectorList = computed(() => hasPermi('databus:connector:list'));
+/** 「治理」视角入口：按治理员角色判定，不绑具体物料类型。
+ *  治理是全局职责（现在放连接器，以后放组件/链路），不该因为某个 connector 权限串决定整个视角的显隐 */
+const canGovern = computed(() => checkRole(['databus_gov']));
 /** 当前用户 id（禁自审判定：待审核列表全量展示，自己上架的项整行不可点，decisions §七-7.1） */
 const currentUserId = computed(() => userStore.userId);
 
@@ -391,9 +430,13 @@ const currentUserId = computed(() => userStore.userId);
 /** 按视角取数（不清搜索：令牌刷新与初次装载都走这里） */
 async function loadScope(target: MarketScope): Promise<void> {
   if (target === 'installed') {
-    await Promise.all([market.loadInstalled(), loadConnectorDefs()]);
+    // 已装管理只认安装台账：连接器也一样，没安装记录就不会出现在这里
+    await market.loadInstalled();
   } else if (target === 'mine') {
     await market.loadMine();
+  } else if (target === 'governance') {
+    // 治理看的是本机全部 def 行，和「装没装过」无关
+    await loadConnectorDefs();
   } else {
     await market.loadPending();
   }
@@ -417,6 +460,45 @@ watch(
   }
 );
 
+/* ---------------- 上架成功的新行高亮（3 秒自动消失） ---------------- */
+const flashItemId = ref('');
+let flashTimer: number | undefined;
+
+function scrollToFlash(): void {
+  document.querySelector(`[data-market-item-id="${flashItemId.value}"]`)
+    ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+/* 信号由宿主写入（打开「我的上架」后紧跟着写 id）；消费一次即清，避免重挂载重放 */
+watch(
+  marketHighlightId,
+  (raw) => {
+    if (raw == null) {
+      return;
+    }
+    flashItemId.value = raw;
+    marketHighlightId.value = undefined;
+    window.clearTimeout(flashTimer);
+    flashTimer = window.setTimeout(() => {
+      flashItemId.value = '';
+    }, 3000);
+    void nextTick(scrollToFlash);
+  },
+  { immediate: true }
+);
+
+/* 列表异步重取完再补一次滚动：新行要等 loadMine 回来才存在 */
+watch(
+  () => market.mine.value,
+  () => {
+    if (flashItemId.value) {
+      void nextTick(scrollToFlash);
+    }
+  }
+);
+
+onUnmounted(() => window.clearTimeout(flashTimer));
+
 /* 刷新令牌：审核 tab 审完、或另一头（市场 tab / 资源树）动了安装台账，重取当前视角 */
 watch(
   () => props.refreshToken,
@@ -437,13 +519,16 @@ onMounted(async () => {
 /* ---------------- 展示辅助 ---------------- */
 
 /** 页头标题/副标题随视角切换 */
-const manageTitle = computed(() => ({ installed: '已装管理', mine: '我的上架', pending: '待审核' })[scope.value]);
+const manageTitle = computed(
+  () => ({ installed: '已装管理', mine: '我的上架', pending: '待审核', governance: '治理' })[scope.value]
+);
 const manageSub = computed(
   () =>
     ({
-      installed: '管理你已安装的组件、链路与连接器。',
+      installed: '管理你已安装的组件、链路与连接器；连接器包的上传与提交在「上架物料」里完成。',
       mine: '你上架的物料与审核状态；可下架或删除。',
-      pending: '治理队列：通过即上线，驳回需填写理由。'
+      pending: '审核队列：通过即上线，驳回需填写理由。',
+      governance: '平台运行态治理：连接器的启停、废弃与卸载。'
     })[scope.value]
 );
 
@@ -467,39 +552,41 @@ function buildTypeGroups(list: DatabusMarketItemVo[]) {
 const mineGroups = computed(() => buildTypeGroups(mine.value));
 const pendingGroups = computed(() => buildTypeGroups(pending.value));
 
-/** 连接器治理行：defs 合并视图 + 关键字过滤（label / type） */
+/** 连接器治理行：defs 合并视图 + 关键字过滤（label / type）。
+ *  PENDING 只在「待审核」队列出现，治理页管的是已生效资产的运行态，不再重复列出。 */
 const connectorRows = computed(() => {
   const kw = manageKeyword.value.trim().toLowerCase();
-  return connectorDefs.value.filter((d) => (!kw ? true : [d.label, d.type].some((s) => (s ?? '').toLowerCase().includes(kw))));
+  return connectorDefs.value
+    .filter((d) => d.status !== 'PENDING')
+    .filter((d) => (!kw ? true : [d.label, d.type].some((s) => (s ?? '').toLowerCase().includes(kw))));
 });
 
-/** 已装台账分组（组件/链路）：install 台账按固定顺序拆组 + 关键字过滤（名称/简介），空组丢弃 */
+/** 治理行是否还有可治理的已生效 def（空态文案用：区分「没有包」与「有关键字筛掉」） */
+const governableDefCount = computed(() => connectorDefs.value.filter((d) => d.status !== 'PENDING').length);
+
+/** 已装台账分组（组件/链路/连接器）：install 台账按固定顺序拆组 + 关键字过滤（名称/简介），空组丢弃。
+ *  连接器和另外两类同口径——有没有这一行，只看有没有自己的安装记录 */
 const installedGroups = computed(() => {
   const kw = manageKeyword.value.trim().toLowerCase();
-  return TYPE_ORDER.filter((t) => t !== 'CONNECTOR')
-    .map((type) => ({
-      type,
-      label: TYPE_LABELS[type],
-      items: installed.value
-        .filter((r) => r.resourceType === type)
-        .filter((r) => (!kw ? true : [r.name, r.summary].some((s) => (s ?? '').toLowerCase().includes(kw))))
-    }))
-    .filter((g) => g.items.length > 0);
+  return TYPE_ORDER.map((type) => ({
+    type,
+    label: TYPE_LABELS[type],
+    items: installed.value
+      .filter((r) => r.resourceType === type)
+      .filter((r) => (!kw ? true : [r.name, r.summary].some((s) => (s ?? '').toLowerCase().includes(kw))))
+  })).filter((g) => g.items.length > 0);
 });
 
-/** 连接器组空态文案：区分「本机一个包都没有」（§2.6 原文，配上传引导）与「有包但被关键字筛掉」。
- *  两者都写「尚未安装」会把人引去重复上传同一个包；有行时返回空串（不渲染空态）。 */
+/** 治理组空态文案：区分「本机一个包都没有」（配上传引导）与「有包但被关键字筛掉」 */
 const connectorEmptyText = computed(() => {
   if (connectorRows.value.length) {
     return '';
   }
-  return connectorDefs.value.length ? '没有匹配的连接器' : '尚未安装任何连接器，请先上传连接器包';
+  return governableDefCount.value ? '没有匹配的连接器' : '你还没有装载过任何连接器';
 });
 
-/** 已装管理是否整页空：只看台账组（组件/链路）。
- *  连接器组现在常驻且自带空态与上传引导，再叠一块整页「还没有安装任何物料」就是两块互相打架的提示；
- *  无 connector:list 权限时该组整组不渲染（connectorRows 恒空），也无需把它算进来。 */
-const installedEmpty = computed(() => !installedGroups.value.length && !canConnectorList.value);
+/** 已装管理是否整页空：三条台账组（组件/链路/连接器）都空才算空 */
+const installedEmpty = computed(() => !installedGroups.value.length);
 
 /* ---------------- 行交互：整行可点＝唯一入口，ops 区只留治理动作 ---------------- */
 
@@ -545,16 +632,25 @@ async function onUninstall(row: DatabusMarketInstallVo) {
   if (row.localResourceId == null) {
     return;
   }
-  // 共享注册组件：卸载仅移除安装记录不动本体（FORK 副本与链路才删本地资源）
-  const shared = row.resourceType === 'COMPONENT' && row.mode === 'SHARED';
-  try {
-    await modal.confirm(
-      shared
-        ? `确认卸载「${row.name}」？`
-        : `确认卸载「${row.name}」？将删除你的本地副本；若该副本仍被你的其他链路引用，会被拒绝删除，请先移除引用。`
-    );
-  } catch {
-    return;
+  // 共用本体（组件 SHARED / 连接器）：卸载仅移除自己的安装记录，不动本体；
+  // 只有链路与组件 FORK 副本才是删本地资源
+  if (row.resourceType === 'CONNECTOR') {
+    try {
+      await modal.confirm(`确认卸载「${row.name}」？只移除你的安装记录，连接器本体与启停状态不受影响。`);
+    } catch {
+      return;
+    }
+  } else {
+    const shared = row.resourceType === 'COMPONENT' && row.mode === 'SHARED';
+    try {
+      await modal.confirm(
+        shared
+          ? `确认卸载「${row.name}」？`
+          : `确认卸载「${row.name}」？将删除你的本地副本；若该副本仍被你的其他链路引用，会被拒绝删除，请先移除引用。`
+      );
+    } catch {
+      return;
+    }
   }
   try {
     await market.uninstall(row.localResourceId);
@@ -565,9 +661,24 @@ async function onUninstall(row: DatabusMarketInstallVo) {
   }
 }
 
-/* ---------------- 连接器 def 治理（已装视角） ---------------- */
+/* ---------------- 连接器 def 治理（治理视角） ---------------- */
 
-/** def 行启停开关：enable/disable 全局生效；失败重拉 defs 回滚开关 UI。
+/** 治理动作菜单分发：行上只留「更多」，启停/废弃/卸载/重载都在菜单里 */
+function onGovernCommand(row: ConnectorDefVo, cmd: string) {
+  if (cmd === 'reload') {
+    void onReloadDevDef(row);
+  } else if (cmd === 'enable') {
+    void onToggleDef(row, true);
+  } else if (cmd === 'disable') {
+    void onToggleDef(row, false);
+  } else if (cmd === 'deprecate') {
+    void onDeprecateDef(row);
+  } else if (cmd === 'uninstall') {
+    void onUninstallDef(row);
+  }
+}
+
+/** def 行启停：enable/disable 全局生效；失败重拉 defs 回滚 UI。
  *  启用＝审核（§1.3）：提交人 ≠ 审批人由后端 enforce，此处收集 verified 勾选。 */
 async function onToggleDef(row: ConnectorDefVo, enabled: boolean) {
   try {
@@ -609,7 +720,7 @@ async function onToggleDef(row: ConnectorDefVo, enabled: boolean) {
     }
     await afterConnectorGoverned();
   } catch {
-    /* 拦截器已提示；重拉恢复开关 */
+    /* 拦截器已提示；重拉恢复行状态 */
     await loadConnectorDefs();
   }
 }
@@ -632,29 +743,39 @@ async function onDeprecateDef(row: ConnectorDefVo) {
   }
 }
 
-/** def 行卸载：先常规（在用连接会被拒）→ 二次确认强制（存量连接悬空） */
+/** def 行卸载：先常规（在用连接会被拒）→ 二次确认强制（存量连接悬空）。
+ *  dev 行只删台账记录，不动 target 编译产物，确认文案单独说清，避免误解成删包。 */
 async function onUninstallDef(row: ConnectorDefVo) {
+  const dev = isDevDef(row);
   try {
-    await modal.confirm(`确认卸载连接器「${row.label || row.type}」？将删除 def 行与包文件。`);
+    await modal.confirm(
+      dev
+        ? `确认卸载连接器「${row.label || row.type}」？只删台账记录，不动 target 编译产物；dev-plugin-dir 配置还在的话，重启后会被重新装载。`
+        : `确认卸载连接器「${row.label || row.type}」？将删除 def 行与包文件。`
+    );
   } catch {
     return;
   }
+  // 先查在用连接数，再决定发哪种卸载：避免先发一次注定被拒的请求、弹红条后又弹绿条
+  let inUse = 0;
   try {
-    await uninstallConnector(row.type, false);
-    ElMessage.success('已卸载');
-    await afterConnectorGoverned();
-    return;
+    const res = await listConnection({ connectorType: row.type, pageNum: 1, pageSize: 1 });
+    inUse = Number(res.data?.total ?? 0);
   } catch {
-    /* 常规卸载被拒（存在在用连接），转强制流程 */
+    /* 查不到就按无连接处理，交给后端普通卸载兜底 */
+  }
+  if (inUse > 0) {
+    try {
+      await modal.confirm(
+        `「${row.label || row.type}」存在 ${inUse} 条在用连接，是否强制卸载？存量连接将悬空，可能影响链路运行。`
+      );
+    } catch {
+      return;
+    }
   }
   try {
-    await modal.confirm(`「${row.label || row.type}」存在在用连接，是否强制卸载？存量连接将悬空，可能影响链路运行。`);
-  } catch {
-    return;
-  }
-  try {
-    await uninstallConnector(row.type, true);
-    ElMessage.success('已强制卸载');
+    await uninstallConnector(row.type, inUse > 0);
+    ElMessage.success(inUse > 0 ? '已强制卸载' : '已卸载');
     await afterConnectorGoverned();
   } catch {
     /* 拦截器已提示 */
@@ -715,35 +836,6 @@ function onInspectDefPackage(row: ConnectorDefVo) {
   emit('open-connector-package', row.type, row.version, row.source);
 }
 
-/* ---------------- 上传连接器包（§15.3 zip 包） ---------------- */
-
-const packageInputRef = ref<HTMLInputElement | null>(null);
-const packageUploading = ref(false);
-
-/** 触发隐藏 input 选 zip（FormData 由 api 层组装） */
-function pickPackage() {
-  packageInputRef.value?.click();
-}
-
-async function onPackageChange(e: Event) {
-  const input = e.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) {
-    return;
-  }
-  packageUploading.value = true;
-  try {
-    const { data } = await uploadConnectorPackage(file);
-    ElMessage.success(`已上传「${data?.label || data?.type || file.name}」：默认暂停态，可在已装管理启用或去上架`);
-    await afterConnectorGoverned();
-  } catch {
-    /* 拦截器已提示 */
-  } finally {
-    packageUploading.value = false;
-    input.value = ''; // 允许重复选同一文件
-  }
-}
-
 /* ---------------- 我的上架操作 ---------------- */
 
 /** 下架自己的在线物料 */
@@ -788,11 +880,6 @@ async function onDeleteItem(row: DatabusMarketItemVo) {
 <style lang="scss" scoped>
 /* 面板外壳 / 页头 / 限宽居中 / 滚动体 / 组标题走全局 _databus-market.scss（与市场 tab 同源）；
    此处只留管理页独有的：返回条、视角分段行、待审核冒泡、组计数、行列表 */
-
-/* 连接器包上传通道：仅作 pickPackage 的触发器，不参与布局 */
-.mkt__hidden-input {
-  display: none;
-}
 
 /* 顶部返回条：不参与限宽居中，返回按钮贴面板左上角（对标 Trae 插件市场） */
 .mkt__topbar {
@@ -924,6 +1011,7 @@ async function onDeleteItem(row: DatabusMarketItemVo) {
   }
 
   &__name {
+    min-width: 0;
     font-size: 13px;
     font-weight: 600;
     color: var(--el-text-color-primary);
@@ -961,9 +1049,10 @@ async function onDeleteItem(row: DatabusMarketItemVo) {
     flex-shrink: 0;
   }
 
-  /* 行上 @作者（可点 → 聚焦市场 tab 按作者筛选）：弱化处理，不抢行主体视觉 */
+  /* 行上 @作者（可点 → 聚焦市场 tab 按作者筛选）：弱化处理，不抢行主体视觉；
+     三个 tab 都跟在副标题/编码同一行，不占独立行高（没有作者的 DEV 行与有作者的行高度才一致） */
   &__author {
-    margin-top: 3px;
+    margin-left: 6px;
     padding: 0;
     font-size: 12px;
     color: var(--el-text-color-placeholder);
@@ -975,6 +1064,15 @@ async function onDeleteItem(row: DatabusMarketItemVo) {
       color: var(--el-color-primary);
       text-decoration: underline;
     }
+  }
+
+  /* 更多操作按钮内联的实心竖排三点 */
+  &__dots {
+    color: var(--el-text-color-secondary);
+  }
+
+  &__more:hover &__dots {
+    color: var(--el-color-primary);
   }
 
   /* 行尾可点暗示（仅可点行渲染） */
@@ -991,6 +1089,24 @@ async function onDeleteItem(row: DatabusMarketItemVo) {
     background: var(--el-fill-color-light, #f5f7fa);
     padding: 2px 10px;
     border-radius: 999px;
+  }
+}
+
+/* 上架成功后的新行高亮：中性灰底 + 左侧细蓝条，末段一起淡出（宿主 3 秒后清 class） */
+.mkt-row.is-flash {
+  animation: mkt-row-flash 3s ease-out;
+}
+
+@keyframes mkt-row-flash {
+  0%,
+  55% {
+    background-color: var(--el-fill-color-light);
+    box-shadow: inset 3px 0 0 var(--el-color-primary);
+  }
+
+  100% {
+    background-color: transparent;
+    box-shadow: inset 3px 0 0 transparent;
   }
 }
 </style>

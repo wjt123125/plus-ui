@@ -167,7 +167,7 @@
             v-else-if="tab.kind === 'market-publish'"
             :from="tab.publishFrom"
             @back="emit('market-publish-back', tab)"
-            @published="emit('market-published')"
+            @published="(info?: MarketPublishedInfo) => emit('market-published', info)"
           />
           <!-- 物料审核 tab（2026-10-24 审核详情弹窗 tab 化）：审完关 tab 并刷市场 pane 冒泡；
                「查看」同市场 pane 口径（链开画布、组件开详情） -->
@@ -266,6 +266,7 @@ import { useLucideSubset } from '@/views/databus/workbench/composables/useLucide
 import ChainCanvasPane from '@/views/databus/editor/ChainCanvasPane.vue';
 import type { ComponentRegistryRow } from '@/views/databus/component/model/registry';
 import type { DatabusMarketItemVo } from '@/api/databus/market/types';
+import type { MarketPublishedInfo } from '../market/marketDisplay';
 import type { ComponentSaved, ConnectionSaved, CreateFileType, CreateSavedPayload, LauncherCommand, MarketScope, TabMenuCommand, WorkspaceTab, WorkspaceTabKind } from '../workbench.types';
 import { LAUNCHER_ENTRIES } from './launcherEntries';
 import DetailPane from './DetailPane.vue';
@@ -372,8 +373,8 @@ const emit = defineEmits<{
   (e: 'market-open-publish', from: 'market' | 'manage'): void;
   /** 上架 tab 返回钮：宿主按来路聚焦市场/管理 tab（上架 tab 不关，表单内容保留） */
   (e: 'market-publish-back', tab: WorkspaceTab): void;
-  /** 上架 tab 提交成功：宿主广播市场刷新令牌（市场列表与管理 pane「我的上架」重取） */
-  (e: 'market-published'): void;
+  /** 上架 tab 提交成功：宿主广播市场刷新令牌；连接器提交带新物料 id，宿主切「我的上架」并高亮 */
+  (e: 'market-published', info?: MarketPublishedInfo): void;
   /** 市场物料详情「实现」页：打开源链路只读画布（未安装也能看编排） */
   (e: 'market-open-source-canvas', chainId: string | number, title: string): void;
   /** 连接管理：列表点卡片/新增开新对象 tab；对象保存回报宿主（关 tab / 刷列表 / 改标题） */

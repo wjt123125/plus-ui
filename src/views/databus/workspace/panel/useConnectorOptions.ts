@@ -1,12 +1,14 @@
 import { computed, ref } from 'vue';
-import { listConnectorDefs } from '@/api/databus/connector';
+import { listConnectorDefs, listMyConnectorDefs } from '@/api/databus/connector';
 import type { ConnectorConfigField, ConnectorDefVo } from '@/api/databus/connector/types';
 import { connectorHealthMeta, type ConnectorHealthMeta } from '../market/marketDisplay';
 
 /**
  * 连接器类型选项 + configSchema 供给（连接管理页消费侧，万物皆包 §15.7 / 方案 §8.2）。
  *
- * 唯一来源＝GET /databus/connector/defs（权限 databus:connector:list）。
+ * 下拉选项来源＝GET /databus/connector/defs/mine（只列「我装过」的连接器）。
+ * 另拉一份全量 defs 仅用于存量连接的类型名与 configSchema 回显：别人装的连接器虽然不能新选，
+ * 已有连接仍要显示成可读名字、编辑时仍要按 schema 渲染。
  * **没有静态兜底表**：连接器零内置之后，「装了哪些件」只有 def 表知道，前端写死一份
  * bpmHttp 兜底等于把已删掉的内置概念又请回来（方案 §10.3 明确要求删除 CONNECTOR_OPTIONS）。
  * 无权限 / 请求失败时选项为空，表单落到空态提示，不假装能连。
@@ -27,6 +29,8 @@ export interface ConnectorTypeOption {
 
 export function useConnectorOptions() {
   const defs = ref<ConnectorDefVo[]>([]);
+  /** 全量 def 行：只给标签/schema 回显兜底，不进下拉选项 */
+  const allDefs = ref<ConnectorDefVo[]>([]);
   const loaded = ref(false);
 
   const options = computed<ConnectorTypeOption[]>(() =>
@@ -42,14 +46,22 @@ export function useConnectorOptions() {
     })
   );
 
-  /** 拉取 defs；失败保持空态（拦截器已提示，连接管理页无需打断） */
+  /** 拉取「我的已装」defs 做下拉；全量 defs 单独兜底回显，失败不打断 */
   async function loadConnectorOptions(): Promise<void> {
     try {
-      const { data } = await listConnectorDefs();
+      const { data } = await listMyConnectorDefs();
       defs.value = data ?? [];
       loaded.value = true;
     } catch {
       /* 无权限 / 网络失败：静默留空，由调用方渲染空态 */
+      defs.value = [];
+      loaded.value = true;
+    }
+    try {
+      const { data } = await listConnectorDefs();
+      allDefs.value = data ?? [];
+    } catch {
+      allDefs.value = [];
     }
   }
 
@@ -61,9 +73,12 @@ export function useConnectorOptions() {
     return options.value.find((o) => o.value === value)?.label ?? value;
   }
 
-  /** 类型值 → def 行（拿 version / engine / verified / operations 用） */
+  /** 类型值 → def 行：先找我的已装，再退回全量（存量连接回显用） */
   function defOf(value?: string): ConnectorDefVo | undefined {
-    return value ? defs.value.find((d) => d.type === value) : undefined;
+    if (!value) {
+      return undefined;
+    }
+    return defs.value.find((d) => d.type === value) ?? allDefs.value.find((d) => d.type === value);
   }
 
   /**

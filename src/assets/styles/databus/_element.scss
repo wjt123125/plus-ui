@@ -213,3 +213,63 @@
   font-size: 13px;
   border-radius: 7px;
 }
+/* 右键菜单式下拉（治理「更多」等）：全局 vendors/_dropdown.scss 的 min-height:36px
+   + margin:2px 是管理页要的大行高，不能动；databus 内的动作菜单要资源树右键菜单
+   那种紧凑行距，在 db-menu-popper 作用域内显式收回 30px/0 行高。
+   弹层 teleport 到 body，样式只能放这里，SFC 的 scoped 块够不到。 */
+.db-menu-popper .el-dropdown-menu {
+  padding: 4px;
+}
+
+.db-menu-popper .el-dropdown-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  min-height: 30px;
+  margin: 0;
+  padding: 0 10px;
+  font-size: 13px;
+  border-radius: 7px;
+}
+
+.db-menu-popper .el-dropdown-menu__item:not(.is-disabled):hover,
+.db-menu-popper .el-dropdown-menu__item:not(.is-disabled):focus {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+}
+
+.db-menu-popper .el-dropdown-menu__item .svg-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+/* 语义色只染图标，文字保持常规色；危险项整体标红 */
+.db-menu-popper .db-menu-item.is-primary .svg-icon {
+  color: var(--el-color-primary);
+}
+
+.db-menu-popper .db-menu-item.is-success .svg-icon {
+  color: var(--el-color-success);
+}
+
+.db-menu-popper .db-menu-item.is-warning .svg-icon {
+  color: var(--el-color-warning);
+}
+
+.db-menu-popper .el-dropdown-menu__item.is-danger,
+.db-menu-popper .el-dropdown-menu__item.is-danger:hover,
+.db-menu-popper .el-dropdown-menu__item.is-danger:focus {
+  color: var(--el-color-danger);
+}
+
+/* 全局分隔线是 ::before 伪元素（border-top: none），这里改用 border-top，需关掉伪元素避免双线 */
+.db-menu-popper .el-dropdown-menu__item--divided {
+  margin-top: 4px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.db-menu-popper .el-dropdown-menu__item--divided::before {
+  display: none;
+}

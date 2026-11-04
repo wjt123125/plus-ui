@@ -95,6 +95,10 @@
               <li><span>上架者</span><b>{{ detail.preview?.author || detail.item.ownerCode || '-' }}</b></li>
               <li><span>类型</span><b class="mono">#{{ detail.preview?.code || '-' }}</b></li>
               <li><span>版本</span><b>v{{ detail.preview?.version || '-' }}</b></li>
+              <li>
+                <span>启用状态</span>
+                <b>{{ connectorStatusText }}</b>
+              </li>
             </ul>
             <p v-if="!canInspectConnector" class="mrt__empty">
               该连接器缺类型编码或版本号，无法定位包文件，只能盲审（建议驳回要求补齐 manifest）。
@@ -200,7 +204,7 @@
           依赖未全部过审（还剩 {{ depsBlockingCount }} 项），依赖全清后这里出现审核按钮。
         </span>
         <template v-else>
-          <span class="mrt__ops-hint">通过后立即在市场展示；驳回需填写理由。</span>
+          <span class="mrt__ops-hint">通过后立即在市场展示；连接器会同时完成首次启用。驳回需填写理由。</span>
           <el-button type="primary" :loading="acting" @click="onApprove">通过</el-button>
           <el-button type="danger" plain :loading="acting" @click="onReject">驳回</el-button>
         </template>
@@ -313,6 +317,20 @@ function onInspectConnector(): void {
   }
   emit('open-connector-package', t, v);
 }
+
+/* ---------------- 连接器启停（通过审核的前提） ---------------- */
+
+/** 连接器启用状态文案（def.status） */
+const CONNECTOR_STATUS_TEXT: Record<string, string> = {
+  PENDING: '待启用',
+  ENABLED: '已启用',
+  DISABLED: '已停用',
+  DEPRECATED: '已废弃'
+};
+
+const connectorStatusText = computed(
+  () => CONNECTOR_STATUS_TEXT[detail.value?.preview?.connectorStatus ?? ''] ?? '-'
+);
 
 /** 依赖市场状态展示标签（null/未上架 → 未上架） */
 function statusLabel(status?: MarketItemStatus | null): string {

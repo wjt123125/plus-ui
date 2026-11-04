@@ -75,7 +75,7 @@
           @market-manage-scope="onMarketManageScope"
           @market-open-publish="onMarketOpenPublish"
           @market-publish-back="onMarketPublishBack"
-          @market-published="bumpMarketTokens"
+          @market-published="onMarketPublished"
           @market-open-source-canvas="onMarketOpenSourceCanvas"
           @open-connection="onOpenConnection"
           @connection-saved="onConnectionSaved"
@@ -199,6 +199,8 @@ import type {
   TabMenuCommand,
   WorkspaceTab
 } from './workbench.types';
+import { marketHighlightId } from './market/marketDisplay';
+import type { MarketPublishedInfo } from './market/marketDisplay';
 
 /* ---------------- 台账合流 ---------------- */
 
@@ -632,6 +634,18 @@ function bumpMarketTokens() {
     .forEach((t) => {
       refreshTokens[t.key] = (refreshTokens[t.key] ?? 0) + 1;
     });
+}
+
+/**
+ * 上架成功：广播刷新令牌；连接器包提交还会带新物料 id——切到「我的上架」并写入高亮信号，
+ * 让用户当场看到刚提交的那一条（toast 消失后仍留线索）。
+ */
+function onMarketPublished(info?: MarketPublishedInfo) {
+  bumpMarketTokens();
+  if (info?.highlightId != null) {
+    wb.openMarketManage(info.scope);
+    marketHighlightId.value = String(info.highlightId);
+  }
 }
 
 /**

@@ -10,7 +10,7 @@
  */
 import { ref } from 'vue';
 import type { ConnectorDefVo } from '@/api/databus/connector/types';
-import { listConnectorDefs } from '@/api/databus/connector';
+import { listConnectorDefs, listMyConnectorDefs } from '@/api/databus/connector';
 import type {
   DatabusMarketInstallVo,
   DatabusMarketItemVo,
@@ -48,6 +48,67 @@ const STATUS_META: Record<MarketItemStatus, { label: string; type: 'primary' | '
 };
 export function statusMeta(status: MarketItemStatus) {
   return STATUS_META[status] ?? { label: status, type: 'info' as const };
+}
+
+/* ---------------- 行状态圆点（2026-11-03 定） ---------------- */
+
+/** 圆点色调，与 StatusDot 的 tone 对齐 */
+export type StatusTone = 'success' | 'warning' | 'danger' | 'info';
+
+/** 行状态：正常态 label 为空串（只画点不写字），异常态才带短词 */
+export interface RowStatusMeta {
+  tone: StatusTone;
+  label: string;
+  reason?: string;
+}
+
+/** 「我的上架」行状态 → 圆点：已上架绿点不写字，其余带短词 */
+const MARKET_ITEM_ROW_STATUS: Record<MarketItemStatus, RowStatusMeta> = {
+  PENDING: { tone: 'warning', label: '待审核', reason: '已提交，等待治理审核' },
+  REJECTED: { tone: 'danger', label: '已驳回', reason: '审核未通过，按驳回理由修改后可重新提交' },
+  ONLINE: { tone: 'success', label: '', reason: '已上架，市场可见' },
+  OFFLINE: { tone: 'info', label: '已下架', reason: '已从市场下架，你的源资源不受影响' }
+};
+export function marketItemRowStatus(status: MarketItemStatus): RowStatusMeta {
+  return MARKET_ITEM_ROW_STATUS[status] ?? { tone: 'info', label: status };
+}
+
+/**
+ * 「已装管理」台账行状态 → 圆点。
+ * 链路叠两层：治理态（草稿/已发布/已下线）优先，已发布再看最近一次执行（失败红 / 执行中黄）。
+ * 颜色沿用资源树与画布的既有语义：草稿灰、已发布绿、已下线黄。
+ */
+export function installRowStatus(row: DatabusMarketInstallVo): RowStatusMeta {
+  if (row.resourceType === 'CHAIN') {
+    if (row.status === 'DRAFT') {
+      return { tone: 'info', label: '草稿', reason: '链路副本还是草稿，尚未发布' };
+    }
+    if (row.status === 'DISABLED') {
+      return { tone: 'warning', label: '已下线', reason: '链路已下线，定义保留可重新发布' };
+    }
+    if (row.health === 'FAILED') {
+      return { tone: 'danger', label: '最近执行失败', reason: '最近一次执行失败，打开执行记录查看错误详情' };
+    }
+    if (row.health === 'RUNNING') {
+      return { tone: 'warning', label: '执行中', reason: '最近一次执行仍在进行中' };
+    }
+    return { tone: 'success', label: '', reason: '链路已发布，最近执行正常' };
+  }
+  if (row.resourceType === 'COMPONENT') {
+    const enabled = row.status ? row.status === 'ENABLED' : row.enabled !== false;
+    return enabled
+      ? { tone: 'success', label: '', reason: '组件已启用' }
+      : { tone: 'info', label: '已停用', reason: '组件已停用，链路引用处按停用处理' };
+  }
+  return row.enabled === false
+    ? { tone: 'info', label: '未启用', reason: '尚未启用' }
+    : { tone: 'success', label: '', reason: '' };
+}
+
+/** 连接器 def 行状态 → 圆点：健康语义沿用 connectorHealthMeta，正常态不写字 */
+export function connectorRowStatus(row?: ConnectorDefVo | null): RowStatusMeta {
+  const health = connectorHealthMeta(row);
+  return { tone: health.type, label: health.type === 'success' ? '' : health.label, reason: health.reason };
 }
 
 /** 连接器 def 状态标签映射 */
@@ -118,15 +179,14 @@ export function isDevDef(row: ConnectorDefVo): boolean {
 }
 
 /**
- * 连接器版本展示标签：DEV 行的 version 是后端给的字面量 'dev'（占位，非 semver），
- * 拼 v 前缀会出来「vdev」这种 nonsense，故 dev 原样返回；其余按 semver 惯例拼 v。
+ * 连接器版本展示标签：DEV 行与正式包一样展示 manifest 里的真实版本，统一拼 v 前缀。
  * 空串返回空串，由调用方自己兜底「—」（各处兜底文案不同，不在此写死）。
  */
 export function versionLabel(version?: string | null): string {
   if (!version) {
     return '';
   }
-  return version === 'dev' ? version : `v${version}`;
+  return `v${version}`;
 }
 
 /** 平铺分组标签与固定顺序（组件 → 链路 → 连接器） */
@@ -138,18 +198,34 @@ export const TYPE_ORDER: MarketResourceType[] = ['COMPONENT', 'CHAIN', 'CONNECTO
 /** def 视图（零内置，只查 def 行）：市场卡片启停匹配、管理页治理行列表共用同一份 */
 export const connectorDefs = ref<ConnectorDefVo[]>([]);
 
+/** 上架成功回执：跳到哪个视角 + 要高亮的新物料 id */
+export interface MarketPublishedInfo {
+  scope: 'mine';
+  highlightId?: string | number;
+}
+
+/**
+ * 待消费的新行高亮 id：上架 pane 成功后由宿主写入，管理 pane 消费一次即清。
+ * 只存内存不落盘——「刚提交」是瞬时信号，刷新后不该重放。
+ */
+export const marketHighlightId = ref<string>();
+
 /**
  * 拉 def 行。无 connector:list 权限时置空返回（后端 403，前端按权限串不调用）。
  * 权限判定在函数体内取 store：模块加载时 pinia 还没激活，写在模块顶层会炸。
  */
 export async function loadConnectorDefs(): Promise<void> {
-  const canList = useUserStore().permissions.some((p: string) => p === '*:*:*' || p === 'databus:connector:list');
+  const permissions = useUserStore().permissions;
+  const canList = permissions.some((p: string) => p === '*:*:*' || p === 'databus:connector:list');
   if (!canList) {
     connectorDefs.value = [];
     return;
   }
+  // 治理视角（能启停/卸载）看全部 def；上架权限不再放宽成全量——
+  // 否则「已装/治理」会变成混着别人未审核 PENDING 包的台账。上架者只看自己装过且已启用的。
+  const fullView = permissions.some((p: string) => p === '*:*:*' || p === 'databus:connector:edit');
   try {
-    const { data } = await listConnectorDefs();
+    const { data } = fullView ? await listConnectorDefs() : await listMyConnectorDefs();
     connectorDefs.value = data ?? [];
   } catch {
     /* 拦截器已提示；置空保持空态 */

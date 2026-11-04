@@ -106,12 +106,6 @@
 
     <div v-loading="loading" class="mkt__body">
       <el-empty v-if="!groups.length" :image-size="72">
-        <template #description>
-          <span>{{ browseFiltered ? '没有匹配的物料' : '还没有物料，去上架第一个吧' }}</span>
-        </template>
-        <el-button v-if="!browseFiltered" v-hasPermi="['databus:market:publish']" type="primary" @click="emit('open-publish')">
-          <SvgIcon icon-class="lucide:plus" /><span>去上架</span>
-        </el-button>
       </el-empty>
       <template v-for="g in groups" :key="g.key">
         <div class="mkt__group-title">{{ g.label }}</div>

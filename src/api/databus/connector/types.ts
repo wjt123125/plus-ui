@@ -97,6 +97,8 @@ export interface ConnectorDefVo {
   type: string;
   /** 版本号（manifest 声明） */
   version?: string;
+  /** 构建模块标识（manifest 的 artifact）；包文件名唯一规则 = {artifact}-{version}.zip */
+  artifact?: string;
   /** 引擎档（http / jvm / native） */
   engine?: 'http' | 'jvm' | 'native' | string;
   /** 展示标签（manifest / descriptor 的 label） */

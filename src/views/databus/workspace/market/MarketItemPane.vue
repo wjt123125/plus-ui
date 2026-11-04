@@ -227,17 +227,27 @@
       </el-tabs>
 
       <footer class="mkti__foot">
-        <!-- 连接器（§15.3 安装＝enable 全局生效，无目录弹窗）：已启用态显示停用（治理权限）或只读标签 -->
+        <!-- 连接器：治理视角看 def 全局启停；普通视角只表达「我装没装」（安装＝写个人安装记录） -->
         <template v-if="item.resourceType === 'CONNECTOR'">
-          <el-button v-if="item.installed && canConnectorEdit" type="primary" :loading="installLoading" @click="onDisableConnector">
-            <SvgIcon icon-class="lucide:power" /><span>停用</span>
-          </el-button>
-          <el-tag v-else-if="item.installed" type="success" effect="light">已启用 · 全局生效</el-tag>
+          <template v-if="canConnectorEdit">
+            <el-button v-if="connectorEnabled" type="primary" :loading="installLoading" @click="onDisableConnector">
+              <SvgIcon icon-class="lucide:power" /><span>停用</span>
+            </el-button>
+            <el-button v-else type="primary" :loading="installLoading" @click="onEnableConnector">
+              <SvgIcon icon-class="lucide:power" /><span>启用</span>
+            </el-button>
+          </template>
+          <template v-else-if="item.installed">
+            <el-tag type="success" effect="light">已安装</el-tag>
+            <el-button :loading="installLoading" @click="onUninstallConnector">
+              <SvgIcon icon-class="lucide:trash-2" /><span>卸载</span>
+            </el-button>
+          </template>
           <el-button v-else-if="item.mine" @click="onMine">
             <SvgIcon icon-class="lucide:settings" /><span>已上架 · 去管理</span>
           </el-button>
           <el-button v-else type="primary" :loading="installLoading" @click="onInstallConnector">
-            <SvgIcon icon-class="lucide:power" /><span>启用</span>
+            <SvgIcon icon-class="lucide:download" /><span>安装</span>
           </el-button>
         </template>
         <template v-else>
@@ -269,8 +279,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
-import { getMarketItem, getMarketPreview, installMarketItem } from '@/api/databus/market';
-import { disableConnector, listConnectorDefs } from '@/api/databus/connector';
+import { getMarketItem, getMarketPreview, installMarketItem, uninstallMarketItem } from '@/api/databus/market';
+import { disableConnector, enableConnector, listConnectorDefs } from '@/api/databus/connector';
 import type { ConnectorDefVo } from '@/api/databus/connector/types';
 import type { DatabusMarketItemVo, MarketItemStatus, MarketPreviewVo } from '@/api/databus/market/types';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
@@ -481,6 +491,9 @@ function hasPermi(perm: string): boolean {
 /** 连接器停用是治理动作（§15.7 defs 启停权限 databus:connector:edit） */
 const canConnectorEdit = computed(() => hasPermi('databus:connector:edit'));
 
+/** 治理视角：连接器本体是否处于全局已启用（def 行状态，与「我装没装」无关） */
+const connectorEnabled = computed(() => connectorDef.value?.status === 'ENABLED');
+
 const statusMeta = computed(() => itemStatusMeta(item.value?.status as MarketItemStatus));
 
 /* ---------------- 底部动作 ---------------- */
@@ -537,9 +550,9 @@ async function onInstallConfirm(directoryId: string | number | null) {
   }
 }
 
-/* ---------------- 连接器动作（§15.3 安装＝enable 全局生效，无目录弹窗） ---------------- */
+/* ---------------- 连接器动作（普通用户安装写个人记录；启停是治理动作） ---------------- */
 
-/** 启用（即安装）：后端 CONNECTOR 分支 enable def 行，目录参数被忽略 */
+/** 普通用户安装：写一条个人安装记录，不启用/停用连接器本体 */
 async function onInstallConnector() {
   const it = item.value;
   if (!it) {
@@ -548,10 +561,55 @@ async function onInstallConnector() {
   installLoading.value = true;
   try {
     await installMarketItem(it.id, { directoryId: null });
-    ElMessage.success(`已启用「${it.name}」，全局生效`);
+    ElMessage.success(`已安装「${it.name}」`);
     emit('installed'); // 复用安装成功语义：宿主刷市场数据与树
-    await fetchItem(); // 刷新 installed，底部按钮切「停用/已启用」
-    // 启用＝真装载，运行时驱动从这一刻才可能有数据；重挂面板让人看到的是装载后的现状
+    await fetchItem(); // 刷新 installed，底部按钮切「已安装」
+    // 安装后建链选择器要能看到它，运行时面板需重挂
+    invalidateRuntime();
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    installLoading.value = false;
+  }
+}
+
+/** 普通用户卸载：只删自己的安装记录，连接器本体仍全局可用、别人照样在用 */
+async function onUninstallConnector() {
+  const it = item.value;
+  if (!it || it.localResourceId == null) {
+    return;
+  }
+  installLoading.value = true;
+  try {
+    await uninstallMarketItem(it.localResourceId);
+    ElMessage.success(`已卸载「${it.name}」`);
+    emit('installed');
+    await fetchItem();
+    invalidateRuntime();
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    installLoading.value = false;
+  }
+}
+
+/** 治理启用（需 edit 权限）：让连接器全局可用，供他人安装 */
+async function onEnableConnector() {
+  const it = item.value;
+  if (!it) {
+    return;
+  }
+  const type = connectorType.value;
+  if (!type) {
+    ElMessage.warning('未找到该连接器的类型标识，请先刷新重试');
+    return;
+  }
+  installLoading.value = true;
+  try {
+    await enableConnector(type, true);
+    ElMessage.success(`已启用「${it.name}」，全局可用`);
+    emit('installed');
+    await fetchItem();
     invalidateRuntime();
   } catch {
     /* 拦截器已提示 */

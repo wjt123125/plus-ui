@@ -98,6 +98,10 @@ export interface DatabusMarketInstallVo {
   color?: string;
   /** 本地副本启停态（组件停用=true） */
   enabled?: boolean;
+  /** 本地副本治理状态：链路 DRAFT/ENABLED/DISABLED；组件 ENABLED/DISABLED；连接器 def 状态 */
+  status?: string;
+  /** 运行态健康（仅链路）：最近一次执行记录状态，无记录时为空 */
+  health?: 'RUNNING' | 'SUCCESS' | 'FAILED' | null;
   /** 组件编码（SHARED 引用叶子 open 通道：按 code 反查台账行） */
   componentCode?: string;
   /** 上架者登录名（管理页行上渲染 @作者；物料行已删时为空则不渲染）。
@@ -175,6 +179,8 @@ export interface MarketReviewPreview {
   scriptLang?: string;
   /** 描述（COMPONENT） */
   description?: string;
+  /** 连接器启用状态（仅 CONNECTOR：PENDING / ENABLED / DISABLED / DEPRECATED） */
+  connectorStatus?: string;
 }
 
 /** 实现预览（2026-10-24 装前可看）：组件＝脚本与契约、链路＝节点清单；仅 ONLINE 物料开放 */

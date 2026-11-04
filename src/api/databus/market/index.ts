@@ -116,10 +116,26 @@ export function getMarketPreview(id: string | number): AxiosPromise<MarketPrevie
 
 /* ---------------- 供给（上架侧） ---------------- */
 
-/** 提交上架（进待审） */
-export function publishMarket(data: MarketPublishForm): AxiosPromise<void> {
+/** 提交上架（进待审）；data＝新物料行 id，供前端定位并高亮刚提交的项 */
+export function publishMarket(data: MarketPublishForm): AxiosPromise<number> {
   return request({
     url: '/databus/market/publish',
+    method: 'post',
+    data
+  });
+}
+
+/** 连接器包上架（上传即提交）：zip 与上架元数据一起提交，落包 + 建 def + 建市场物料进待审；data＝新物料行 id */
+export function publishConnector(
+  file: File,
+  meta: Omit<MarketPublishForm, 'resourceType' | 'sourceId'>
+): AxiosPromise<number> {
+  const data = new FormData();
+  data.append('file', file);
+  // meta 走 JSON 分片（后端 @RequestPart），sourceId 由服务端落包后回填
+  data.append('meta', new Blob([JSON.stringify({ resourceType: 'CONNECTOR', ...meta })], { type: 'application/json' }), 'meta.json');
+  return request({
+    url: '/databus/market/publish/connector',
     method: 'post',
     data
   });

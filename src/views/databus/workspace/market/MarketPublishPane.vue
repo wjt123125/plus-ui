@@ -4,7 +4,8 @@
   完整业务动作而非管理页附属，tab 化后与市场/管理 tab 并存，提交后原地不动（tab 保留＋表单内容
   保留＋成功提示），作者可连续提交下一件，也可点返回钮回看来路页的审核状态。
   顶栏返回钮按 tab.publishFrom 回跳：市场来的回市场、管理来的回管理（聚焦已开 tab，本 tab 不关）。
-  表单口径与弹窗版一致：选类型 → 选源资源 → 填简介/分类/标签 → 提交进待审；
+  表单口径：选类型 → 组件/链路选源资源、连接器直接传 zip → 填简介/分类/标签 → 提交进待审；
+  连接器的包上传没有独立入口，提交上架时一次性完成落包、建 def、建市场物料，统一走审核启用闭环。
   归属校验在服务端（源资源 create_by==当前用户；系统组件仅治理角色），前端只做必填拦截。
   分类↔标签联动＝轻量聚合——标签候选池＝（选定分类后）该分类下已有物料标签聚合 Top 30
   （数据源＝进 tab 时自取的全量市场 items）。表单内容不落盘（刷新后重进是空表，定案边界：不做草稿）。
@@ -38,14 +39,34 @@
                 type="button"
                 class="db-seg__item"
                 :class="{ 'is-active': form.resourceType === opt.value }"
-                @click="form.resourceType = opt.value"
+                @click="setType(opt.value)"
               >
                 {{ opt.label }}
               </button>
             </div>
           </el-form-item>
 
-          <el-form-item label="源资源" prop="sourceId">
+          <!-- 连接器：上传即上架。包不在别处上传——提交时落包、建 def、建市场物料一起进待审 -->
+          <el-form-item v-if="form.resourceType === 'CONNECTOR'" label="连接器包" prop="sourceId">
+            <div class="mpub__pkg">
+              <input ref="packageInputRef" type="file" accept=".zip" class="mpub__hidden-input" @change="onPackageChange" />
+              <el-button :loading="submitting" @click="pickPackage">
+                <SvgIcon icon-class="lucide:upload" />
+                <span>{{ packageFile ? '重新选择包' : '选择连接器包（.zip）' }}</span>
+              </el-button>
+              <div v-if="packageFile" class="mpub__pkg-file">
+                <SvgIcon icon-class="lucide:file-archive" />
+                <span class="mpub__pkg-name">{{ packageFile.name }}</span>
+                <span class="mpub__pkg-size">{{ sizeLabel(packageFile.size) }}</span>
+                <button type="button" class="mpub__pkg-remove" @click="clearPackage">移除</button>
+              </div>
+              <p class="mpub__tip">
+                提交后进入待审核：治理者审核并启用后才会装载运行；同 type 升版本会重新走一遍审核，旧版本审核结论不继承。
+              </p>
+            </div>
+          </el-form-item>
+
+          <el-form-item v-else label="源资源" prop="sourceId">
             <ResourceSelector ref="selectorRef" v-model="form.sourceId" :resource-type="form.resourceType" />
           </el-form-item>
 
@@ -106,9 +127,10 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 import type { DatabusMarketCategoryVo, DatabusMarketItemVo, MarketPublishForm, MarketResourceType } from '@/api/databus/market/types';
-import { listMarketItems } from '@/api/databus/market';
+import { listMarketItems, publishConnector } from '@/api/databus/market';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import { useMarketData } from './useMarketData';
+import type { MarketPublishedInfo } from './marketDisplay';
 import ResourceSelector from './ResourceSelector.vue';
 import TagSelect from './TagSelect.vue';
 
@@ -124,8 +146,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** 返回来路：宿主按 from 聚焦市场/管理 tab（本 tab 不关，表单内容保留） */
   (e: 'back'): void;
-  /** 提交成功：宿主广播市场刷新令牌（市场列表与管理 pane「我的上架」都要重取） */
-  (e: 'published'): void;
+  /** 提交成功：宿主广播市场刷新令牌；连接器提交另带新物料 id，宿主切「我的上架」并高亮新行 */
+  (e: 'published', info?: MarketPublishedInfo): void;
 }>();
 
 const backLabel = computed(() => (props.from === 'market' ? '返回市场' : '返回管理'));
@@ -142,6 +164,9 @@ const TYPE_OPTIONS: { value: MarketResourceType; label: string }[] = [
 
 const selectorRef = ref<InstanceType<typeof ResourceSelector>>();
 const formRef = ref<FormInstance>();
+const packageInputRef = ref<HTMLInputElement>();
+/** 连接器包：唯一上传入口，提交时随上架元数据一起进待审 */
+const packageFile = ref<File>();
 const form = reactive<MarketPublishForm>({
   resourceType: 'COMPONENT',
   sourceId: '',
@@ -153,13 +178,69 @@ const form = reactive<MarketPublishForm>({
 
 const rules: FormRules = {
   resourceType: [{ required: true, message: '请选择类型', trigger: 'change' }],
-  sourceId: [{ required: true, message: '请选择源资源', trigger: 'change' }]
+  sourceId: [
+    {
+      // 连接器的「源资源」就是上传的 zip；其余类型仍选已有资源
+      validator: (_rule, value, callback) => {
+        if (form.resourceType === 'CONNECTOR') {
+          packageFile.value ? callback() : callback(new Error('请选择连接器包（.zip）'));
+          return;
+        }
+        value ? callback() : callback(new Error('请选择源资源'));
+      },
+      trigger: 'change'
+    }
+  ]
 };
 
 const submitting = ref(false);
 
 /** 全量市场物料（进 tab 时自取、不透镜不过滤，供分类↔标签轻量聚合） */
 const allItems = ref<DatabusMarketItemVo[]>([]);
+
+/** 切类型：源资源与已选包都要清掉，避免把组件的 sourceId 带到连接器上架里 */
+function setType(type: MarketResourceType) {
+  if (form.resourceType === type) {
+    return;
+  }
+  form.resourceType = type;
+  form.sourceId = '';
+  clearPackage();
+  formRef.value?.clearValidate('sourceId');
+}
+
+function pickPackage() {
+  packageInputRef.value?.click();
+}
+
+function onPackageChange(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) {
+    return;
+  }
+  if (!file.name.toLowerCase().endsWith('.zip')) {
+    ElMessage.warning('连接器包必须是 .zip');
+    return;
+  }
+  packageFile.value = file;
+  formRef.value?.validateField('sourceId').catch(() => undefined);
+}
+
+function clearPackage() {
+  packageFile.value = undefined;
+}
+
+function sizeLabel(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
 
 /** 分类单选 chips：再点同项即取消 */
 function toggleCategory(c: DatabusMarketCategoryVo) {
@@ -184,6 +265,7 @@ const tagOptions = computed(() => {
 });
 
 onMounted(async () => {
+  // 连接器类型下不渲染 ResourceSelector，selectorRef 为空，跳过预取
   void selectorRef.value?.refresh();
   market.loadCategories();
   try {
@@ -202,16 +284,26 @@ async function submit() {
   }
   submitting.value = true;
   try {
-    await market.publish({
-      resourceType: form.resourceType as MarketResourceType,
-      sourceId: form.sourceId,
+    const meta = {
       summary: form.summary || undefined,
       categoryId: form.categoryId,
       tags: form.tags,
       modifyNote: form.modifyNote || undefined
-    });
-    ElMessage.success('已提交，等待治理审核');
-    emit('published');
+    };
+    if (form.resourceType === 'CONNECTOR') {
+      // 上传即提交：落包、建 def、建市场物料一次完成，统一进待审
+      const { data: itemId } = await publishConnector(packageFile.value as File, meta);
+      ElMessage.success('连接器包已提交，等待治理审核启用');
+      emit('published', { scope: 'mine', highlightId: itemId });
+    } else {
+      await market.publish({
+        resourceType: form.resourceType as MarketResourceType,
+        sourceId: form.sourceId,
+        ...meta
+      });
+      ElMessage.success('已提交，等待治理审核');
+      emit('published');
+    }
   } catch {
     /* 拦截器已提示 */
   } finally {
@@ -314,6 +406,52 @@ async function submit() {
     font-size: 12px;
     line-height: 1.6;
     color: var(--el-text-color-secondary);
+  }
+
+  /* 连接器包上传：唯一入口，提交时随上架元数据一起进待审 */
+  &__pkg {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  &__hidden-input {
+    display: none;
+  }
+
+  &__pkg-file {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    padding: 6px 10px;
+    font-size: 13px;
+    color: var(--el-text-color-regular);
+    background: var(--el-fill-color-lighter);
+    border-radius: 7px;
+  }
+
+  &__pkg-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__pkg-size {
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+
+  &__pkg-remove {
+    flex-shrink: 0;
+    padding: 0;
+    font-size: 12px;
+    color: var(--el-color-primary);
+    background: transparent;
+    border: 0;
+    cursor: pointer;
   }
 }
 </style>

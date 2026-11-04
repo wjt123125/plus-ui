@@ -20,18 +20,14 @@ export function listConnectorDefs(): AxiosPromise<ConnectorDefVo[]> {
 }
 
 /**
- * 上传连接器包（zip＝manifest.json + lib/）：校验 + 落盘 + 入库。
- * 同 type 升版本＝热更新；新 type 默认 PENDING，enable 是治理者显式动作。
- * POST /databus/connector/packages（权限 databus:connector:upload）
+ * 我的已装连接器：当前用户有安装记录且已启用，没装过的不会返回。
+ * GET /databus/connector/defs/mine（权限 databus:connector:list）
+ * 驱动：已装管理的连接器分组、新建连接时的类型下拉。
  */
-export function uploadConnectorPackage(file: File): AxiosPromise<ConnectorDefVo> {
-  const data = new FormData();
-  data.append('file', file);
-  // multipart headers 由 axios/浏览器自动生成（手写不带 boundary 是坑，全项目惯例）
+export function listMyConnectorDefs(): AxiosPromise<ConnectorDefVo[]> {
   return request({
-    url: '/databus/connector/packages',
-    method: 'post',
-    data
+    url: '/databus/connector/defs/mine',
+    method: 'get'
   });
 }
 

@@ -126,7 +126,7 @@ async function load(): Promise<void> {
       }));
     } else if (props.resourceType === 'CONNECTOR') {
       // 连接器（§15.7）：选 def 行（sourceId＝def.id）
-      // 开发目录装载的行（source='DEV'）不进选项：它的版本固定是 dev，不对应一份确定的包内容，
+      // 开发目录装载的行（source='DEV'）不进选项：它跑的是编译输出目录，没有落地的 zip，
       // 审核人没有可核对的对象，后端提交上架也会拒（MarketPublishService），这里直接不给选
       const { data } = await listConnectorDefs();
       options.value = (data ?? [])

@@ -48,7 +48,7 @@ export type CreateFileType = 'chain' | 'component' | 'directory' | 'connection';
  * 物料管理 tab 的视角（2026-10-30）：已装管理（消费）/ 我的上架（作者）/ 待审核（治理）。
  * 存进 tab 字段随会话落盘，故刷新后能回到上次停留的视角（不落盘则每次回落 installed）。
  */
-export type MarketScope = 'installed' | 'mine' | 'pending';
+export type MarketScope = 'installed' | 'mine' | 'pending' | 'governance';
 
 /** 新建组件 tab 的预设上下文（目录右键「新建组件」携带） */
 export interface FormPreset {

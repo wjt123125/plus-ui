@@ -334,13 +334,18 @@ watch(
   { immediate: true }
 );
 
-/** 下载原包：blob 下载插件（不经过 JSON 拦截器），文件名 connector-{type}-{version}.zip */
+/** 下载原包：blob 下载插件（不经过 JSON 拦截器），文件名唯一规则 = {artifact}-{version}.zip */
 function onDownload(): void {
   if (!props.type || !props.version) {
     ElMessage.warning('缺类型或版本号，无法定位包文件');
     return;
   }
-  download.zip(downloadConnectorPackageUrl(props.type, props.version), `connector-${props.type}-${props.version}.zip`);
+  const artifact = defRow.value?.artifact;
+  if (!artifact) {
+    ElMessage.warning('连接器缺少 artifact（manifest 必填），无法定位包文件');
+    return;
+  }
+  download.zip(downloadConnectorPackageUrl(props.type, props.version), `${artifact}-${props.version}.zip`);
 }
 
 /** 体积可读化（字节 → KB/MB） */
