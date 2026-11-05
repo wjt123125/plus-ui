@@ -5,7 +5,8 @@
     - embedded=true（路由页宿主）：列表↔对象由 pane 内部 activeFormId 切换，取消/保存回列表
     - embedded=false（工作台 tab 宿主）：formId prop 决定对象视图；列表点击/新建统一 emit('open') 开新 tab
   红线：无路由依赖、不 import Layout、不自行 router.push；动作一律 emit 上抛。
-  列表视图整体平移自原 connection/index.vue（Style-B 小卡片网格）；限宽居中骨架统一用全局 .db-pane-inner（2026-10-31 收敛，勿再自写 max-width）。
+  列表视图整体平移自原 connection/index.vue，布局已统一为 databus 行列表基元（.db-list--framed + .db-row）；
+  限宽居中骨架统一用全局 .db-pane-inner（2026-10-31 收敛，勿再自写 max-width）。
 -->
 <template>
   <div class="conn-pane">
@@ -27,7 +28,7 @@
               <h2 class="page-title">连接管理</h2>
               <p class="page-subtitle">共 {{ total }} 个连接实例，组件通过连接ID引用此处维护的连接。</p>
             </div>
-            <button v-hasPermi="['databus:connection:add']" class="add-btn" @click="handleAdd">
+            <button v-hasPermi="['databus:connection:add']" class="add-btn db-float" @click="handleAdd">
               <el-icon><Plus /></el-icon>
               <span>新增连接</span>
             </button>
@@ -96,60 +97,56 @@
             </button>
           </div>
 
-          <!-- 小卡片网格 -->
-          <div class="card-grid">
-            <div
+          <!-- 连接列表：框与 16px 留白由 .db-list--framed 提供，行布局与浮起由 .db-row / .db-float 提供
+               （见 _primitives.scss），本页不再自写卡片外观。
+               行点击＝编辑，沿用原卡片整卡点击的语义；行上只留高频控件（启用开关 + 测试），
+               编辑/删除收进「更多」——与物料治理同一套动作收纳方式。 -->
+          <ul v-if="connectionList.length > 0" class="db-list db-list--framed">
+            <li
               v-for="row in connectionList"
               :key="row.id"
-              class="mt-card"
+              class="db-row db-float is-clickable"
               @click="handleUpdate(row)"
             >
-              <!-- 头部：图标 + 标题 + 开关 -->
-              <div class="mt-card-head">
-                <div class="mt-icon">
-                  <el-icon :size="22"><Link /></el-icon>
+              <span class="db-row__icon conn-tile" :style="{ '--conn-tint': connectorTint(row.connectorType) }">
+                <SvgIcon :icon-class="connectorIcon(row.connectorType)" />
+              </span>
+              <div class="db-row__meta">
+                <div class="db-row__line">
+                  <span class="db-row__name">{{ row.connectionName }}</span>
+                  <span class="db-row__code db-mono conn-code">#{{ row.connectionId }}</span>
+                  <button class="copy-id-btn" title="复制连接ID" @click.stop="copyConnectionId(row)">
+                    <el-icon><CopyDocument /></el-icon>
+                  </button>
                 </div>
-                <div class="mt-title-area">
-                  <div class="mt-title">{{ row.connectionName }}</div>
-                  <div class="mt-component">
-                    <span class="mt-component-id">#{{ row.connectionId }}</span>
-                    <button
-                      class="copy-id-btn"
-                      title="复制连接ID"
-                      @click.stop="copyConnectionId(row)"
-                    >
-                      <el-icon><CopyDocument /></el-icon>
-                    </button>
-                  </div>
-                </div>
-                <div class="mt-switch-wrap">
-                  <span
-                    class="status-dot"
-                    :class="statusDotClass(row)"
-                    :title="row.enabled === 'Y' ? '已启用' : '已禁用'"
-                  />
-                  <el-switch
-                    v-model="row.enabled"
-                    active-value="Y"
-                    inactive-value="N"
-                    size="small"
-                    :loading="togglingId === row.id"
-                    @click.stop
-                    @change="() => toggleEnabled(row)"
-                  />
+                <!-- 元信息只留类型：连接器零内置之后平台不认识任何具体字段（方案 §10.3），
+                     原先平铺的 endpoint/accessKey/超时/重试都是 bpmHttp 专属，不在行上出现。
+                     类型只渲染一次：标签与原文相同（未装载）时不再重复画 tag；版本挂在同一个胶囊里。 -->
+                <div class="db-row__summary conn-meta">
+                  <span class="conn-badge">{{ typeLabel(row) }}</span>
+                  <el-tag v-if="showRawType(row)" size="small" effect="plain" type="info">
+                    {{ row.connectorType }}
+                  </el-tag>
                 </div>
               </div>
-
-              <!-- 元信息：徽标 + tag。
-                   原先这里还平铺了 endpoint/accessKey/超时/重试——那都是 bpmHttp 专属字段，
-                   连接器零内置之后平台不认识任何具体字段，卡片上只留类型信息（方案 §10.3）。 -->
-              <div class="mt-meta">
-                <span class="mt-badge">{{ connectorTypeLabel(row.connectorType) }}</span>
-                <el-tag size="small" effect="plain" type="info">{{ row.connectorType || '-' }}</el-tag>
+              <!-- 启用开关是最高频的状态操作，必须留在行上，不藏进菜单 -->
+              <div class="db-row__aside conn-switch" @click.stop>
+                <span
+                  class="status-dot"
+                  :class="statusDotClass(row)"
+                  :title="row.enabled === 'Y' ? '已启用' : '已禁用'"
+                />
+                <el-switch
+                  v-model="row.enabled"
+                  active-value="Y"
+                  inactive-value="N"
+                  size="small"
+                  :loading="togglingId === row.id"
+                  @click.stop
+                  @change="() => toggleEnabled(row)"
+                />
               </div>
-
-              <!-- 底部操作（link 按钮，全程可见） -->
-              <div class="mt-actions" @click.stop>
+              <div class="db-row__ops" @click.stop>
                 <!-- 连接器本身不健康（缺驱动 / 未装载 / 未启用）时测试必然失败：
                      直接禁用并把原因挂在 hover 上，比让人点一下再吃一个后端异常强（§4.2.1） -->
                 <el-button
@@ -164,28 +161,43 @@
                 >
                   <el-icon><Connection /></el-icon>测试
                 </el-button>
-                <el-button
-                  v-hasPermi="['databus:connection:edit']"
-                  link
-                  type="primary"
-                  size="small"
-                  @click="handleUpdate(row)"
+                <el-dropdown
+                  trigger="click"
+                  placement="bottom-end"
+                  popper-class="db-menu-popper"
+                  @command="(cmd: string) => handleMoreCommand(cmd, row)"
                 >
-                  <el-icon><Edit /></el-icon>编辑
-                </el-button>
-                <el-button
-                  v-hasPermi="['databus:connection:remove']"
-                  link
-                  type="danger"
-                  size="small"
-                  @click="handleDelete(row)"
-                >
-                  <el-icon><Delete /></el-icon>删除
-                </el-button>
+                  <el-button size="small" text class="db-row__more" aria-label="更多操作">
+                    <!-- 实心竖排三点：直接内联 SVG，不吃图标字体/子集 -->
+                    <svg class="db-row__dots" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                      <circle cx="12" cy="5" r="2.4" fill="currentColor" />
+                      <circle cx="12" cy="12" r="2.4" fill="currentColor" />
+                      <circle cx="12" cy="19" r="2.4" fill="currentColor" />
+                    </svg>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item
+                        v-hasPermi="['databus:connection:edit']"
+                        class="db-menu-item is-primary"
+                        command="edit"
+                      >
+                        <el-icon><Edit /></el-icon><span>编辑</span>
+                      </el-dropdown-item>
+                      <el-dropdown-item
+                        v-hasPermi="['databus:connection:remove']"
+                        class="db-menu-item is-danger"
+                        command="delete"
+                      >
+                        <el-icon><Delete /></el-icon><span>删除</span>
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </div>
-            </div>
-            <el-empty v-if="!loading && connectionList.length === 0" description="暂无连接数据" />
-          </div>
+            </li>
+          </ul>
+          <el-empty v-else-if="!loading" description="暂无连接数据" />
 
           <pagination
             v-show="total > 0"
@@ -201,7 +213,7 @@
 </template>
 
 <script setup lang="ts" name="ConnectionPane">
-import { Plus, Search, Edit, Delete, Link, CopyDocument, Connection } from '@element-plus/icons-vue';
+import { Plus, Search, Edit, Delete, CopyDocument, Connection } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import {
   delConnection,
@@ -220,6 +232,8 @@ import modal from '@/plugins/modal';
 import ConnectionFormBody from './ConnectionFormBody.vue';
 import { findMissingRequired } from './connectionSchema';
 import { useConnectorOptions } from './useConnectorOptions';
+import { versionLabel } from '../market/marketDisplay';
+import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import type { ConnectionSaved } from '../workbench.types';
 
 const props = defineProps<{
@@ -252,7 +266,7 @@ const togglingId = ref<number | undefined>();
 const testingId = ref<number | undefined>();
 
 /* 连接器清单：动态 defs（唯一来源，§15.7），筛选 tab / label / configSchema 共用 */
-const { options: connectorOptions, loadConnectorOptions, connectorLabelOf, schemaOf, healthOf } =
+const { options: connectorOptions, loadConnectorOptions, connectorLabelOf, defOf, schemaOf, healthOf } =
   useConnectorOptions();
 
 const queryParams = ref<SysDatabusConnectionQuery>({
@@ -266,6 +280,33 @@ const queryParams = ref<SysDatabusConnectionQuery>({
 
 /** 连接器类型值转展示文案，未知类型原样显示 */
 const connectorTypeLabel = (value?: string) => connectorLabelOf(value);
+
+/** 行上的类型胶囊：类型标签 + 连接器包版本（版本是类型级常量，与类型同框，不再单开一列） */
+const typeLabel = (row: SysDatabusConnectionVo) => {
+  const label = connectorTypeLabel(row.connectorType);
+  const ver = versionLabel(defOf(row.connectorType)?.version);
+  return ver ? `${label} · ${ver}` : label;
+};
+
+/** 原文 type 只在标签与它不同时才画：未装载时 label 回退成原文，再画一遍就是纯重复 */
+const showRawType = (row: SysDatabusConnectionVo) =>
+  connectorTypeLabel(row.connectorType) !== row.connectorType;
+
+/** 行图标取连接器包声明的 icon；未装载 / 未声明时兜底数据库圆柱（不是链环：链环与连接类型无关） */
+const connectorIcon = (value?: string) => defOf(value)?.icon || 'lucide:database';
+
+/** 兜底识别色板：按 type 哈希取色，稳定且不硬编码任何数据库类型；顺序即权重，首位为默认蓝 */
+const TINT_KEYS = ['--db-blue', '--db-green', '--db-orange', '--db-purple', '--db-red'];
+
+/** 类型 → 图标底色。包声明品牌色后从这里优先返回即可，未声明时按 type 哈希稳定取色 */
+const connectorTint = (value?: string) => {
+  const key = value ?? '';
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 31 + key.charCodeAt(i)) % 997;
+  }
+  return `var(${TINT_KEYS[hash % TINT_KEYS.length]})`;
+};
 
 /**
  * 连接器不可用时的人话原因（可用返回空串）：测试按钮据此禁用并说明为什么（§4.2.1）。
@@ -316,7 +357,7 @@ const handleAdd = () => {
   emit('open', 'new', '新建连接');
 };
 
-/** 编辑（点卡片主体或编辑按钮）：embedded 切内部对象视图，否则上抛开新 tab */
+/** 编辑（点行主体或「更多」菜单里的编辑）：embedded 切内部对象视图，否则上抛开新 tab */
 const handleUpdate = (row: Partial<SysDatabusConnectionVo>) => {
   if (row.id == null) {
     return;
@@ -380,6 +421,17 @@ const handleDelete = async (row: Partial<SysDatabusConnectionVo>) => {
   modal.msgSuccess('删除成功');
 };
 
+/** 行尾「更多」菜单：编辑 / 删除。测试与启用开关是高频操作，留在行上不进菜单。 */
+const handleMoreCommand = (cmd: string, row: SysDatabusConnectionVo) => {
+  if (cmd === 'edit') {
+    handleUpdate(row);
+    return;
+  }
+  if (cmd === 'delete') {
+    void handleDelete(row);
+  }
+};
+
 /**
  * 测试连接：直传当前列表行数据（列表行已含 config 明文列），后端按 BO 实测。
  * 前置校验走该连接器的 configSchema（万物皆包：平台不认识任何具体字段）；
@@ -429,6 +481,9 @@ const copyConnectionId = async (row: SysDatabusConnectionVo) => {
     ElMessage.warning('复制失败，请手动选择文本复制');
   }
 };
+
+/* 行图标走离线 lucide 子集，否则内网环境图标空白（详见 useLucideSubset） */
+useLucideSubset();
 
 onMounted(() => {
   getList();
@@ -518,12 +573,9 @@ watch(
   font-weight: 500;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.3);
-  transition: all 0.25s ease;
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.4);
-  }
+  /* 浮起（位移/缩放/阴影/过渡）统一由 .db-float 提供（见 _primitives.scss），
+     本页不再自写 transform / 阴影 / transition。 */
+  --db-zoom: 1.015;
 }
 
 /* 搜索框 */
@@ -636,84 +688,47 @@ watch(
   flex-wrap: wrap;
 }
 
-/* 小卡片网格 */
-.card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
-  min-height: 80px;
-}
-
-.mt-card {
-  background: var(--el-bg-color, #fff);
-  border: 1px solid var(--el-border-color, #e2e8f0);
-  border-radius: 14px;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
-  padding: 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  cursor: pointer;
-  transition: all 0.25s ease;
-
-  &:hover {
-    box-shadow: 0 12px 28px rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.18);
-    border-color: var(--el-color-primary);
-    transform: translateY(-2px);
-  }
-}
-
-.mt-card-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.mt-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
+/* 行内视觉细节：行布局/浮起/外框都来自基元（.db-row / .db-float / .db-list--framed），
+   这里只处理本页特有的着色与排布，勿再在这里写行高、内边距或卡片外观。 */
+/* 行图标：彩色圆角方块。颜色由 type 哈希稳定得出，包声明品牌色后自然变成品牌色；
+   形状优先用包声明的 icon，未声明时兜底数据库圆柱——即「色块 + 白色图形」的识别方式，
+   但不内置任何数据库品牌表（零内置约束，见 useConnectorOptions） */
+.conn-tile {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   justify-content: center;
-  flex-shrink: 0;
-  background: linear-gradient(
-    135deg,
-    rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.12) 0%,
-    rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.22) 100%
-  );
+  font-size: 16px;
+  color: var(--conn-tint, var(--db-blue));
+  background: color-mix(in srgb, var(--conn-tint, var(--db-blue)) 14%, transparent);
+}
+
+/* 连接ID与名称同一行：基元的 __code 默认是第三行，这里去掉上边距 */
+.conn-code {
+  margin-top: 0;
+}
+
+.conn-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conn-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.1);
   color: var(--el-color-primary);
 }
 
-.mt-title-area {
-  flex: 1;
-  min-width: 0;
-}
-
-.mt-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--el-text-color-primary, #1d2129);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mt-component {
-  display: flex;
+/* 状态点 + 开关：基元的 __aside 是竖排，这里按一行排 */
+.conn-switch {
+  flex-direction: row;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  font-family: 'JetBrains Mono', Consolas, monospace;
-  min-width: 0;
-}
-
-.mt-component-id {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
+  gap: 8px;
 }
 
 .copy-id-btn {
@@ -741,17 +756,10 @@ watch(
     opacity: 1;
   }
 
-  /* 父卡片 hover 时才显现，常态隐藏避免视觉噪音 */
-  .mt-card:hover & {
+  /* 父行 hover 时才显现，常态隐藏避免视觉噪音 */
+  .db-row:hover & {
     opacity: 0.7;
   }
-}
-
-.mt-switch-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
 }
 
 /* 状态彩色圆点（不用文字标签） */
@@ -776,31 +784,5 @@ watch(
   &.status-offline {
     background: var(--el-color-info, #9ca3af);
   }
-}
-
-.mt-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.mt-badge {
-  display: inline-block;
-  padding: 2px 10px;
-  border-radius: 9999px;
-  font-size: 12px;
-  font-weight: 500;
-  background: rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.1);
-  color: var(--el-color-primary);
-}
-
-.mt-actions {
-  display: flex;
-  gap: 4px;
-  border-top: 1px solid var(--el-border-color-lighter, #ebeef5);
-  padding-top: 10px;
 }
 </style>

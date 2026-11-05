@@ -15,7 +15,7 @@
           v-for="card in cards"
           :key="card.key"
           type="button"
-          class="wb-launcher__card"
+          class="wb-launcher__card db-float"
           @click="emit('command', card.key)"
         >
           <SvgIcon class="wb-launcher__icon" :icon-class="card.icon" :style="{ color: card.color }" />
@@ -96,17 +96,16 @@ const cards = computed(() => LAUNCHER_ENTRIES.filter((c) => !c.perm || checkPerm
   background: var(--el-fill-color-light, #f5f7fa);
   font-family: inherit;
   cursor: pointer;
-  transition:
-    transform 0.15s ease,
-    background-color 0.15s ease;
+  /* 浮起（位移/缩放/阴影/过渡）统一由 .db-float 提供（见 _primitives.scss）；
+     本页只按磁贴体积收一档放大，并保留自己的 hover 底色。 */
+  --db-zoom: 1.015;
 
   &:hover {
-    transform: translateY(-2px);
     background: var(--el-fill-color, #eef0f3);
   }
 
   &:active {
-    transform: translateY(0);
+    transform: none;
   }
 }
 

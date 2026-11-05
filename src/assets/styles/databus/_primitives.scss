@@ -1,22 +1,7 @@
 /* ============================================================
-   databus 基础构件（从 E 方案原型提炼，页面直接复用）
+   databus 基础构件（页面直接复用）
    只放"跨页面共用"的东西；单页专属样式写在各自 .vue 里
    ============================================================ */
-
-/* —— 普通卡片 —— */
-.db-card {
-  background: var(--db-bg-card);
-  backdrop-filter: saturate(180%) blur(18px);
-  -webkit-backdrop-filter: saturate(180%) blur(18px);
-  border-radius: var(--db-r-card);
-  padding: var(--db-p-lg) var(--db-p-xl);
-  box-shadow: var(--db-shadow-sm), inset 0 0 0 0.5px var(--db-rule);
-}
-/* 浮起数值统一走文件末尾的「hover 浮起」规则；卡片体积大，放大收一档 */
-.db-card--hoverable {
-  position: relative;
-  --db-zoom: 1.015;
-}
 
 /* —— 面板（含标题栏的区块）—— */
 .db-panel {
@@ -62,55 +47,6 @@
   padding-right: max(0px, calc((100% - var(--db-content-max, 92%)) / 2));
 }
 
-/* —— 指标区：整块容器 + 内部 0.5px 网格分割（不是一堆独立卡片）—— */
-.db-metric-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  background: var(--db-bg-card);
-  backdrop-filter: saturate(180%) blur(18px);
-  -webkit-backdrop-filter: saturate(180%) blur(18px);
-  border-radius: var(--db-r-card);
-  box-shadow: var(--db-shadow-sm), inset 0 0 0 0.5px var(--db-rule);
-}
-.db-metric {
-  padding: var(--db-p-md) var(--db-p-lg);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  position: relative;
-  box-shadow: inset 1px 0 0 var(--db-rule), inset 0 1px 0 var(--db-rule);
-  cursor: pointer;
-}
-.db-metric:nth-child(4n + 1) { box-shadow: inset 0 1px 0 var(--db-rule); }
-.db-metric:nth-child(-n + 4) { box-shadow: inset 1px 0 0 var(--db-rule); }
-/* 位移/阴影/抬层由末尾的「hover 浮起」规则统一给；格子本身透明，浮起后要补实心底与圆角 */
-.db-metric:hover {
-  border-radius: var(--db-r-card);
-  background: var(--db-bg-solid);
-}
-.db-metric__label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--db-ink-muted);
-}
-.db-metric__value {
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-  color: var(--db-ink);
-  line-height: 1.15;
-}
-.db-metric__value--good { color: var(--db-green); }
-.db-metric__value--bad { color: var(--db-red); }
-.db-metric__delta {
-  font-size: 11px;
-  font-family: var(--db-font-mono);
-  color: var(--db-ink-muted);
-}
-.db-metric__delta--good { color: var(--db-green); font-weight: 600; }
-.db-metric__delta--bad { color: var(--db-red); font-weight: 600; }
-
 /* —— 状态胶囊 —— */
 .db-pill {
   display: inline-flex;
@@ -146,19 +82,36 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* —— 行列表（连接器管理同款）——
+/* —— 行列表（监控大屏 / 执行记录 / 告警记录 / 物料管理）——
    发丝线分隔行 + 左图标 / 两行主体 / 右侧信息，替代 el-table 与一堆带间隙的浮动卡片。
 
-   规则：一层框。列表只负责排版与分隔线，自身**不画边框 / 圆角 / 底色**；
-   框一律由最外层容器提供（页面级列表由 .mkt__list 这类容器自带，卡片内由 el-card
-   或 .record-body 提供）。两层容器各画一个框就是「框里套框」，视觉上必然脏。
-   嵌入容器时把容器 padding 归零，行随之全宽贴边，行左右 padding 与容器标题左缘对齐。 */
+   规则：一层框。列表只负责排版与分隔线，自身**不画边框 / 圆角 / 底色 / 留白**；
+   框与留白由最外层容器提供——卡片内列表靠 el-card__body 的 16px
+   （见 components/_card-shell.scss），页面级列表靠 .db-list--framed 的 16px。
+   两层都出留白就会叠成 32px，所以列表这里必须是 0。
+
+   这是 databus 唯一的行/列表基元：禁止再新建 xxx-row / xxx-list，
+   只能在 .db-row / .db-list 上加修饰类（浮起 = .db-float，外框 = .db-list--framed，
+   可点 = .is-clickable），否则跨页规则漏改就会重演顶边粘连那类问题。 */
 .db-list {
   margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
+}
+
+/* 列表外框修饰：页面级列表自己供框时挂它（物料管理 / 执行记录 / 告警记录）。
+   1px 实边 + 10px 圆角 + overflow 裁角，三处共用这一条，新增列表挂修饰类即可。
+   四边 16px 留白：与 el-card__body 同一档，首末行不贴框边，hover 底色与顶部补光
+   也不会被 overflow 裁掉；左右也只由这里给（.db-list 自身留白为 0）。
+   监控大屏的列表套在 el-card 里、由卡片供框，不挂这个修饰（否则框套框）。 */
+.db-list--framed {
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--db-r-control);
+  overflow: hidden;
+  padding: var(--db-p-lg);
 }
 
 .db-row {
@@ -176,11 +129,10 @@
     border-bottom: none;
   }
 
-  /* 浮起后成一张圆角「芯片」：补圆角并隐掉本行底线，否则底线会在圆角处翘出两小道 */
-  &:hover {
-    background-color: var(--el-fill-color-light);
-    border-radius: var(--db-r-control);
-    border-bottom-color: transparent;
+  /* 可点 = 只表达「这里能点」；浮起是另一根轴，由 .db-float 决定。
+     两者分开后，同一行既能静态展示，也能按需成为可点 + 浮起。 */
+  &.is-clickable {
+    cursor: pointer;
   }
 
   &__icon {
@@ -203,6 +155,7 @@
   }
 
   &__name {
+    min-width: 0;
     font-size: 13px;
     font-weight: 600;
     color: var(--el-text-color-primary);
@@ -220,6 +173,38 @@
     text-overflow: ellipsis;
   }
 
+  /* 第三行编码（物料行用）：弱于副标题，不抢主体 */
+  &__code {
+    margin-top: 3px;
+    font-size: 12px;
+    color: var(--el-text-color-placeholder);
+  }
+
+  /* 驳回理由 / 修改说明一类需要被看见的附注 */
+  &__remark {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--el-color-danger);
+  }
+
+  /* 行内 @作者：可点去按作者筛选，弱化处理不抢行主体；
+     跟副标题/编码同一行，避免有/无作者的行高不一致 */
+  &__author {
+    margin-left: 6px;
+    padding: 0;
+    font-size: 12px;
+    color: var(--el-text-color-placeholder);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+
+    &:hover {
+      color: var(--el-color-primary);
+      text-decoration: underline;
+    }
+  }
+
   /* 右侧信息位：时间 / 耗时一类，右对齐可两行 */
   &__aside {
     flex-shrink: 0;
@@ -229,6 +214,40 @@
     gap: 2px;
     font-size: 12px;
     color: var(--el-text-color-secondary);
+  }
+
+  /* 行尾动作区：gap 由各页按密度覆盖（执行记录 4px / 物料 12px） */
+  &__ops {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  /* 「更多」动作按钮内联的实心竖排三点 */
+  &__dots {
+    color: var(--el-text-color-secondary);
+  }
+
+  &__more:hover &__dots {
+    color: var(--el-color-primary);
+  }
+
+  /* 行尾可点暗示（仅可点行渲染） */
+  &__chevron {
+    flex-shrink: 0;
+    font-size: 16px;
+    color: var(--el-text-color-placeholder);
+  }
+
+  /* 不可点行的状态胶囊（如「自己上架 · 待审核」） */
+  &__self-pending {
+    padding: 2px 10px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--el-text-color-secondary);
+    background: var(--el-fill-color-light);
+    border-radius: var(--db-r-pill);
   }
 }
 
@@ -272,43 +291,57 @@
   color: var(--db-blue);
 }
 
+/* .db-float 是 hover 浮起的唯一开关（行 / 卡片 / 磁贴一视同仁）：
+   挂上即获得位移、阴影与顶边补丁；页面只按体积覆盖 --db-lift / --db-zoom 档位，
+   不要再自写 transform / box-shadow 与 transition。 */
+.db-float {
+  position: relative;
+}
+
 /* ============================================================
    hover 浮起（统一规则）
    ------------------------------------------------------------
-   所有"可悬停的承载物"hover 时做同一件事：向上位移 + 放大 + 大阴影
-   + 0.5px 加强描边 + 抬层，视觉上从背景里浮起来，与相邻元素拉开层次。
-   数值只认 --db-lift / --db-zoom，页面不要再自写一套位移与阴影。
+   所有"可悬停的承载物"hover 时做同一件事：向上位移 + 放大 + 大阴影 + 抬层。
+   **是否浮起只由 .db-float 决定**：页面只负责挂类，不写位移/阴影/过渡。
+   数值只认 --db-lift / --db-zoom。
 
    缩放按体积分档（大块放大明显，故收档）：
-     .db-card--hoverable 1.015   .db-metric 1.025   .db-row 1（不放大）
-   行为什么不放大：行左右贴边，scale 会把两侧内容一起裁掉，所以只做 -1px 位移，
-   阴影仍会盖住上下相邻行，手感与卡片一致但不丢内容。
-   为什么必须 z-index：影子要压在相邻行之上，否则浮起的那一行会被后一行盖住。
-   为什么浮起后不再加描边：边界交给光影。行/卡本来就带分隔线或 0.5px 发丝边框，
-   浮起再套一圈描边就成了"框里框"，看着脏。
+     卡片 / 磁贴 1.015（页面按体积在自己选择器里覆写 --db-zoom）
+     行 1（.db-row 内置：满宽贴边，scale 会裁掉两侧内容，只留 -1px 位移，
+           阴影仍会盖住相邻行，手感与卡片一致但不丢内容）
+   为什么必须 z-index：影子要压在相邻元素之上，否则浮起的那一个会被后一个盖住。
+   为什么浮起后不再加描边：边界交给光影，承载面本就带分隔线或发丝边框。
+   也不要靠 hover 把描边染成主色——主色是「选中」语义（筛选 chip / 状态 tab 的 .active），
+   hover 染蓝会让人误以为已被选中；选中态与悬停态必须一眼可分。
    ============================================================ */
-.db-float,
-.db-card--hoverable,
-.db-metric,
-.db-row {
+.db-float {
   transition: transform var(--db-dur-normal) var(--db-spring),
               box-shadow var(--db-dur-normal) var(--db-spring),
-              background-color var(--db-dur-normal) var(--db-ease);
+              background-color var(--db-dur-normal) var(--db-ease),
+              border-color var(--db-dur-normal) var(--db-ease);
 }
 
-.db-float:hover,
-.db-card--hoverable:hover,
-.db-metric:hover,
-.db-row:hover {
+.db-float:hover {
   transform: translateY(var(--db-lift)) scale(var(--db-zoom));
   box-shadow: var(--db-shadow-lg);
   z-index: 5;
 }
 
+/* 行浮起后成一张圆角「芯片」：补圆角、换成 hover 底、隐掉本行底线，
+   否则底线会在圆角处翘出两小道、与下一行黏成一条。 */
+.db-row.db-float:hover {
+  background-color: var(--el-fill-color-light);
+  border-radius: var(--db-r-control);
+  border-bottom-color: transparent;
+}
+
 /* 行浮起的顶边补丁：--db-shadow-lg 是纯下投投影，而行的顶边自身无框、
    浮起上移 1px 后又恰好盖住上一行的底线，顶边会一点光影都不剩、与上一行黏连
    （底边有下投阴影压着下一行，分离清楚）。故行单独叠一层薄的上投投影补出顶边分离；
-   卡片/度量块自带发丝边框，无此问题，不受影响。 */
-.db-row:hover {
+   自带描边或发丝线的承载面（如带边框的卡片）并不依赖它，叠上去只是一层极淡的补光。
+
+   作用域就是 .db-float 本身——它是 databus 浮起的唯一开关（行 / 卡片 / 磁贴），
+   任何承载面挂上它即自动获得顶边补丁，不必再去各 SFC 里各补一条。 */
+.db-float:hover {
   box-shadow: var(--db-shadow-lg), 0 -3px 8px rgba(0, 0, 0, 0.06);
 }

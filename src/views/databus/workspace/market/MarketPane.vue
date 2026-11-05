@@ -110,7 +110,7 @@
       <template v-for="g in groups" :key="g.key">
         <div class="mkt__group-title">{{ g.label }}</div>
         <div class="mkt__grid">
-          <article v-for="it in g.items" :key="it.id" class="mkt-card" @click="onCardClick(it)">
+          <article v-for="it in g.items" :key="it.id" class="mkt-card db-float" @click="onCardClick(it)">
             <SvgIcon
               class="mkt-card__icon"
               :icon-class="itemIcon(it)"
@@ -546,7 +546,9 @@ async function onUninstallCard(it: DatabusMarketItemVo) {
   border-radius: 10px;
   background: var(--el-fill-color-light, #f5f7fa);
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  /* 浮起（位移/缩放/阴影/过渡）全部由 .db-float 提供（见 _primitives.scss）；
+     本页只按体积给小卡收一档放大，并保留自己的 hover 底色。 */
+  --db-zoom: 1.015;
 
   &:hover {
     background: var(--el-fill-color, #eef0f3);

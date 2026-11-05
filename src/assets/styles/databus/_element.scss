@@ -67,11 +67,10 @@
   transform: scale(1.008);
   box-shadow: var(--db-shadow-md), inset 0 0 0 0.5px var(--db-rule-strong);
 }
-/* 卡片里装着可浮起的行（.db-row / .mkt-row）时，悬停行不要连整张卡一起缩放：
+/* 卡片里装着可浮起的行（.db-row）时，悬停行不要连整张卡一起缩放：
    两层同时位移会让行从卡片的圆角边里"跳"出来，看着像边框被撑开了（见 _primitives.scss「hover 浮起」）。
    判定用 :has()，只有行被悬停的那一刻才生效，鼠标落在卡片空白处仍旧整卡微浮。 */
-.db-app .el-card:has(.db-row:hover),
-.db-app .el-card:has(.mkt-row:hover) {
+.db-app .el-card:has(.db-row.db-float:hover) {
   transform: none;
   box-shadow: var(--db-shadow-sm), inset 0 0 0 0.5px var(--db-rule);
 }

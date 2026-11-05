@@ -69,7 +69,7 @@
         </div>
 
         <!-- 行列表（连接器管理同款）替代 el-table：一次告警一行，右侧触发/恢复时间 -->
-        <div v-loading="recordLoading && recordList.length > 0" class="record-body">
+        <div v-loading="recordLoading && recordList.length > 0" class="db-list--framed">
           <div v-if="recordLoading && recordList.length === 0" class="record-skeleton">
             <el-skeleton animated :rows="7" />
           </div>
@@ -79,7 +79,7 @@
             :image-size="80"
           />
           <ul v-else class="db-list">
-            <li v-for="row in recordList" :key="String(row.id)" class="db-row">
+            <li v-for="row in recordList" :key="String(row.id)" class="db-row db-float">
               <Icon
                 icon="lucide:bell"
                 class="db-row__icon record-icon"
@@ -370,18 +370,12 @@ onMounted(() => {
   }
 }
 
-/* 列表区：一层框原则——框由 .record-body 提供，列表自身不画框（见 _primitives.scss .db-list）。
-   行 padding 与容器左缘即 16px，无需再补偿。
-   框型必须与执行记录的 .list-body / 连接器管理的 .mkt__list 一致：1px 实边 + 10px 圆角。 */
-.record-body {
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--db-r-control, 10px);
-  overflow: hidden;
-}
+/* 列表区：一层框原则——框与留白都由 .db-list--framed 提供（1px 实边 + 10px 圆角 + 四边 16px），
+   列表自身不画框、不出留白（见 _primitives.scss）。
+   框型必须与执行记录 / 物料管理一致，三处共用同一条基元，不要在这里再写一份。 */
 
 .record-skeleton {
-  padding: 16px;
+  padding: var(--db-p-lg);
 }
 
 .record-icon.is-firing {

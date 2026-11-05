@@ -73,37 +73,37 @@
           <div class="mkt__group-title">
             {{ grp.label }} <span class="mkt__group-count">{{ grp.items.length }}</span>
           </div>
-          <ul class="mkt__list">
+          <ul class="db-list db-list--framed">
             <!-- 整行可点＝打开本地副本（唯一入口）；ops 区只留治理动作，@click.stop 阻断冒泡到行 -->
             <li
               v-for="row in grp.items"
               :key="row.id"
-              class="mkt-row"
+              class="db-row"
               :class="{ 'is-clickable db-float': canOpenInstalled(row) }"
               @click="canOpenInstalled(row) && onOpenInstalled(row)"
             >
               <SvgIcon
-                class="mkt-row__icon"
+                class="db-row__icon"
                 :icon-class="rowIcon(row)"
                 :style="{ color: row.color || 'var(--el-color-primary)' }"
               />
-              <div class="mkt-row__meta">
-                <div class="mkt-row__line">
+              <div class="db-row__meta">
+                <div class="db-row__line">
                   <StatusDot
                     :tone="installRowStatus(row).tone"
                     :label="installRowStatus(row).label"
                     :title="installRowStatus(row).reason"
                   />
-                  <span class="mkt-row__name">{{ row.name }}</span>
+                  <span class="db-row__name">{{ row.name }}</span>
                 </div>
-                <div class="mkt-row__summary">
+                <div class="db-row__summary">
                   {{ row.summary }}
-                  <button v-if="row.ownerCode" type="button" class="mkt-row__author" @click.stop="onAuthor(row.ownerCode!, row.resourceType)">
+                  <button v-if="row.ownerCode" type="button" class="db-row__author" @click.stop="onAuthor(row.ownerCode!, row.resourceType)">
                     @{{ row.ownerCode }}
                   </button>
                 </div>
               </div>
-              <div class="mkt-row__ops" @click.stop>
+              <div class="db-row__ops" @click.stop>
                 <!-- 启停仅对组件有意义（链路生命周期由发布/下线管），故链路只留卸载 -->
                 <el-switch
                   v-if="row.resourceType === 'COMPONENT'"
@@ -116,7 +116,7 @@
                   <SvgIcon icon-class="lucide:trash" /><span>卸载</span>
                 </el-button>
               </div>
-              <SvgIcon v-if="canOpenInstalled(row)" class="mkt-row__chevron" icon-class="lucide:chevron-right" />
+              <SvgIcon v-if="canOpenInstalled(row)" class="db-row__chevron" icon-class="lucide:chevron-right" />
             </li>
           </ul>
         </template>
@@ -133,31 +133,31 @@
           <div class="mkt__group-title">
             {{ grp.label }} <span class="mkt__group-count">{{ grp.items.length }}</span>
           </div>
-          <ul class="mkt__list">
+          <ul class="db-list db-list--framed">
             <!-- 整行可点＝打开物料详情 tab（唯一入口）；不渲染 @作者（恒为自己，纯噪声） -->
             <li
               v-for="row in grp.items"
               :key="row.id"
-              class="mkt-row is-clickable db-float"
+              class="db-row is-clickable db-float"
               :data-market-item-id="row.id"
               :class="{ 'is-flash': flashItemId === String(row.id) }"
               @click="emit('open-detail', row)"
             >
               <SvgIcon
-                class="mkt-row__icon"
+                class="db-row__icon"
                 :icon-class="itemIcon(row)"
                 :style="{ color: row.color || 'var(--el-color-primary)' }"
               />
-              <div class="mkt-row__meta">
-                <div class="mkt-row__line">
+              <div class="db-row__meta">
+                <div class="db-row__line">
                   <StatusDot :tone="marketItemRowStatus(row.status).tone" :label="marketItemRowStatus(row.status).label" :title="marketItemRowStatus(row.status).reason" />
-                  <span class="mkt-row__name">{{ row.name }}</span>
+                  <span class="db-row__name">{{ row.name }}</span>
                 </div>
-                <div class="mkt-row__summary">{{ row.summary || row.codeDisplay }}</div>
-                <div v-if="row.status === 'REJECTED' && row.remark" class="mkt-row__remark">驳回理由：{{ row.remark }}</div>
-                <div v-if="row.modifyNote" class="mkt-row__remark">修改说明：{{ row.modifyNote }}</div>
+                <div class="db-row__summary">{{ row.summary || row.codeDisplay }}</div>
+                <div v-if="row.status === 'REJECTED' && row.remark" class="db-row__remark">驳回理由：{{ row.remark }}</div>
+                <div v-if="row.modifyNote" class="db-row__remark">修改说明：{{ row.modifyNote }}</div>
               </div>
-              <div class="mkt-row__ops" @click.stop>
+              <div class="db-row__ops" @click.stop>
                 <el-button v-if="row.status === 'ONLINE'" size="small" @click="onUnpublish(row)">
                   <SvgIcon icon-class="lucide:arrow-down-to-line" /><span>下架</span>
                 </el-button>
@@ -165,7 +165,7 @@
                   <SvgIcon icon-class="lucide:trash" /><span>删除</span>
                 </el-button>
               </div>
-              <SvgIcon class="mkt-row__chevron" icon-class="lucide:chevron-right" />
+              <SvgIcon class="db-row__chevron" icon-class="lucide:chevron-right" />
             </li>
           </ul>
         </template>
@@ -179,7 +179,7 @@
           <div class="mkt__group-title">
             {{ grp.label }} <span class="mkt__group-count">{{ grp.items.length }}</span>
           </div>
-          <ul class="mkt__list">
+          <ul class="db-list db-list--framed">
             <!-- 整行可点＝开物料审核 tab（信息头＋内容预览＋依赖树＋底部通过/驳回，唯一入口；
                  行内不再放「详情」按钮，也不放通过/驳回：B 口径要求通过前看依赖树，审核动作一律进 tab 就地完成）。
                  禁自审：自己上架的项整行不可点（不只是禁用按钮）——口径「前端看不到的，一定不能操作」，
@@ -187,31 +187,31 @@
             <li
               v-for="row in grp.items"
               :key="row.id"
-              class="mkt-row"
-              :class="{ 'is-clickable': !isSelfPending(row) }"
+              class="db-row"
+              :class="{ 'is-clickable db-float': !isSelfPending(row) }"
               @click="!isSelfPending(row) && emit('open-review', row.id, row.name)"
             >
               <SvgIcon
-                class="mkt-row__icon"
+                class="db-row__icon"
                 :icon-class="itemIcon(row)"
                 :style="{ color: row.color || 'var(--el-color-primary)' }"
               />
-              <div class="mkt-row__meta">
-                <div class="mkt-row__name">{{ row.name }}</div>
+              <div class="db-row__meta">
+                <div class="db-row__name">{{ row.name }}</div>
                 <!-- 简介为空不回退编码：下一行固定显示 codeDisplay，回退会重复显示（闭包联审连带单据无简介） -->
-                <div v-if="row.summary" class="mkt-row__summary">{{ row.summary }}</div>
-                <div class="mkt-row__code">
+                <div v-if="row.summary" class="db-row__summary">{{ row.summary }}</div>
+                <div class="db-row__code">
                   {{ row.codeDisplay }}
                   <!-- 作者跟在编码同一行：待审核行没有 DEV 概念，单独占行会让行高比其它 tab 高 -->
-                  <button v-if="row.ownerCode" type="button" class="mkt-row__author" @click.stop="onAuthor(row.ownerCode!, row.resourceType)">
+                  <button v-if="row.ownerCode" type="button" class="db-row__author" @click.stop="onAuthor(row.ownerCode!, row.resourceType)">
                     @{{ row.ownerCode }}
                   </button>
                 </div>
               </div>
-              <div v-if="isSelfPending(row)" class="mkt-row__ops">
-                <span class="mkt-row__self-pending">自己上架 · 待审核（禁自审）</span>
+              <div v-if="isSelfPending(row)" class="db-row__ops">
+                <span class="db-row__self-pending">自己上架 · 待审核（禁自审）</span>
               </div>
-              <SvgIcon v-if="!isSelfPending(row)" class="mkt-row__chevron" icon-class="lucide:chevron-right" />
+              <SvgIcon v-if="!isSelfPending(row)" class="db-row__chevron" icon-class="lucide:chevron-right" />
             </li>
           </ul>
         </template>
@@ -226,38 +226,38 @@
           <div class="mkt__group-title">
             连接器 <span class="mkt__group-count">{{ connectorRows.length }}</span>
           </div>
-          <ul v-if="connectorRows.length" class="mkt__list">
+          <ul v-if="connectorRows.length" class="db-list db-list--framed">
             <!-- 整行可点＝打开连接器包查看 tab（清单＋反编译预览，唯一入口）；
                  ops 区只留治理动作 ⟨启停⟩[废弃][卸载]，@click.stop 阻断冒泡到行 -->
             <li
               v-for="row in connectorRows"
               :key="row.type"
-              class="mkt-row"
+              class="db-row"
               :class="{ 'is-clickable db-float': canInspectDef(row) }"
               @click="canInspectDef(row) && onInspectDefPackage(row)"
             >
-              <SvgIcon class="mkt-row__icon" :icon-class="row.icon || 'lucide:plug'" :style="{ color: 'var(--el-color-primary)' }" />
-              <div class="mkt-row__meta">
-                <div class="mkt-row__line">
+              <SvgIcon class="db-row__icon" :icon-class="row.icon || 'lucide:plug'" :style="{ color: 'var(--el-color-primary)' }" />
+              <div class="db-row__meta">
+                <div class="db-row__line">
                   <StatusDot
                     :tone="connectorRowStatus(row).tone"
                     :label="connectorRowStatus(row).label"
                     :title="connectorRowStatus(row).reason"
                     :dev="isDevDef(row)"
                   />
-                  <span class="mkt-row__name">{{ row.label || row.type }}</span>
+                  <span class="db-row__name">{{ row.label || row.type }}</span>
                 </div>
                 <!-- 来源只在副标题说一次：dev 行的来源由行内 DEV 角标表达（带 hover 解释），再拼一遍是重复信息。
                      作者跟在副标题同一行：DEV 行没有作者，单独一行会导致有/无作者的行高不一致 -->
-                <div class="mkt-row__summary">
+                <div class="db-row__summary">
                   #{{ row.type }}{{ row.version ? ` · ${versionLabel(row.version)}` : ''
                   }}{{ isDevDef(row) ? '' : ` · ${connectorSourceLabel(row)}` }}
-                  <button v-if="row.ownerCode" type="button" class="mkt-row__author" @click.stop="onAuthor(row.ownerCode!, 'CONNECTOR')">
+                  <button v-if="row.ownerCode" type="button" class="db-row__author" @click.stop="onAuthor(row.ownerCode!, 'CONNECTOR')">
                     @{{ row.ownerCode }}
                   </button>
                 </div>
               </div>
-              <div class="mkt-row__ops" @click.stop>
+              <div class="db-row__ops" @click.stop>
                 <!-- 治理动作全部收纳进「更多」菜单：行上只留状态与名称，避免一排放四个按钮 -->
                 <el-dropdown
                   trigger="click"
@@ -268,12 +268,12 @@
                   <el-button
                     size="small"
                     text
-                    class="mkt-row__more"
+                    class="db-row__more"
                     :loading="isDevDef(row) && devReloadingType === row.type"
                     aria-label="更多治理动作"
                   >
                     <!-- 实心竖排三点：直接内联 SVG，不吃图标字体/子集 -->
-                    <svg class="mkt-row__dots" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                    <svg class="db-row__dots" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
                       <circle cx="12" cy="5" r="2.4" fill="currentColor" />
                       <circle cx="12" cy="12" r="2.4" fill="currentColor" />
                       <circle cx="12" cy="19" r="2.4" fill="currentColor" />
@@ -325,7 +325,7 @@
                   </template>
                 </el-dropdown>
               </div>
-              <SvgIcon v-if="canInspectDef(row)" class="mkt-row__chevron" icon-class="lucide:chevron-right" />
+              <SvgIcon v-if="canInspectDef(row)" class="db-row__chevron" icon-class="lucide:chevron-right" />
             </li>
           </ul>
           <el-empty v-if="connectorEmptyText" :description="connectorEmptyText" :image-size="72">
@@ -954,150 +954,16 @@ async function onDeleteItem(row: DatabusMarketItemVo) {
   vertical-align: 1px;
 }
 
-/* 行列表：整体包一层圆角描边容器（借鉴 Trae 插件市场的边框样式） */
-.mkt__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.mkt-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-
-  &:last-child {
-    border-bottom: none;
-  }
-
-  /* 整行可点（唯一入口）：hover 背景 + 手型 + 浮起。不可点行不挂此修饰类，保持默认光标、无 hover、无 chevron */
-  &.is-clickable {
-    cursor: pointer;
-    position: relative;
-    /* 满宽行左右贴边，放大即被列表容器裁掉，故只位移不缩放（同 .db-row） */
-    --db-lift: -1px;
-    --db-zoom: 1;
-
-    /* 浮起后成一张圆角芯片：补圆角并隐掉本行底线，否则底线会在圆角处翘出两小道 */
-    &:hover {
-      background-color: var(--el-fill-color-light);
-      border-radius: var(--db-r-control, 10px);
-      border-bottom-color: transparent;
-    }
-  }
-
-  &__icon {
-    flex-shrink: 0;
-    font-size: 20px;
-  }
-
-  &__meta {
-    flex: 1;
-    min-width: 0;
-  }
-
-  &__line {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  &__name {
-    min-width: 0;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--el-text-color-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  &__summary {
-    margin-top: 3px;
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  &__code {
-    margin-top: 3px;
-    font-size: 12px;
-    color: var(--el-text-color-placeholder);
-  }
-
-  &__remark {
-    margin-top: 4px;
-    font-size: 12px;
-    color: var(--el-color-danger);
-    line-height: 1.5;
-  }
-
-  &__ops {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-shrink: 0;
-  }
-
-  /* 行上 @作者（可点 → 聚焦市场 tab 按作者筛选）：弱化处理，不抢行主体视觉；
-     三个 tab 都跟在副标题/编码同一行，不占独立行高（没有作者的 DEV 行与有作者的行高度才一致） */
-  &__author {
-    margin-left: 6px;
-    padding: 0;
-    font-size: 12px;
-    color: var(--el-text-color-placeholder);
-    background: transparent;
-    border: none;
-    cursor: pointer;
-
-    &:hover {
-      color: var(--el-color-primary);
-      text-decoration: underline;
-    }
-  }
-
-  /* 更多操作按钮内联的实心竖排三点 */
-  &__dots {
-    color: var(--el-text-color-secondary);
-  }
-
-  &__more:hover &__dots {
-    color: var(--el-color-primary);
-  }
-
-  /* 行尾可点暗示（仅可点行渲染） */
-  &__chevron {
-    flex-shrink: 0;
-    font-size: 16px;
-    color: var(--el-text-color-placeholder);
-  }
-
-  &__self-pending {
-    font-size: 12px;
-    line-height: 1.6;
-    color: var(--el-text-color-secondary);
-    background: var(--el-fill-color-light, #f5f7fa);
-    padding: 2px 10px;
-    border-radius: 999px;
-  }
-}
+/* 行与列表样式已全部上收 _primitives.scss：
+   列表 = .db-list + .db-list--framed，行 = .db-row（浮起由 .db-float 决定），
+   本页只保留「上架成功高亮」这类物料专属状态。 */
 
 /* 上架成功后的新行高亮：中性灰底 + 左侧细蓝条，末段一起淡出（宿主 3 秒后清 class） */
-.mkt-row.is-flash {
-  animation: mkt-row-flash 3s ease-out;
+.db-row.is-flash {
+  animation: db-row-flash 3s ease-out;
 }
 
-@keyframes mkt-row-flash {
+@keyframes db-row-flash {
   0%,
   55% {
     background-color: var(--el-fill-color-light);

@@ -170,7 +170,7 @@
         </div>
 
         <!-- 链路健康全景 -->
-        <el-card shadow="never" class="panel panel--flush">
+        <el-card shadow="never" class="panel">
           <template #header>
             <div class="panel-head">
               <span class="panel-title">链路健康</span>
@@ -179,7 +179,7 @@
           </template>
           <el-empty v-if="chainHealth.length === 0" description="窗口内暂无链路执行" :image-size="80" />
           <ul v-else class="db-list">
-            <li v-for="row in chainHealth" :key="row.chainCode" class="db-row">
+            <li v-for="row in chainHealth" :key="row.chainCode" class="db-row db-float">
               <Icon
                 :icon="isBadRate(row.successRate) ? 'lucide:circle-alert' : 'lucide:circle-check'"
                 class="db-row__icon health-icon"
@@ -208,7 +208,7 @@
 
         <!-- 排行榜：失败榜表格 + 节点耗时/错误热点条形图 -->
         <div class="rank-grid">
-          <el-card shadow="never" class="panel panel--flush">
+          <el-card shadow="never" class="panel">
             <template #header>
               <div class="panel-head">
                 <span class="panel-title">链路失败 Top</span>
@@ -221,7 +221,7 @@
               :image-size="60"
             />
             <ul v-else class="db-list">
-              <li v-for="row in ranking.chainFailures" :key="row.chainCode" class="db-row">
+              <li v-for="row in ranking.chainFailures" :key="row.chainCode" class="db-row db-float">
                 <Icon icon="lucide:circle-x" class="db-row__icon rank-fail-icon" />
                 <div class="db-row__meta">
                   <div class="db-row__line">
@@ -263,7 +263,7 @@
         </div>
 
         <!-- 实时错误流 -->
-        <el-card shadow="never" class="panel panel--flush">
+        <el-card shadow="never" class="panel">
           <template #header>
             <div class="panel-head">
               <span class="panel-title">实时错误流</span>
@@ -272,7 +272,7 @@
           </template>
           <el-empty v-if="errorStream.length === 0" description="暂无失败执行" :image-size="80" />
           <ul v-else class="db-list stream-list">
-            <li v-for="item in errorStream" :key="String(item.id)" class="db-row">
+            <li v-for="item in errorStream" :key="String(item.id)" class="db-row db-float">
               <Icon icon="lucide:circle-x" class="db-row__icon stream-icon" />
               <div class="db-row__meta">
                 <div class="db-row__line">
@@ -1492,16 +1492,8 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
-/* 行列表卡片：一层框原则——框由 el-card 提供，列表自身不画框（见 _primitives.scss .db-list）。
-   故卡片 body 去掉内边距让行全宽贴边，行左右 padding 对齐卡片标题左缘（20px）。 */
-.panel--flush :deep(.el-card__body) {
-  padding: 0;
-}
-
-.panel--flush .db-row {
-  padding-right: 20px;
-  padding-left: 20px;
-}
+/* 行列表卡片：一层框原则——框与留白都归 el-card（body 16px，见 components/_card-shell.scss），
+   列表自身不画框、不出留白（见 _primitives.scss .db-list），否则两层叠成 32px。 */
 
 .db-list.stream-list {
   max-height: 360px;

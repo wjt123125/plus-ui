@@ -92,9 +92,9 @@
             </button>
           </div>
 
-          <!-- 行列表（连接器管理同款）替代 el-table：一次执行一行，右侧起止时间与耗时，行尾详情/重跑。
+          <!-- 行列表替代 el-table：一次执行一行，右侧起止时间与耗时，行尾详情/重跑。
                首屏用骨架屏占位，翻页/筛选仍走容器遮罩 loading -->
-          <div v-loading="loading && recordList.length > 0" class="list-body">
+          <div v-loading="loading && recordList.length > 0" class="db-list--framed">
             <div v-if="loading && recordList.length === 0" class="list-skeleton">
               <el-skeleton animated :rows="9" />
             </div>
@@ -107,7 +107,7 @@
               <li
                 v-for="row in recordList"
                 :key="String(row.id)"
-                class="db-row exec-row"
+                class="db-row db-float exec-row"
                 @click="openDetail(row)"
               >
                 <Icon
@@ -725,20 +725,14 @@ watch(
   }
 }
 
-/* 列表区：一层框原则——框由 .list-body 提供，列表自身不画框（见 _primitives.scss .db-list）。
-   行 padding 与容器左缘即 16px，无需再补偿。
-   框与「物料管理-连接器管理」的 .mkt__list 完全同一套：1px 实边 + 10px 圆角 + overflow 裁角。
+/* 列表区：一层框原则——框与留白都由 .db-list--framed 提供（1px 实边 + 10px 圆角 + 四边 16px），
+   列表自身不画框、不出留白（见 _primitives.scss）。
+   框型与物料管理 / 告警记录同一套基元，三处共用一条，不要在这里再写一份。
    不要改成 0.5px 内阴影发丝线：容器是纯白、页面是浅灰，0.5px 在普通屏上被四舍五入，
    会出现"有的边有、有的边没有"的残框；而且行分隔线是 1px，外框比内线还细也不成体统。 */
-.list-body {
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--db-r-control, 10px);
-  overflow: hidden;
-}
 
 .list-skeleton {
-  padding: 16px;
+  padding: var(--db-p-lg);
 }
 
 /* 整行可点＝打开记录详情（唯一入口）；行内 ops 区 @click.stop 各自处理 */
@@ -763,10 +757,8 @@ watch(
   color: var(--el-color-danger);
 }
 
-.db-row__ops {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
+/* 行尾动作区密度：执行记录动作更紧凑，只覆盖基元的 gap（布局由 .db-row__ops 提供） */
+.exec-row .db-row__ops {
   gap: 4px;
 }
 </style>
