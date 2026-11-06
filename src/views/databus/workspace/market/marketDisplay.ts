@@ -4,9 +4,9 @@
  *   1. 翻译类纯函数——图标、上架状态标签、连接器 def 状态/来源标签、类型分组标签与顺序。
  *      拆 tab 前它们是 MarketPane 的内部函数，拆成两个面板后两边都要用，留一份在此，
  *      免得各写各的、日后改一处漏一处（两份 STATUS_META 已经在这个目录里出现过）。
- *   2. 连接器 def 行的模块级共享单例。市场卡片的「启用/停用」按钮态与管理页连接器治理行
- *      读的是同一份数据；两个 tab 会同时开着，各存一份就会出现「市场页刚点了启用、
- *      管理页那行还写着未启用」这种对不上的场面。
+ *   2. 连接器 def 行的模块级共享单例。市场卡片只读它做运行态提示（已废弃 / 缺驱动 / 未装载），
+ *      管理页连接器治理行读它拿启停状态与治理动作；两个 tab 会同时开着，各存一份就会出现
+ *      「治理页刚点了启用、市场卡片还挂旧状态」这种对不上的场面。
  */
 import { ref } from 'vue';
 import type { ConnectorDefVo } from '@/api/databus/connector/types';
@@ -32,7 +32,7 @@ export function itemIcon(it: DatabusMarketItemVo): string {
   return it.icon || 'lucide:box';
 }
 
-/** 已装台账行图标（安装记录里没有连接器：连接器不写 install 台账，故只需分链路/组件） */
+/** 已装台账行图标：链路固定，组件/连接器取物料自带图标，缺省用盒子 */
 export function rowIcon(row: DatabusMarketInstallVo): string {
   return row.resourceType === 'CHAIN' ? 'lucide:spline' : row.icon || 'lucide:box';
 }
@@ -102,13 +102,13 @@ export function installRowStatus(row: DatabusMarketInstallVo): RowStatusMeta {
   }
   return row.enabled === false
     ? { tone: 'info', label: '未启用', reason: '尚未启用' }
-    : { tone: 'success', label: '', reason: '' };
+    : { tone: 'success', label: '', reason: '连接器已启用，可正常新建连接' };
 }
 
-/** 连接器 def 行状态 → 圆点：健康语义沿用 connectorHealthMeta，正常态不写字 */
+/** 连接器 def 行状态 → 圆点：健康语义沿用 connectorHealthMeta（标签只在 hover 提示里出现） */
 export function connectorRowStatus(row?: ConnectorDefVo | null): RowStatusMeta {
   const health = connectorHealthMeta(row);
-  return { tone: health.type, label: health.type === 'success' ? '' : health.label, reason: health.reason };
+  return { tone: health.type, label: health.label, reason: health.reason };
 }
 
 /** 连接器 def 状态标签映射 */
@@ -192,6 +192,32 @@ export function versionLabel(version?: string | null): string {
 /** 平铺分组标签与固定顺序（组件 → 链路 → 连接器） */
 export const TYPE_LABELS: Record<MarketResourceType, string> = { COMPONENT: '组件', CHAIN: '链路', CONNECTOR: '连接器' };
 export const TYPE_ORDER: MarketResourceType[] = ['COMPONENT', 'CHAIN', 'CONNECTOR'];
+
+/** 平铺视角的分组结果（空组已在生成时丢弃，不渲染标题） */
+export interface TypeGroup<T> {
+  type: MarketResourceType;
+  label: string;
+  items: T[];
+}
+
+/**
+ * 平铺视角分组：按关键字过滤 → 按固定类型顺序拆组 → 丢弃空组。
+ * fields 由调用方给：同为「搜物料」，「已装管理」只搜名称/简介（台账行不带展示码），
+ * 「我的上架 / 待审核」还要搜 codeDisplay。
+ */
+export function groupByType<T extends { resourceType?: MarketResourceType }>(
+  list: T[],
+  keyword: string,
+  fields: (keyof T)[]
+): TypeGroup<T>[] {
+  const k = keyword.trim().toLowerCase();
+  const filtered = k ? list.filter((row) => fields.some((f) => String(row[f] ?? '').toLowerCase().includes(k))) : list;
+  return TYPE_ORDER.map((type) => ({
+    type,
+    label: TYPE_LABELS[type],
+    items: filtered.filter((row) => row.resourceType === type)
+  })).filter((group) => group.items.length > 0);
+}
 
 /* ---------------- 连接器 def 行共享单例（§15.7 运行层） ---------------- */
 

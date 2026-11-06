@@ -270,7 +270,7 @@ export function useMarketData() {
     return result;
   });
 
-  /** 市场 chips「已安装」计数：按类型统计已装条数（连接器不写 install 台账，恒 0——其启停治理走 defs 端点，MarketPane 自行拉 defs 展示） */
+  /** 市场 chips「已安装」计数：按类型统计已装条数（三类都读 install 台账，连接器的个人安装记录同样计入） */
   const installedCounts = computed(() => {
     const count = (type: MarketResourceType) =>
       installed.value.filter((i) => i.resourceType === type).length;

@@ -66,22 +66,18 @@
     </div>
 
     <div v-loading="loading" class="mkt__body">
-      <!-- 视角一：已装管理（消费侧）。类型平铺：组件 → 链路（install 台账）→ 连接器（defs 端点，
-           §15.3 不写 install 台账）；空组整组隐藏，全空才出 empty -->
+      <!-- 视角一：已装管理（消费侧）。类型平铺：组件 → 链路 → 连接器，三类都读 install 台账
+           （连接器安装也只写个人安装记录）；空组整组隐藏，全空才出 empty -->
       <template v-if="scope === 'installed'">
         <template v-for="grp in installedGroups" :key="grp.type">
-          <button
-            type="button"
-            class="mkt__group-title"
-            :class="{ 'is-collapsed': isGroupCollapsed(grp.type) }"
-            @click="toggleGroup(grp.type)"
-          >
-            <SvgIcon class="mkt__group-chevron" icon-class="lucide:chevron-down" />
-            <span>{{ grp.label }}</span>
-            <span class="mkt__group-count">{{ grp.items.length }}</span>
-          </button>
+          <MarketGroupHeader
+            :label="grp.label"
+            :count="grp.items.length"
+            :collapsed="isGroupCollapsed(grp.type)"
+            @toggle="toggleGroup(grp.type)"
+          />
           <ul v-if="!isGroupCollapsed(grp.type)" class="db-list db-list--framed">
-            <!-- 整行可点＝打开本地副本（唯一入口）；ops 区只留治理动作，@click.stop 阻断冒泡到行 -->
+            <!-- 整行可点＝组件/链路开本地副本、连接器开市场物料详情（唯一入口）；ops 区只留治理动作，@click.stop 阻断冒泡到行 -->
             <li
               v-for="row in grp.items"
               :key="row.id"
@@ -91,7 +87,10 @@
             >
               <SvgIcon
                 class="db-row__icon"
-                :class="{ 'db-brand-icon': isBrandIconName(rowIcon(row)) }"
+                :class="{
+                  'db-brand-icon': isBrandIconName(rowIcon(row)),
+                  'db-row__icon--lg': row.resourceType === 'CONNECTOR'
+                }"
                 :icon-class="rowIcon(row)"
                 :style="{ color: row.color || 'var(--el-color-primary)' }"
               />
@@ -105,7 +104,10 @@
                   <span class="db-row__name">{{ row.name }}</span>
                 </div>
                 <div class="db-row__summary">
-                  {{ row.summary }}
+                  <template v-if="row.resourceType === 'CONNECTOR' && installedConnectorCode(row)">
+                    {{ installedConnectorCode(row) }}
+                  </template>
+                  <template v-else>{{ row.summary }}</template>
                   <button v-if="row.ownerCode" type="button" class="db-row__author" @click.stop="onAuthor(row.ownerCode!, row.resourceType)">
                     @{{ row.ownerCode }}
                   </button>
@@ -138,16 +140,12 @@
       <!-- 视角二：我的上架（作者主权：下架 / 删除；驳回理由展示）。类型平铺，空组隐藏 -->
       <template v-else-if="scope === 'mine'">
         <template v-for="grp in mineGroups" :key="grp.type">
-          <button
-            type="button"
-            class="mkt__group-title"
-            :class="{ 'is-collapsed': isGroupCollapsed(grp.type) }"
-            @click="toggleGroup(grp.type)"
-          >
-            <SvgIcon class="mkt__group-chevron" icon-class="lucide:chevron-down" />
-            <span>{{ grp.label }}</span>
-            <span class="mkt__group-count">{{ grp.items.length }}</span>
-          </button>
+          <MarketGroupHeader
+            :label="grp.label"
+            :count="grp.items.length"
+            :collapsed="isGroupCollapsed(grp.type)"
+            @toggle="toggleGroup(grp.type)"
+          />
           <ul v-if="!isGroupCollapsed(grp.type)" class="db-list db-list--framed">
             <!-- 整行可点＝打开物料详情 tab（唯一入口）；不渲染 @作者（恒为自己，纯噪声） -->
             <li
@@ -156,11 +154,14 @@
               class="db-row is-clickable db-float"
               :data-market-item-id="row.id"
               :class="{ 'is-flash': flashItemId === String(row.id) }"
-              @click="emit('open-detail', row)"
+              @click="emit('open-detail', row.id, row.name)"
             >
               <SvgIcon
                 class="db-row__icon"
-                :class="{ 'db-brand-icon': isBrandIconName(itemIcon(row)) }"
+                :class="{
+                  'db-brand-icon': isBrandIconName(itemIcon(row)),
+                  'db-row__icon--lg': row.resourceType === 'CONNECTOR'
+                }"
                 :icon-class="itemIcon(row)"
                 :style="{ color: row.color || 'var(--el-color-primary)' }"
               />
@@ -192,16 +193,12 @@
       <!-- 视角三：待审核（审核队列）。类型平铺，空组隐藏；审核动作一律进审核 tab 就地完成 -->
       <template v-else-if="scope === 'pending'">
         <template v-for="grp in pendingGroups" :key="grp.type">
-          <button
-            type="button"
-            class="mkt__group-title"
-            :class="{ 'is-collapsed': isGroupCollapsed(grp.type) }"
-            @click="toggleGroup(grp.type)"
-          >
-            <SvgIcon class="mkt__group-chevron" icon-class="lucide:chevron-down" />
-            <span>{{ grp.label }}</span>
-            <span class="mkt__group-count">{{ grp.items.length }}</span>
-          </button>
+          <MarketGroupHeader
+            :label="grp.label"
+            :count="grp.items.length"
+            :collapsed="isGroupCollapsed(grp.type)"
+            @toggle="toggleGroup(grp.type)"
+          />
           <ul v-if="!isGroupCollapsed(grp.type)" class="db-list db-list--framed">
             <!-- 整行可点＝开物料审核 tab（信息头＋内容预览＋依赖树＋底部通过/驳回，唯一入口；
                  行内不再放「详情」按钮，也不放通过/驳回：B 口径要求通过前看依赖树，审核动作一律进 tab 就地完成）。
@@ -216,7 +213,10 @@
             >
               <SvgIcon
                 class="db-row__icon"
-                :class="{ 'db-brand-icon': isBrandIconName(itemIcon(row)) }"
+                :class="{
+                  'db-brand-icon': isBrandIconName(itemIcon(row)),
+                  'db-row__icon--lg': row.resourceType === 'CONNECTOR'
+                }"
                 :icon-class="itemIcon(row)"
                 :style="{ color: row.color || 'var(--el-color-primary)' }"
               />
@@ -247,16 +247,12 @@
            v-else-if 再兜一层：权限被收回但 tab 还记着 governance 时不渲染治理内容 -->
       <template v-else-if="canGovern">
         <template v-if="canConnectorList">
-          <button
-            type="button"
-            class="mkt__group-title"
-            :class="{ 'is-collapsed': isGroupCollapsed('CONNECTOR') }"
-            @click="toggleGroup('CONNECTOR')"
-          >
-            <SvgIcon class="mkt__group-chevron" icon-class="lucide:chevron-down" />
-            <span>连接器</span>
-            <span class="mkt__group-count">{{ connectorRows.length }}</span>
-          </button>
+          <MarketGroupHeader
+            label="连接器"
+            :count="connectorRows.length"
+            :collapsed="isGroupCollapsed('CONNECTOR')"
+            @toggle="toggleGroup('CONNECTOR')"
+          />
           <ul v-if="connectorRows.length && !isGroupCollapsed('CONNECTOR')" class="db-list db-list--framed">
             <!-- 整行可点＝打开连接器包查看 tab（清单＋反编译预览，唯一入口）；
                  ops 区只留治理动作 ⟨启停⟩[废弃][卸载]，@click.stop 阻断冒泡到行 -->
@@ -268,8 +264,7 @@
               @click="canInspectDef(row) && onInspectDefPackage(row)"
             >
               <SvgIcon
-                class="db-row__icon"
-                :class="{ 'db-brand-icon': isBrandIconName(row.icon) }"
+                class="db-row__icon db-row__icon--lg"
                 :icon-class="row.icon || 'lucide:plug'"
                 :style="{ color: 'var(--el-color-primary)' }"
               />
@@ -391,14 +386,14 @@ import { listConnection } from '@/api/databus/connection';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import { isBrandIconName } from '@/views/databus/workbench/composables/useBrandIcons';
 import StatusDot from '../components/StatusDot.vue';
+import MarketGroupHeader from './MarketGroupHeader.vue';
 import type { MarketScope } from '../workbench.types';
 import { useMarketData, marketNavIntent } from './useMarketData';
 import {
-  TYPE_LABELS,
-  TYPE_ORDER,
   connectorDefs,
   connectorRowStatus,
   connectorSourceLabel,
+  groupByType,
   installRowStatus,
   isDevDef,
   itemIcon,
@@ -427,8 +422,8 @@ const emit = defineEmits<{
   (e: 'installed'): void;
   /** 启停本地组件副本：宿主调组件接口（组件行在台账，面板无 DB 行） */
   (e: 'toggle-local', localResourceId: string | number, enabled: boolean): void;
-  /** 我的上架行点击：打开物料详情 tab（kind market-detail） */
-  (e: 'open-detail', item: DatabusMarketItemVo): void;
+  /** 我的上架 / 已装管理行点击：打开物料详情 tab（kind market-detail） */
+  (e: 'open-detail', itemId: string | number, title: string): void;
   /** 待审核行点击：打开物料审核 tab（kind market-review，宿主 openMarketReview，同 id 单例） */
   (e: 'open-review', itemId: string | number, title: string): void;
   /** 连接器行点击：打开连接器包查看 tab（kind connector-package，同 type+version 单例） */
@@ -486,6 +481,10 @@ async function loadScope(target: MarketScope): Promise<void> {
   if (target === 'installed') {
     // 已装管理只认安装台账：连接器也一样，没安装记录就不会出现在这里
     await market.loadInstalled();
+    // 已装连接器行要展示 #type · 版本（安装台账不带这两列），有连接器才补拉 defs
+    if (installed.value.some((row) => row.resourceType === 'CONNECTOR')) {
+      await loadConnectorDefs();
+    }
   } else if (target === 'mine') {
     await market.loadMine();
   } else if (target === 'governance') {
@@ -589,22 +588,9 @@ const manageSub = computed(
 /** 待审核总数（红色冒泡：有任务才显示，>99 显 99+；处理完自动归零消失） */
 const pendingTotal = computed(() => pending.value.length);
 
-/** 关键字过滤（名称 / 简介 / 展示码） */
-function filterByKeyword(list: DatabusMarketItemVo[], kw: string): DatabusMarketItemVo[] {
-  const k = kw.trim().toLowerCase();
-  return !k ? list : list.filter((r) => [r.name, r.summary, r.codeDisplay].some((s) => (s ?? '').toLowerCase().includes(k)));
-}
-
-/** 我的上架 / 待审核通用分组：整表按关键字过滤后按类型拆组，空组丢弃（不渲染标题） */
-function buildTypeGroups(list: DatabusMarketItemVo[]) {
-  const filtered = filterByKeyword(list, manageKeyword.value);
-  return TYPE_ORDER.map((type) => ({ type, label: TYPE_LABELS[type], items: filtered.filter((r) => r.resourceType === type) })).filter(
-    (g) => g.items.length > 0
-  );
-}
-
-const mineGroups = computed(() => buildTypeGroups(mine.value));
-const pendingGroups = computed(() => buildTypeGroups(pending.value));
+/** 我的上架 / 待审核：整表按关键字（名称/简介/展示码）过滤后按类型拆组，空组丢弃 */
+const mineGroups = computed(() => groupByType(mine.value, manageKeyword.value, ['name', 'summary', 'codeDisplay']));
+const pendingGroups = computed(() => groupByType(pending.value, manageKeyword.value, ['name', 'summary', 'codeDisplay']));
 
 /** 连接器治理行：defs 合并视图 + 关键字过滤（label / type）。
  *  PENDING 只在「待审核」队列出现，治理页管的是已生效资产的运行态，不再重复列出。 */
@@ -619,17 +605,8 @@ const connectorRows = computed(() => {
 const governableDefCount = computed(() => connectorDefs.value.filter((d) => d.status !== 'PENDING').length);
 
 /** 已装台账分组（组件/链路/连接器）：install 台账按固定顺序拆组 + 关键字过滤（名称/简介），空组丢弃。
- *  连接器和另外两类同口径——有没有这一行，只看有没有自己的安装记录 */
-const installedGroups = computed(() => {
-  const kw = manageKeyword.value.trim().toLowerCase();
-  return TYPE_ORDER.map((type) => ({
-    type,
-    label: TYPE_LABELS[type],
-    items: installed.value
-      .filter((r) => r.resourceType === type)
-      .filter((r) => (!kw ? true : [r.name, r.summary].some((s) => (s ?? '').toLowerCase().includes(kw))))
-  })).filter((g) => g.items.length > 0);
-});
+ *  连接器和另外两类同口径——有没有这一行，只看有没有自己的安装记录（台账行不带展示码，故不搜 codeDisplay） */
+const installedGroups = computed(() => groupByType(installed.value, manageKeyword.value, ['name', 'summary']));
 
 /** 治理组空态文案：区分「本机一个包都没有」（配上传引导）与「有包但被关键字筛掉」 */
 const connectorEmptyText = computed(() => {
@@ -642,19 +619,44 @@ const connectorEmptyText = computed(() => {
 /** 已装管理是否整页空：三条台账组（组件/链路/连接器）都空才算空 */
 const installedEmpty = computed(() => !installedGroups.value.length);
 
-/* ---------------- 行交互：整行可点＝唯一入口，ops 区只留治理动作 ---------------- */
-
-/** 已装台账行是否可点：缺本地副本 id / 类型不明就打不开，整行不可点（无 hover、无 chevron） */
-function canOpenInstalled(row: DatabusMarketInstallVo): boolean {
-  return row.localResourceId != null && (row.resourceType === 'COMPONENT' || row.resourceType === 'CHAIN');
+/** 已装连接器行对应的 def 行（安装台账的 localResourceId＝def 行 id；拿不到返回 null） */
+function installedConnectorDef(row: DatabusMarketInstallVo): ConnectorDefVo | null {
+  if (row.resourceType !== 'CONNECTOR' || row.localResourceId == null) {
+    return null;
+  }
+  return connectorDefs.value.find((d) => d.id != null && String(d.id) === String(row.localResourceId)) ?? null;
 }
 
-/** 已装台账行整行点击＝打开本地副本（宿主按类型开画布 / 组件详情 tab） */
+/** 已装连接器副标题：对齐「我的上架 / 物料治理」的 #type · 版本口径（安装台账本身不带这两列） */
+function installedConnectorCode(row: DatabusMarketInstallVo): string {
+  const def = installedConnectorDef(row);
+  if (!def) {
+    return '';
+  }
+  return `#${def.type}${def.version ? ` · ${versionLabel(def.version)}` : ''}`;
+}
+
+/* ---------------- 行交互：整行可点＝唯一入口，ops 区只留治理动作 ---------------- */
+
+/** 已装台账行是否可点：组件/链路有本地副本就开本地资源；其余（尤其连接器）有市场物料行就开物料详情。
+ *  两种都拿不到时整行不可点（无 hover、无 chevron），行为与另外两个视角一致 */
+function canOpenInstalled(row: DatabusMarketInstallVo): boolean {
+  const hasLocal = row.localResourceId != null && (row.resourceType === 'COMPONENT' || row.resourceType === 'CHAIN');
+  return hasLocal || row.marketItemId != null;
+}
+
+/** 已装台账行整行点击：本地副本优先（组件详情 / 链路画布），连接器落到市场物料详情 */
 function onOpenInstalled(row: DatabusMarketInstallVo) {
   if (!canOpenInstalled(row)) {
     return;
   }
-  emit('open-local', row.localResourceId!, row.resourceType as 'COMPONENT' | 'CHAIN', row.name ?? '');
+  if (row.localResourceId != null && (row.resourceType === 'COMPONENT' || row.resourceType === 'CHAIN')) {
+    emit('open-local', row.localResourceId, row.resourceType as 'COMPONENT' | 'CHAIN', row.name ?? '');
+    return;
+  }
+  if (row.marketItemId != null) {
+    emit('open-detail', row.marketItemId, row.name ?? '');
+  }
 }
 
 /** 待审核行是否禁自审：自己上架的项整行不可点（连审核入口都不给，decisions §七-7.1） */
@@ -837,8 +839,8 @@ async function onUninstallDef(row: ConnectorDefVo) {
 }
 
 /**
- * 连接器治理动作落地后：重拉 defs（本 pane 行状态 + 市场 tab 卡片启停态同源），
- * 并上抛宿主——市场 pane 的卡片「安装/已启用」标记来自市场列表接口，得靠宿主发刷新令牌才跟着变。
+ * 连接器治理动作落地后：重拉 defs（本 pane 治理行 + 市场 tab 卡片运行态提示同源），
+ * 并上抛宿主——市场 pane 的卡片安装态来自市场列表接口，得靠宿主发刷新令牌才跟着变。
  */
 async function afterConnectorGoverned(): Promise<void> {
   await loadConnectorDefs();
@@ -995,69 +997,8 @@ async function onDeleteItem(row: DatabusMarketItemVo) {
   box-shadow: 0 0 0 2px var(--el-bg-color, #fff);
 }
 
-/* 组标题右侧灰色小计数（平铺分组的类型总数，信息量展示不报警） */
-.mkt__group-count {
-  margin-left: 4px;
-  padding: 0 6px;
-  border-radius: 8px;
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 16px;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color, #f0f2f5);
-  vertical-align: 1px;
-}
-
-/* 组标题＝折叠开关（四个视角共用）。箭头展开朝下、折叠转 -90°，整条可点，悬停只给一层极浅底。
-   两个坑：① <button> 不吃页面字体（UA 默认字体栈，和周围字重/字形对不上），故字体与行高显式给定；
-   ② 左右负边距抵消内边距，箭头贴列表框左边框、文字仍与框内首行同一个视觉起点。 */
-.mkt__group-title {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin: 4px -4px 8px;
-  padding: 3px 8px 3px 4px;
-  border: 0;
-  border-radius: var(--db-r-tag);
-  background: transparent;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 20px;
-  color: var(--el-text-color-primary);
-  text-align: left;
-  cursor: pointer;
-  transition: background-color var(--db-dur-fast) var(--db-ease);
-
-  &:hover {
-    background: var(--el-fill-color-lighter);
-  }
-
-  &:active {
-    background: var(--el-fill-color-light);
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--el-color-primary-light-5);
-    outline-offset: 1px;
-  }
-}
-
-.mkt__group-chevron {
-  font-size: 13px;
-  color: var(--el-text-color-placeholder);
-  transition:
-    transform var(--db-dur-normal) var(--db-ease),
-    color var(--db-dur-fast) var(--db-ease);
-}
-
-.mkt__group-title:hover .mkt__group-chevron {
-  color: var(--el-text-color-secondary);
-}
-
-.mkt__group-title.is-collapsed .mkt__group-chevron {
-  transform: rotate(-90deg);
-}
+/* 组标题（折叠箭头 / 类型名 / 计数）样式随组件搬进 MarketGroupHeader.vue，
+   四个视角共用一份，本页只留视角专属的部分 */
 
 /* 行与列表样式已全部上收 _primitives.scss：
    列表 = .db-list + .db-list--framed，行 = .db-row（浮起由 .db-float 决定），

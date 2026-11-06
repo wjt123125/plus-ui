@@ -2,10 +2,11 @@
   物料市场 tab 面板（工作区中栏 kind market，全局单例，非独立路由页；设计正本 §二/§三）。
   只管「逛 + 装」：3 列卡片网格，类型分段（组件 / 链路 / 连接器）+ 分类 chips + 搜索（名称/编码/标签）。
   治理与作者事务不在这里——2026-10-30 起搬到独立的「物料管理」tab（MarketManagePane），
-  本 pane 只负责把用户送过去（页头「管理」、卡片「已上架」、空态「去上架」都上抛宿主开管理 tab）。
-  连接器（万物皆包 §15.3）：安装＝enable def 行全局生效（无目录语义不弹窗）；
-  def 行是模块级共享单例（marketDisplay），与管理 tab 的治理行同源，启停态不会两边对不上。
-  面板自身零 API：数据走 useMarketData，复制/卸载/打开/启停上抛宿主（与本工作台「树不闭环」同范式）。
+  本 pane 只负责把用户送过去（页头「管理」、卡片「已上架」（组件/链路）、空态「去上架」都上抛宿主开管理 tab）。
+  连接器（万物皆包 §15.3）：安装＝写一条个人安装记录（无目录语义不弹窗），不改 def 全局启停；
+  def 行是模块级共享单例（marketDisplay），与管理 tab 的治理行同源，运行态提示不会两边对不上。
+  跨 tab 跳转（打开详情/本地副本、去上架/去管理）上抛宿主；安装与卸载由本面板直接调接口。
+  连接器的启用/停用/废弃属治理动作，只在「物料管理 → 治理」视角提供，市场页不放治理入口。
 -->
 <template>
   <section class="mkt">
@@ -121,42 +122,50 @@
               <div class="mkt-card__summary" :title="it.summary">{{ it.summary || it.codeDisplay }}</div>
             </div>
             <div class="mkt-card__aside">
-              <!-- 连接器（§15.3）：安装＝enable 全局生效无目录弹窗；启用/停用都是治理动作，
-                   统一按 connector:edit 权限显隐（role.sql 已把该串从 ops 剔除，看得到即调得动） -->
+              <!-- 连接器（§15.3）：市场只做消费——安装＝写一条个人安装记录，卸载＝删这条记录，都不改 def 全局启停。
+                   启用/停用/废弃是治理者动作，统一收口到「物料管理 → 治理」，本页只保留运行态提示 -->
               <template v-if="activeType === 'CONNECTOR'">
-                <!-- DEPRECATED 终态（不可逆）：卡片不给启停入口，只挂状态标签 -->
-                <el-tag v-if="connectorDefStatus(it) === 'DEPRECATED'" size="small" type="info" effect="plain">已废弃</el-tag>
+                <!-- 已装：市场动作只有「卸载」（删个人安装记录）；运行态异常另挂提示标签（原因 hover），
+                     不把治理状态做成按钮 -->
+                <template v-if="it.installed">
+                  <el-tag
+                    v-if="connectorDefStatus(it) === 'DEPRECATED'"
+                    size="small"
+                    type="info"
+                    effect="plain"
+                  >
+                    已废弃
+                  </el-tag>
+                  <el-tag
+                    v-else-if="connectorHealthOf(it).type !== 'success'"
+                    size="small"
+                    :type="connectorHealthOf(it).type"
+                    effect="plain"
+                    :title="connectorHealthOf(it).reason"
+                  >
+                    {{ connectorHealthOf(it).label }}
+                  </el-tag>
+                  <el-button
+                    class="mkt-card__act"
+                    size="small"
+                    type="danger"
+                    plain
+                    @click.stop="onUninstallCard(it)"
+                  >
+                    <SvgIcon icon-class="lucide:trash" /><span>卸载</span>
+                  </el-button>
+                </template>
+                <!-- 未装：只有一个消费动作「安装」（上传者、治理者、普通用户都先落个人安装记录）；
+                     已废弃的不给安装入口（废弃后不可运行） -->
+                <el-tag v-else-if="connectorDefStatus(it) === 'DEPRECATED'" size="small" type="info" effect="plain">已废弃</el-tag>
                 <el-button
-                  v-else-if="it.installed && canConnectorEdit"
+                  v-else
                   class="mkt-card__act"
                   size="small"
-                  @click.stop="onDisableConnector(it)"
-                >
-                  <SvgIcon icon-class="lucide:power" /><span>停用</span>
-                </el-button>
-                <!-- 已启用不等于能用：色与文案由 health 决定（绿=运行中 / 黄=缺驱动 / 红=未装载），
-                     原因挂在 hover 上——卡片位寸土寸金，但故障必须看得见 -->
-                <el-tag
-                  v-else-if="it.installed"
-                  size="small"
-                  :type="connectorHealthOf(it).type"
-                  effect="plain"
-                  :title="connectorHealthOf(it).reason"
-                >
-                  {{ connectorHealthOf(it).label }}
-                </el-tag>
-                <el-button v-else-if="it.mine" class="mkt-card__act" size="small" @click.stop="emit('open-manage', 'mine')">
-                  <SvgIcon icon-class="lucide:settings" /><span>已上架</span>
-                </el-button>
-                <el-button
-                  v-else-if="canConnectorEdit"
-                  class="mkt-card__act"
-                  size="small"
-                  type="primary"
                   :loading="installLoading"
                   @click.stop="onInstallConnector(it)"
                 >
-                  <SvgIcon icon-class="lucide:power" /><span>启用</span>
+                  <SvgIcon icon-class="lucide:download" /><span>安装</span>
                 </el-button>
               </template>
               <template v-else>
@@ -189,7 +198,6 @@
                 >
                   @{{ it.ownerCode }}
                 </button>
-                <span v-if="(it.installCount ?? 0) > 0" class="mkt-card__count">安装 {{ it.installCount }}</span>
               </div>
             </div>
           </article>
@@ -212,7 +220,6 @@ import { ElMessage } from 'element-plus';
 import modal from '@/plugins/modal';
 import { useUserStore } from '@/store/modules/user';
 import type { DatabusMarketItemVo } from '@/api/databus/market/types';
-import { disableConnector } from '@/api/databus/connector';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import type { MarketScope } from '../workbench.types';
 import { useMarketData, marketNavIntent, showChainInstallResult } from './useMarketData';
@@ -258,16 +265,15 @@ function hasPermi(perm: string): boolean {
   return userStore.permissions.some((p: string) => p === '*:*:*' || p === perm);
 }
 const canPublish = computed(() => hasPermi('databus:market:publish'));
-/* 连接器启停都是治理动作（§15.7），卡片按钮统一按 edit 权限显隐；
-   defs 取数的 list 权限判定收在 marketDisplay.loadConnectorDefs 内部 */
-const canConnectorEdit = computed(() => hasPermi('databus:connector:edit'));
+/* defs 取数的 list 权限判定收在 marketDisplay.loadConnectorDefs 内部；
+   启停不在市场页做，故本页不再判 connector:edit */
 
 /* ---------------- 弹窗状态 ---------------- */
 const installVisible = ref(false);
 const installItem = ref<DatabusMarketItemVo | null>(null);
 const installLoading = ref(false);
 
-/* 连接器分段：进入时拉 defs（卡片停用匹配 / DEPRECATED 收口启停入口） */
+/* 连接器分段：进入时拉 defs（卡片运行态提示与 DEPRECATED 标签匹配，不含治理入口） */
 watch(activeType, (t) => {
   if (t === 'CONNECTOR') {
     void loadConnectorDefs();
@@ -325,7 +331,7 @@ const browseSub = computed(() => {
     return '链路安装即 fork 副本到你的目录，上游改动不影响本地副本。';
   }
   if (activeType.value === 'CONNECTOR') {
-    return '连接器安装即全局启用（无需目录）；停用、废弃与卸载在「物料管理」tab 治理。';
+    return '连接器安装即写入你的个人安装清单（无需目录）；启用/停用与废弃是治理动作，在「物料管理 → 治理」操作。';
   }
   return '组件安装即共享注册到物料面板，上游更新直接生效。';
 });
@@ -363,7 +369,7 @@ async function onInstallConfirm(directoryId: string | number | null) {
   }
 }
 
-/* ---------------- 连接器卡片动作（§15.3 安装＝enable） ---------------- */
+/* ---------------- 连接器卡片动作（§15.3 安装＝个人安装记录） ---------------- */
 
 /** 卡片物料行 → def 行 type：优先按 localResourceId（＝def 行 id）精确匹配，兜底 codeDisplay 末段（code=type 全局唯一） */
 function connectorTypeOf(it: DatabusMarketItemVo): string | null {
@@ -377,7 +383,7 @@ function connectorTypeOf(it: DatabusMarketItemVo): string | null {
   return tail && tail.length > 0 ? tail : null;
 }
 
-/** 卡片对应 def 行的运行层状态（找不到 def 行返回 null）：DEPRECATED 终态收口卡片启停入口用 */
+/** 卡片对应 def 行的运行层状态（找不到 def 行返回 null）：DEPRECATED 终态只挂标签，不给安装/卸载动作 */
 function connectorDefStatus(it: DatabusMarketItemVo): string | null {
   const type = connectorTypeOf(it);
   if (!type) {
@@ -387,8 +393,8 @@ function connectorDefStatus(it: DatabusMarketItemVo): string | null {
 }
 
 /**
- * 卡片对应 def 行的运行态健康（§4.2.1）：已启用的卡片不能一律标绿——
- * 缺驱动的包启用得了但连不上，卡片上就得看出来，否则用户点了「新建连接」才知道。
+ * 卡片对应 def 行的运行态健康（§4.2.1）：卡片只做提示不做治理——
+ * 缺驱动的包能安装却连不上，得在卡片上看出来，否则用户点了「新建连接」才知道。
  */
 function connectorHealthOf(it: DatabusMarketItemVo) {
   const type = connectorTypeOf(it);
@@ -396,40 +402,20 @@ function connectorHealthOf(it: DatabusMarketItemVo) {
   return connectorHealthMeta(row);
 }
 
-/** 启用（即安装）：调市场 install，后端走 CONNECTOR 分支 enable def 行全局生效（无目录语义） */
+/**
+ * 安装：调市场 install，后端 CONNECTOR 分支只写一条个人安装记录（不改 def 全局启停，无目录语义）。
+ */
 async function onInstallConnector(it: DatabusMarketItemVo) {
   installLoading.value = true;
   try {
     await market.install(it.id, null);
-    ElMessage.success(`已启用连接器「${it.name}」，全局生效`);
+    ElMessage.success(`已安装连接器「${it.name}」`);
     await loadConnectorDefs();
     emit('installed');
   } catch {
     /* 拦截器已提示 */
   } finally {
     installLoading.value = false;
-  }
-}
-
-/** 停用（治理动作，需 edit 权限）：挡新建连接，存量连接与数据保留 */
-async function onDisableConnector(it: DatabusMarketItemVo) {
-  const type = connectorTypeOf(it);
-  if (!type) {
-    ElMessage.warning('未找到该连接器的 def 行，请先刷新重试');
-    return;
-  }
-  try {
-    await modal.confirm(`确认停用连接器「${it.name}」？停用后将挡新建连接，存量连接与数据保留。`);
-  } catch {
-    return;
-  }
-  try {
-    await disableConnector(type);
-    ElMessage.success('已停用');
-    await Promise.all([market.refresh(), loadConnectorDefs()]);
-    emit('installed');
-  } catch {
-    /* 拦截器已提示 */
   }
 }
 
@@ -455,16 +441,19 @@ function onUse(it: DatabusMarketItemVo) {
 
 /**
  * 浏览卡片就地卸载（2026-10-24 级联缺口E：装在哪卸在哪，与管理 tab onUninstall 同端点）。
- * 链路文案带级联回收说明（后端 cascadeCleanClosureCopies：未引用且装完未碰的子链副本一并清）。
+ * 连接器卸载只删个人安装记录，不动 def 本体；链路文案带级联回收说明
+ * （后端 cascadeCleanClosureCopies：未引用且装完未碰的子链副本一并清）。
  */
 async function onUninstallCard(it: DatabusMarketItemVo) {
   if (it.localResourceId == null) {
     return;
   }
-  const tip =
-    activeType.value === 'COMPONENT'
-      ? `确认卸载「${it.name}」？`
-      : `确认卸载「${it.name}」？将删除你的本地副本（随它入目录、未引用且装完未碰的子链副本一并回收）；若该副本仍被你的其他链路引用，会被拒绝删除，请先移除引用。`;
+  let tip = `确认卸载「${it.name}」？`;
+  if (activeType.value === 'CONNECTOR') {
+    tip = `确认卸载「${it.name}」？只删除你的安装记录，连接器本体与全局启停不受影响。`;
+  } else if (activeType.value === 'CHAIN') {
+    tip = `确认卸载「${it.name}」？将删除你的本地副本（随它入目录、未引用且装完未碰的子链副本一并回收）；若该副本仍被你的其他链路引用，会被拒绝删除，请先移除引用。`;
+  }
   try {
     await modal.confirm(tip);
   } catch {

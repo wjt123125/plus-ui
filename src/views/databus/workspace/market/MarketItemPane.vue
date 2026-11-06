@@ -3,9 +3,10 @@
   真·工作台 tab（非弹窗/抽屉），key `market-item:{id}` 同 id 单例。
   pane 自取数（GET /databus/market/items/{id}），不依赖市场列表已加载，刷新后单独恢复也能渲染。
   区块：头部（图标/名称/类型/状态）/ 作者 / 简介 / 标签 / 指标 / 元数据 / 底部动作。
-  组件/链路走三态按钮（打开/已上架去管理/安装弹窗）；连接器走 enable 语义四态
-  （停用/已启用标签/已上架去管理/启用，§15.3 安装＝enable 全局生效，无目录弹窗）。
-  自身调浏览详情、安装与连接器停用接口；打开本地副本、已上架跳转、作者筛选一律上抛宿主。
+  组件/链路走三态按钮（打开/已上架去管理/安装弹窗）；连接器走安装记录语义
+  （已安装标签/安装/卸载，§15.3 安装＝写一条个人安装记录，不改 def 全局启停；上传者和治理者也都先安装，
+   启用/停用与废弃属治理动作，统一收口到「物料管理 → 治理」）。
+  自身调浏览详情、安装与卸载接口；打开本地副本、已上架跳转、作者筛选一律上抛宿主。
 -->
 <template>
   <section class="mkti">
@@ -227,25 +228,15 @@
       </el-tabs>
 
       <footer class="mkti__foot">
-        <!-- 连接器：治理视角看 def 全局启停；普通视角只表达「我装没装」（安装＝写个人安装记录） -->
+        <!-- 连接器：安装/卸载是每个人的消费动作（上传者、治理者也不例外）；
+             全局启停与废弃属治理动作，收口到「物料管理 → 治理」 -->
         <template v-if="item.resourceType === 'CONNECTOR'">
-          <template v-if="canConnectorEdit">
-            <el-button v-if="connectorEnabled" type="primary" :loading="installLoading" @click="onDisableConnector">
-              <SvgIcon icon-class="lucide:power" /><span>停用</span>
-            </el-button>
-            <el-button v-else type="primary" :loading="installLoading" @click="onEnableConnector">
-              <SvgIcon icon-class="lucide:power" /><span>启用</span>
-            </el-button>
-          </template>
-          <template v-else-if="item.installed">
+          <template v-if="item.installed">
             <el-tag type="success" effect="light">已安装</el-tag>
             <el-button :loading="installLoading" @click="onUninstallConnector">
               <SvgIcon icon-class="lucide:trash-2" /><span>卸载</span>
             </el-button>
           </template>
-          <el-button v-else-if="item.mine" @click="onMine">
-            <SvgIcon icon-class="lucide:settings" /><span>已上架 · 去管理</span>
-          </el-button>
           <el-button v-else type="primary" :loading="installLoading" @click="onInstallConnector">
             <SvgIcon icon-class="lucide:download" /><span>安装</span>
           </el-button>
@@ -280,11 +271,10 @@
 import { computed, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { getMarketItem, getMarketPreview, installMarketItem, uninstallMarketItem } from '@/api/databus/market';
-import { disableConnector, enableConnector, listConnectorDefs } from '@/api/databus/connector';
+import { listConnectorDefs } from '@/api/databus/connector';
 import type { ConnectorDefVo } from '@/api/databus/connector/types';
 import type { DatabusMarketItemVo, MarketItemStatus, MarketPreviewVo } from '@/api/databus/market/types';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
-import modal from '@/plugins/modal';
 import { useUserStore } from '@/store/modules/user';
 import { marketNavIntent, showChainInstallResult } from './useMarketData';
 import { statusMeta as itemStatusMeta, versionLabel } from './marketDisplay';
@@ -372,7 +362,7 @@ const isConnector = computed(() => item.value?.resourceType === 'CONNECTOR');
 
 /**
  * 连接器类型键：详情 pane 手上只有市场物料行，没有 defs 列表，故取展示码 `{owner}/{type}` 尾段
- * （与 onDisableConnector、MarketPane.connectorTypeOf 的降级路径同一口径，不另立第二套推断）。
+ * （与 MarketPane.connectorTypeOf 的降级路径同一口径，不另立第二套推断）。
  */
 const connectorType = computed<string | null>(() => {
   const tail = (item.value?.codeDisplay ?? '').split('/').pop();
@@ -488,11 +478,6 @@ const userStore = useUserStore();
 function hasPermi(perm: string): boolean {
   return userStore.permissions.some((p: string) => p === '*:*:*' || p === perm);
 }
-/** 连接器停用是治理动作（§15.7 defs 启停权限 databus:connector:edit） */
-const canConnectorEdit = computed(() => hasPermi('databus:connector:edit'));
-
-/** 治理视角：连接器本体是否处于全局已启用（def 行状态，与「我装没装」无关） */
-const connectorEnabled = computed(() => connectorDef.value?.status === 'ENABLED');
 
 const statusMeta = computed(() => itemStatusMeta(item.value?.status as MarketItemStatus));
 
@@ -550,9 +535,9 @@ async function onInstallConfirm(directoryId: string | number | null) {
   }
 }
 
-/* ---------------- 连接器动作（普通用户安装写个人记录；启停是治理动作） ---------------- */
+/* ---------------- 连接器动作（安装＝个人安装记录，不看角色；启停/废弃属治理动作，不在详情页做） ---------------- */
 
-/** 普通用户安装：写一条个人安装记录，不启用/停用连接器本体 */
+/** 安装：写一条个人安装记录，不启用/停用连接器本体（上传者、治理者、普通用户都走这里） */
 async function onInstallConnector() {
   const it = item.value;
   if (!it) {
@@ -573,7 +558,7 @@ async function onInstallConnector() {
   }
 }
 
-/** 普通用户卸载：只删自己的安装记录，连接器本体仍全局可用、别人照样在用 */
+/** 卸载：只删自己的安装记录，连接器本体仍全局可用、别人照样在用 */
 async function onUninstallConnector() {
   const it = item.value;
   if (!it || it.localResourceId == null) {
@@ -593,59 +578,7 @@ async function onUninstallConnector() {
   }
 }
 
-/** 治理启用（需 edit 权限）：让连接器全局可用，供他人安装 */
-async function onEnableConnector() {
-  const it = item.value;
-  if (!it) {
-    return;
-  }
-  const type = connectorType.value;
-  if (!type) {
-    ElMessage.warning('未找到该连接器的类型标识，请先刷新重试');
-    return;
-  }
-  installLoading.value = true;
-  try {
-    await enableConnector(type, true);
-    ElMessage.success(`已启用「${it.name}」，全局可用`);
-    emit('installed');
-    await fetchItem();
-    invalidateRuntime();
-  } catch {
-    /* 拦截器已提示 */
-  } finally {
-    installLoading.value = false;
-  }
-}
-
-/** 停用（治理动作，需 edit 权限）：挡新建连接，存量连接与数据保留 */
-async function onDisableConnector() {
-  const it = item.value;
-  if (!it) {
-    return;
-  }
-  // 详情页无 defs 列表，type 走展示码尾段兜底（对齐 MarketPane.connectorTypeOf 的降级路径）
-  const type = connectorType.value;
-  if (!type) {
-    ElMessage.warning('未找到该连接器的类型标识，请先刷新重试');
-    return;
-  }
-  try {
-    await modal.confirm(`确认停用连接器「${it.name}」？停用后将挡新建连接，存量连接与数据保留。`);
-  } catch {
-    return;
-  }
-  try {
-    await disableConnector(type);
-    ElMessage.success('已停用');
-    emit('installed'); // 复用语义：宿主重拉市场数据（installed 口径随 def 状态翻转）
-    await fetchItem();
-    // 停用＝卸载，驱动表必须跟着失效（实现清单是声明式内容，不随装载态变化，故不重取它）
-    invalidateRuntime();
-  } catch {
-    /* 拦截器已提示 */
-  }
-}
+/** 停用/启用/废弃属治理动作，统一在「物料管理 → 治理」视角操作，本详情页不提供 */
 </script>
 
 <style lang="scss" scoped>

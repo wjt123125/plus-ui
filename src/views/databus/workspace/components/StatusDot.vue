@@ -1,12 +1,12 @@
 <!--
-  行状态圆点（2026-11-03 定）：颜色表达状态，正常态只留点不写字，异常才跟一小段短词。
+  行状态圆点（2026-11-03 定，2026-11-06 改）：颜色表达状态，状态文字只在圆点 hover 时以 title 提示，
+  不再行内直接显示（列表行保持干净，异常态也只在悬停时说出短词与原因）。
   数据源由 marketDisplay 统一翻译（installRowStatus / marketItemRowStatus / connectorRowStatus），
-  本组件只管「点 + 短词 + DEV 角标」三种呈现，不碰业务枚举。
+  本组件只管「点 + hover 提示 + DEV 角标」三种呈现，不碰业务枚举。
 -->
 <template>
   <span class="db-status">
-    <span class="db-status__dot" :class="`is-${tone}`" :title="title" />
-    <span v-if="label" class="db-status__label">{{ label }}</span>
+    <span class="db-status__dot" :class="`is-${tone}`" :title="dotTip" />
     <span
       v-if="dev"
       class="db-status__dev"
@@ -18,13 +18,15 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
+
 defineOptions({ name: 'StatusDot' });
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     /** 圆点颜色：绿=正常 / 黄=需要留意 / 红=异常 / 灰=不可用 */
     tone?: 'success' | 'warning' | 'danger' | 'info';
-    /** 短词：只给异常态，正常态传空串 */
+    /** 状态短词：不再行内展示，只作为悬停提示的标题 */
     label?: string;
     /** 开发目录装载角标 */
     dev?: boolean;
@@ -33,20 +35,33 @@ withDefaults(
   }>(),
   { tone: 'info', label: '', dev: false, title: '' }
 );
+
+/** 悬停兜底文案：状态短词与原因都为空时按颜色给一句，保证任何圆点 hover 都有话说 */
+const TONE_TIP = { success: '正常', warning: '需留意', danger: '异常', info: '不可用' } as const;
+
+/** 悬停提示：短词 + 原因；两者都空就回退到色调默认文案（绿点不能 hover 后啥也不提示） */
+const dotTip = computed(() => {
+  const head = props.label || (props.title ? '' : TONE_TIP[props.tone]);
+  if (!head) {
+    return props.title;
+  }
+  return props.title ? `${head}：${props.title}` : head;
+});
 </script>
 
 <style lang="scss" scoped>
 .db-status {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   flex-shrink: 0;
 
   &__dot {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
+    cursor: help;
 
     &.is-success {
       background: var(--el-color-success, #10b981);
@@ -63,13 +78,6 @@ withDefaults(
     &.is-info {
       background: var(--el-text-color-placeholder, #909399);
     }
-  }
-
-  &__label {
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--el-text-color-secondary);
-    white-space: nowrap;
   }
 
   &__dev {

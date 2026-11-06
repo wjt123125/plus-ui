@@ -149,7 +149,7 @@
             "
             @installed="emit('market-installed')"
             @toggle-local="(id: string | number, enabled: boolean) => emit('market-toggle', id, enabled)"
-            @open-detail="(it: DatabusMarketItemVo) => emit('market-open-detail', it.id, it.name)"
+            @open-detail="(id: string | number, title: string) => emit('market-open-detail', id, title)"
             @open-review="
               (id: string | number, title: string) => emit('market-open-review', id, title)
             "

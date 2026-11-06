@@ -126,19 +126,19 @@ const creating = ref(false);
 
 /** 链路才 fork 副本选目录；组件为共享注册，不落目录 */
 const isChain = computed(() => props.item?.resourceType === 'CHAIN');
-/** 连接器无目录语义（§15.3：安装＝enable def 行、全局生效、不写 install 台账） */
+/** 连接器无目录语义（§15.3：安装＝写一条个人安装记录，不改 def 全局启停、不复制副本） */
 const isConnector = computed(() => props.item?.resourceType === 'CONNECTOR');
 
 /**
  * 安装语义提示按类型三选一。连接器单列一条：它既不是 fork 也不是共享注册，
- * 落到组件那句「安装即共享注册…挂在你的资源树」上是假话；而且 enable 只是让实现可用，
- * 真正能跑还得去连接管理页建连接实例——这一步不写出来，用户会以为装完就能直接配连接。
+ * 落到组件那句「安装即共享注册…挂在你的资源树」上是假话；而且安装只写个人记录，
+ * 真正能用还得去连接管理页建连接实例——这一步不写出来，用户会以为装完就能直接配连接。
  * 目前两个调用点（MarketPane.onInstall / MarketItemPane 非连接器分支）都不把连接器送进本弹窗，
  * 这条属防御性兜底：弹窗按 props.item 自洽，将来有人复用也不会说出错的语义。
  */
 const installTip = computed(() => {
   if (isConnector.value) {
-    return '连接器安装＝全局启用：不复制副本、不落你的目录，整个平台共用这一份实现。启用后请在连接管理页创建连接实例。';
+    return '连接器安装＝写入你的个人安装清单：不复制副本、不落你的目录，平台共用同一份实现。装完后请在连接管理页创建连接实例。';
   }
   return isChain.value
     ? '安装即 fork：复制一份链路到「我的」目录并进资源树。此后上游原作者改动或下架，都不影响你的副本。'

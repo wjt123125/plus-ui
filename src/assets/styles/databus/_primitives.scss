@@ -298,6 +298,12 @@
   font-size: 28px;
 }
 
+/* 连接器行图标：品牌裸图与非品牌图标同一档 28px，不做区别对待
+   （.db-brand-icon 语义是「品牌裸图」，这里只负责尺寸，供普通 lucide 图标复用）。 */
+.db-row__icon--lg {
+  font-size: 28px;
+}
+
 /* .db-float 是 hover 浮起的唯一开关（行 / 卡片 / 磁贴一视同仁）：
    挂上即获得位移、阴影与顶边补丁；页面只按体积覆盖 --db-lift / --db-zoom 档位，
    不要再自写 transform / box-shadow 与 transition。 */
