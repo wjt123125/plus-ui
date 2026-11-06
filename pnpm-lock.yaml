@@ -44,6 +44,9 @@ importers:
       '@highlightjs/vue-plugin':
         specifier: 2.1.2
         version: 2.1.2(highlight.js@11.11.1)(vue@3.5.40(typescript@6.0.3))
+      '@iconify-json/logos':
+        specifier: ^1.2.19
+        version: 1.2.19
       '@iconify-json/ph':
         specifier: ^1.2.2
         version: 1.2.2
@@ -323,6 +326,9 @@ packages:
     peerDependencies:
       highlight.js: ^11.0.1
       vue: ^3
+
+  '@iconify-json/logos@1.2.19':
+    resolution: {integrity: sha512-ICjDNu2RW4xMk+0YAHyrTj/pW2BHgywcYyvf9DS16upalmSUbg+WqkEYJRim8iVOuVylyo9FFjzWLzACFhj8oA==}
 
   '@iconify-json/lucide@1.2.140':
     resolution: {integrity: sha512-/br6j8K8IFcZscs7gJ20PWaaonQeA4jcGK0Bdt+4EDra2Zbtpb36RGaGOJr5opz6zJtXaZdMCYCXa0dN/y4c0g==}
@@ -2693,6 +2699,10 @@ snapshots:
     dependencies:
       highlight.js: 11.11.1
       vue: 3.5.40(typescript@6.0.3)
+
+  '@iconify-json/logos@1.2.19':
+    dependencies:
+      '@iconify/types': 2.0.0
 
   '@iconify-json/lucide@1.2.140':
     dependencies:

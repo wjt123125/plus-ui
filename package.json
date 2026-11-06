@@ -33,6 +33,7 @@
     "@codemirror/view": "^6.43.12",
     "@element-plus/icons-vue": "2.3.2",
     "@highlightjs/vue-plugin": "2.1.2",
+    "@iconify-json/logos": "^1.2.19",
     "@iconify-json/ph": "^1.2.2",
     "@iconify/vue": "^5.0.1",
     "@lezer/highlight": "^1.2.3",

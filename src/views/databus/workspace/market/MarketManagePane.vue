@@ -70,10 +70,17 @@
            §15.3 不写 install 台账）；空组整组隐藏，全空才出 empty -->
       <template v-if="scope === 'installed'">
         <template v-for="grp in installedGroups" :key="grp.type">
-          <div class="mkt__group-title">
-            {{ grp.label }} <span class="mkt__group-count">{{ grp.items.length }}</span>
-          </div>
-          <ul class="db-list db-list--framed">
+          <button
+            type="button"
+            class="mkt__group-title"
+            :class="{ 'is-collapsed': isGroupCollapsed(grp.type) }"
+            @click="toggleGroup(grp.type)"
+          >
+            <SvgIcon class="mkt__group-chevron" icon-class="lucide:chevron-down" />
+            <span>{{ grp.label }}</span>
+            <span class="mkt__group-count">{{ grp.items.length }}</span>
+          </button>
+          <ul v-if="!isGroupCollapsed(grp.type)" class="db-list db-list--framed">
             <!-- 整行可点＝打开本地副本（唯一入口）；ops 区只留治理动作，@click.stop 阻断冒泡到行 -->
             <li
               v-for="row in grp.items"
@@ -84,6 +91,7 @@
             >
               <SvgIcon
                 class="db-row__icon"
+                :class="{ 'db-brand-icon': isBrandIconName(rowIcon(row)) }"
                 :icon-class="rowIcon(row)"
                 :style="{ color: row.color || 'var(--el-color-primary)' }"
               />
@@ -130,10 +138,17 @@
       <!-- 视角二：我的上架（作者主权：下架 / 删除；驳回理由展示）。类型平铺，空组隐藏 -->
       <template v-else-if="scope === 'mine'">
         <template v-for="grp in mineGroups" :key="grp.type">
-          <div class="mkt__group-title">
-            {{ grp.label }} <span class="mkt__group-count">{{ grp.items.length }}</span>
-          </div>
-          <ul class="db-list db-list--framed">
+          <button
+            type="button"
+            class="mkt__group-title"
+            :class="{ 'is-collapsed': isGroupCollapsed(grp.type) }"
+            @click="toggleGroup(grp.type)"
+          >
+            <SvgIcon class="mkt__group-chevron" icon-class="lucide:chevron-down" />
+            <span>{{ grp.label }}</span>
+            <span class="mkt__group-count">{{ grp.items.length }}</span>
+          </button>
+          <ul v-if="!isGroupCollapsed(grp.type)" class="db-list db-list--framed">
             <!-- 整行可点＝打开物料详情 tab（唯一入口）；不渲染 @作者（恒为自己，纯噪声） -->
             <li
               v-for="row in grp.items"
@@ -145,6 +160,7 @@
             >
               <SvgIcon
                 class="db-row__icon"
+                :class="{ 'db-brand-icon': isBrandIconName(itemIcon(row)) }"
                 :icon-class="itemIcon(row)"
                 :style="{ color: row.color || 'var(--el-color-primary)' }"
               />
@@ -176,10 +192,17 @@
       <!-- 视角三：待审核（审核队列）。类型平铺，空组隐藏；审核动作一律进审核 tab 就地完成 -->
       <template v-else-if="scope === 'pending'">
         <template v-for="grp in pendingGroups" :key="grp.type">
-          <div class="mkt__group-title">
-            {{ grp.label }} <span class="mkt__group-count">{{ grp.items.length }}</span>
-          </div>
-          <ul class="db-list db-list--framed">
+          <button
+            type="button"
+            class="mkt__group-title"
+            :class="{ 'is-collapsed': isGroupCollapsed(grp.type) }"
+            @click="toggleGroup(grp.type)"
+          >
+            <SvgIcon class="mkt__group-chevron" icon-class="lucide:chevron-down" />
+            <span>{{ grp.label }}</span>
+            <span class="mkt__group-count">{{ grp.items.length }}</span>
+          </button>
+          <ul v-if="!isGroupCollapsed(grp.type)" class="db-list db-list--framed">
             <!-- 整行可点＝开物料审核 tab（信息头＋内容预览＋依赖树＋底部通过/驳回，唯一入口；
                  行内不再放「详情」按钮，也不放通过/驳回：B 口径要求通过前看依赖树，审核动作一律进 tab 就地完成）。
                  禁自审：自己上架的项整行不可点（不只是禁用按钮）——口径「前端看不到的，一定不能操作」，
@@ -193,6 +216,7 @@
             >
               <SvgIcon
                 class="db-row__icon"
+                :class="{ 'db-brand-icon': isBrandIconName(itemIcon(row)) }"
                 :icon-class="itemIcon(row)"
                 :style="{ color: row.color || 'var(--el-color-primary)' }"
               />
@@ -223,10 +247,17 @@
            v-else-if 再兜一层：权限被收回但 tab 还记着 governance 时不渲染治理内容 -->
       <template v-else-if="canGovern">
         <template v-if="canConnectorList">
-          <div class="mkt__group-title">
-            连接器 <span class="mkt__group-count">{{ connectorRows.length }}</span>
-          </div>
-          <ul v-if="connectorRows.length" class="db-list db-list--framed">
+          <button
+            type="button"
+            class="mkt__group-title"
+            :class="{ 'is-collapsed': isGroupCollapsed('CONNECTOR') }"
+            @click="toggleGroup('CONNECTOR')"
+          >
+            <SvgIcon class="mkt__group-chevron" icon-class="lucide:chevron-down" />
+            <span>连接器</span>
+            <span class="mkt__group-count">{{ connectorRows.length }}</span>
+          </button>
+          <ul v-if="connectorRows.length && !isGroupCollapsed('CONNECTOR')" class="db-list db-list--framed">
             <!-- 整行可点＝打开连接器包查看 tab（清单＋反编译预览，唯一入口）；
                  ops 区只留治理动作 ⟨启停⟩[废弃][卸载]，@click.stop 阻断冒泡到行 -->
             <li
@@ -236,7 +267,12 @@
               :class="{ 'is-clickable db-float': canInspectDef(row) }"
               @click="canInspectDef(row) && onInspectDefPackage(row)"
             >
-              <SvgIcon class="db-row__icon" :icon-class="row.icon || 'lucide:plug'" :style="{ color: 'var(--el-color-primary)' }" />
+              <SvgIcon
+                class="db-row__icon"
+                :class="{ 'db-brand-icon': isBrandIconName(row.icon) }"
+                :icon-class="row.icon || 'lucide:plug'"
+                :style="{ color: 'var(--el-color-primary)' }"
+              />
               <div class="db-row__meta">
                 <div class="db-row__line">
                   <StatusDot
@@ -353,6 +389,7 @@ import {
 } from '@/api/databus/connector';
 import { listConnection } from '@/api/databus/connection';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
+import { isBrandIconName } from '@/views/databus/workbench/composables/useBrandIcons';
 import StatusDot from '../components/StatusDot.vue';
 import type { MarketScope } from '../workbench.types';
 import { useMarketData, marketNavIntent } from './useMarketData';
@@ -411,6 +448,23 @@ const { installed, mine, pending, loading } = market;
 const scope = ref<MarketScope>(props.scope ?? 'installed');
 /** 管理页搜索（客户端过滤当前视角列表） */
 const manageKeyword = ref('');
+
+/* 分组折叠：key = `${视角}:${类型}`（治理只有连接器一组，类型固定 'CONNECTOR'）。
+   只记录「已折叠」，缺省即展开——新分组默认可见，切视角各自记住自己那几组的开合。 */
+const collapsedGroups = ref<Record<string, boolean>>({});
+
+function groupKey(type: string): string {
+  return `${scope.value}:${type}`;
+}
+
+/** 该组是否已折叠（未记录＝展开） */
+function isGroupCollapsed(type: string): boolean {
+  return collapsedGroups.value[groupKey(type)] === true;
+}
+
+function toggleGroup(type: string): void {
+  collapsedGroups.value[groupKey(type)] = !isGroupCollapsed(type);
+}
 
 /* ---------------- 权限判定（一律按权限串，admin 通配免检） ---------------- */
 const userStore = useUserStore();
@@ -952,6 +1006,57 @@ async function onDeleteItem(row: DatabusMarketItemVo) {
   color: var(--el-text-color-secondary);
   background: var(--el-fill-color, #f0f2f5);
   vertical-align: 1px;
+}
+
+/* 组标题＝折叠开关（四个视角共用）。箭头展开朝下、折叠转 -90°，整条可点，悬停只给一层极浅底。
+   两个坑：① <button> 不吃页面字体（UA 默认字体栈，和周围字重/字形对不上），故字体与行高显式给定；
+   ② 左右负边距抵消内边距，箭头贴列表框左边框、文字仍与框内首行同一个视觉起点。 */
+.mkt__group-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px -4px 8px;
+  padding: 3px 8px 3px 4px;
+  border: 0;
+  border-radius: var(--db-r-tag);
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--el-text-color-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--db-dur-fast) var(--db-ease);
+
+  &:hover {
+    background: var(--el-fill-color-lighter);
+  }
+
+  &:active {
+    background: var(--el-fill-color-light);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--el-color-primary-light-5);
+    outline-offset: 1px;
+  }
+}
+
+.mkt__group-chevron {
+  font-size: 13px;
+  color: var(--el-text-color-placeholder);
+  transition:
+    transform var(--db-dur-normal) var(--db-ease),
+    color var(--db-dur-fast) var(--db-ease);
+}
+
+.mkt__group-title:hover .mkt__group-chevron {
+  color: var(--el-text-color-secondary);
+}
+
+.mkt__group-title.is-collapsed .mkt__group-chevron {
+  transform: rotate(-90deg);
 }
 
 /* 行与列表样式已全部上收 _primitives.scss：

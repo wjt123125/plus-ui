@@ -164,6 +164,7 @@ import { buildRegistry } from '@/views/databus/component/model/registry';
 import type { ComponentRegistryRow, DefMeta } from '@/views/databus/component/model/registry';
 import { useComponentTaxonomy } from '@/views/databus/editor/composables/useComponentTaxonomy';
 import { usePhIcons } from '@/views/databus/editor/composables/usePhIcons';
+import { loadBrandIcons } from '@/views/databus/workbench/composables/useBrandIcons';
 import EditorDrawer, { type DrawerKind } from '@/views/databus/editor/components/drawer/EditorDrawer.vue';
 import { useActiveDrawerPort } from '@/views/databus/editor/composables/useDrawerPort';
 import { usePanelCollapse } from '@/views/databus/editor/composables/usePanelCollapse';
@@ -1191,6 +1192,8 @@ onMounted(() => {
   // 字典与 ph 图标全集都在树首次渲染前触发；getList 拉台账双源合流
   void ensureTaxonomy();
   void loadPhIcons();
+  // 品牌图标集（logos）：连接器 manifest 里 `logos:mysql` 这类值要靠它离线渲染，见 useBrandIcons
+  void loadBrandIcons();
   getList();
   window.addEventListener('keydown', onKeydown);
 });

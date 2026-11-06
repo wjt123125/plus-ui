@@ -291,6 +291,13 @@
   color: var(--db-blue);
 }
 
+/* 品牌彩色图标（manifest 里的 logos:mysql / logos:postgresql 等）：
+   图形自带配色，裸图展示——不加底色、不加圆角方块，currentColor 与哈希底色都不要叠。
+   默认行图标槽位是 20px，商标细节会糊，挂上此类的行图标统一放大到 28px。 */
+.db-brand-icon {
+  font-size: 28px;
+}
+
 /* .db-float 是 hover 浮起的唯一开关（行 / 卡片 / 磁贴一视同仁）：
    挂上即获得位移、阴影与顶边补丁；页面只按体积覆盖 --db-lift / --db-zoom 档位，
    不要再自写 transform / box-shadow 与 transition。 */

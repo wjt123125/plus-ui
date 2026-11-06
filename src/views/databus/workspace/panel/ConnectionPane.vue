@@ -108,7 +108,11 @@
               class="db-row db-float is-clickable"
               @click="handleUpdate(row)"
             >
-              <span class="db-row__icon conn-tile" :style="{ '--conn-tint': connectorTint(row.connectorType) }">
+              <span
+                class="db-row__icon"
+                :class="isBrandIcon(row.connectorType) ? 'db-brand-icon' : 'conn-tile'"
+                :style="{ '--conn-tint': connectorTint(row.connectorType) }"
+              >
                 <SvgIcon :icon-class="connectorIcon(row.connectorType)" />
               </span>
               <div class="db-row__meta">
@@ -234,6 +238,7 @@ import { findMissingRequired } from './connectionSchema';
 import { useConnectorOptions } from './useConnectorOptions';
 import { versionLabel } from '../market/marketDisplay';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
+import { isBrandIconName } from '@/views/databus/workbench/composables/useBrandIcons';
 import type { ConnectionSaved } from '../workbench.types';
 
 const props = defineProps<{
@@ -294,6 +299,9 @@ const showRawType = (row: SysDatabusConnectionVo) =>
 
 /** 行图标取连接器包声明的 icon；未装载 / 未声明时兜底数据库圆柱（不是链环：链环与连接类型无关） */
 const connectorIcon = (value?: string) => defOf(value)?.icon || 'lucide:database';
+
+/** 品牌彩色图标（logos:）：自带配色，行图标不再叠哈希底色/着色 */
+const isBrandIcon = (value?: string) => isBrandIconName(defOf(value)?.icon);
 
 /** 兜底识别色板：按 type 哈希取色，稳定且不硬编码任何数据库类型；顺序即权重，首位为默认蓝 */
 const TINT_KEYS = ['--db-blue', '--db-green', '--db-orange', '--db-purple', '--db-red'];
@@ -690,9 +698,10 @@ watch(
 
 /* 行内视觉细节：行布局/浮起/外框都来自基元（.db-row / .db-float / .db-list--framed），
    这里只处理本页特有的着色与排布，勿再在这里写行高、内边距或卡片外观。 */
-/* 行图标：彩色圆角方块。颜色由 type 哈希稳定得出，包声明品牌色后自然变成品牌色；
-   形状优先用包声明的 icon，未声明时兜底数据库圆柱——即「色块 + 白色图形」的识别方式，
-   但不内置任何数据库品牌表（零内置约束，见 useConnectorOptions） */
+/* 行图标：彩色圆角方块。颜色由 type 哈希稳定得出；形状取包声明的 icon，
+   未声明时兜底数据库圆柱——即「色块 + 图形」的识别方式，但不内置任何数据库品牌表
+   （零内置约束，见 useConnectorOptions）。品牌彩色图标（logos:）不走这个方块，
+   由基元的 .db-brand-icon 以 40px 裸图展示（见 _primitives.scss）。 */
 .conn-tile {
   width: 28px;
   height: 28px;
