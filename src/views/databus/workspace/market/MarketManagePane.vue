@@ -49,6 +49,16 @@
         >
           物料治理
         </button>
+        <!-- 分类是治理动作（增删改与合并），与「物料治理」同角色门槛 -->
+        <button
+          v-if="canGovern"
+          type="button"
+          class="db-seg__item"
+          :class="{ 'is-active': scope === 'category' }"
+          @click="switchScope('category')"
+        >
+          物料分类
+        </button>
         <button
           v-hasPermi="['databus:market:review']"
           type="button"
@@ -60,7 +70,7 @@
           <span v-if="pendingTotal" class="mkt__bubble">{{ pendingTotal > 99 ? '99+' : pendingTotal }}</span>
         </button>
       </div>
-      <el-input v-model="manageKeyword" class="mkt__search" placeholder="搜索物料" clearable size="small">
+      <el-input v-if="scope !== 'category'" v-model="manageKeyword" class="mkt__search" placeholder="搜索物料" clearable size="small">
         <template #prefix><SvgIcon icon-class="lucide:search" /></template>
       </el-input>
     </div>
@@ -233,13 +243,18 @@
                 </div>
               </div>
               <div v-if="isSelfPending(row)" class="db-row__ops">
-                <span class="db-row__self-pending">自己上架 · 待审核（禁自审）</span>
+                <span class="db-row__self-pending">禁自审</span>
               </div>
               <SvgIcon v-if="!isSelfPending(row)" class="db-row__chevron" icon-class="lucide:chevron-right" />
             </li>
           </ul>
         </template>
         <el-empty v-if="!pendingGroups.length" description="暂无待审核物料" :image-size="72" />
+      </template>
+
+      <!-- 视角五：物料分类（治理动作：增 / 改名 / 排序 / 删除空分类 / 合并） -->
+      <template v-else-if="scope === 'category' && canGovern">
+        <MarketCategoryPane @changed="emit('installed')" />
       </template>
 
       <!-- 视角四：治理（全局运行态，与审核分开）。当前只有连接器：启停 / 废弃 / 卸载 / dev 重载。
@@ -387,6 +402,7 @@ import { useLucideSubset } from '@/views/databus/workbench/composables/useLucide
 import { isBrandIconName } from '@/views/databus/workbench/composables/useBrandIcons';
 import StatusDot from '../components/StatusDot.vue';
 import MarketGroupHeader from './MarketGroupHeader.vue';
+import MarketCategoryPane from './MarketCategoryPane.vue';
 import type { MarketScope } from '../workbench.types';
 import { useMarketData, marketNavIntent } from './useMarketData';
 import {
@@ -490,6 +506,8 @@ async function loadScope(target: MarketScope): Promise<void> {
   } else if (target === 'governance') {
     // 治理看的是本机全部 def 行，和「装没装过」无关
     await loadConnectorDefs();
+  } else if (target === 'category') {
+    // 分类视角自带取数（MarketCategoryPane 挂载即拉自己的列表，不参与物料装载）
   } else {
     await market.loadPending();
   }
@@ -573,15 +591,19 @@ onMounted(async () => {
 
 /** 页头标题/副标题随视角切换 */
 const manageTitle = computed(
-  () => ({ installed: '已装管理', mine: '我的上架', pending: '待审核', governance: '治理' })[scope.value]
+  () =>
+    ({ installed: '已装管理', mine: '我的上架', pending: '待审核', governance: '治理', category: '物料分类' })[
+      scope.value
+    ]
 );
 const manageSub = computed(
   () =>
     ({
-      installed: '管理你已安装的组件、链路与连接器；连接器包的上传与提交在「上架物料」里完成。',
+      installed: '管理你已安装的组件、链路与连接器。',
       mine: '你上架的物料与审核状态；可下架或删除。',
       pending: '审核队列：通过即上线，驳回需填写理由。',
-      governance: '平台运行态治理：连接器的启停、废弃与卸载。'
+      governance: '平台运行态治理：连接器的启停、废弃与卸载。',
+      category: '货架目录治理：新增、改名、排序；有物料的分类只能合并到其它分类。'
     })[scope.value]
 );
 

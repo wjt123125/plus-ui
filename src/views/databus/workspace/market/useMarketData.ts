@@ -102,7 +102,7 @@ export function useMarketData() {
   const pending = ref<DatabusMarketItemVo[]>([]);
   const { loading, withLoading } = useLoading(false);
 
-  /** 当前分段（组件 / 链路） */
+  /** 当前分段（组件 / 链路 / 连接器） */
   const activeType = ref<MarketResourceType>('COMPONENT');
   /** 搜索关键字（名称 / 编码 / 标签） */
   const keyword = ref('');

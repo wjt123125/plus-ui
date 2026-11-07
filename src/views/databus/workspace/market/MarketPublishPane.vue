@@ -20,7 +20,7 @@
     <header class="mkt__head mkt__head--sub">
       <div class="mkt__titles">
         <h2 class="mkt__title">上架物料</h2>
-        <p class="mkt__sub">提交审核，通过后进入市场；只能上架属于自己的资源，系统组件需治理权限</p>
+        <p class="mkt__sub">提交后进入审核，通过才上架。</p>
       </div>
       <el-button type="primary" :loading="submitting" @click="submit">
         <SvgIcon icon-class="lucide:send" /><span>提交上架</span>
@@ -61,7 +61,7 @@
                 <button type="button" class="mpub__pkg-remove" @click="clearPackage">移除</button>
               </div>
               <p class="mpub__tip">
-                提交后进入待审核：治理者审核并启用后才会装载运行；同 type 升版本会重新走一遍审核，旧版本审核结论不继承。
+                提交后进入审核，通过并启用后才会装载运行。
               </p>
             </div>
           </el-form-item>
@@ -83,9 +83,9 @@
 
           <!-- 分类平铺点选（单选，再点取消），非下拉 -->
           <el-form-item label="分类" prop="categoryId">
-            <div v-if="categories.length" class="mpub__cats">
+            <div v-if="categoryOptions.length" class="mpub__cats">
               <button
-                v-for="c in categories"
+                v-for="c in categoryOptions"
                 :key="String(c.id)"
                 type="button"
                 class="mpub__cat"
@@ -98,13 +98,18 @@
             <p v-else class="mpub__empty">暂无分类</p>
           </el-form-item>
 
-          <!-- 标签平铺点选（多选＋回车新建）；候选池随分类联动 -->
+          <!-- 标签平铺点选（多选）；候选池＝分类 default_tags ∪ 物料 tags，受控词表不开放自由新建 -->
           <el-form-item label="标签" prop="tags">
-            <TagSelect v-model="form.tags" :options="tagOptions" placeholder="输入标签后回车新建" />
+            <!-- key 随类型/分类变化重挂载：换候选池时整体重置，不留上一次的已选 -->
+            <TagSelect
+              :key="String(form.resourceType) + ':' + String(form.categoryId ?? '')"
+              v-model="form.tags"
+              :options="tagOptions"
+            />
           </el-form-item>
 
-          <!-- P1 驳回-重提闭环：被驳回后重提时填修改说明（非必填，作者说明本轮改了什么） -->
-          <el-form-item label="修改说明（重提时填）" prop="modifyNote">
+          <!-- P1 驳回-重提闭环：只有该源已存在上架记录（重提→重审）时才需要填写 -->
+          <el-form-item v-if="showModifyNote" label="修改说明（重提时填）" prop="modifyNote">
             <el-input
               v-model="form.modifyNote"
               type="textarea"
@@ -116,14 +121,14 @@
           </el-form-item>
         </el-form>
 
-        <p class="mpub__tip">选了分类后，标签候选＝该分类下已有物料的热门标签（最多 30 个）；候选外可自行输入新建。</p>
+        <p class="mpub__tip">标签候选来自该分类的推荐标签与已上架物料（最多 30 个）；新增标签请在「物料分类」里维护。</p>
       </div>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 import type { DatabusMarketCategoryVo, DatabusMarketItemVo, MarketPublishForm, MarketResourceType } from '@/api/databus/market/types';
@@ -205,6 +210,9 @@ function setType(type: MarketResourceType) {
   }
   form.resourceType = type;
   form.sourceId = '';
+  // 分类按适用类型隔离，切类型后原分类不再可选；标签候选池也随之整体更换
+  form.categoryId = undefined;
+  form.tags = [];
   clearPackage();
   formRef.value?.clearValidate('sourceId');
 }
@@ -242,20 +250,45 @@ function sizeLabel(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-/** 分类单选 chips：再点同项即取消 */
+/** 分类单选 chips：再点同项即取消；切换分类会换标签候选池，已选标签一并清零避免串分类遗留 */
 function toggleCategory(c: DatabusMarketCategoryVo) {
-  form.categoryId = form.categoryId != null && String(form.categoryId) === String(c.id) ? undefined : c.id;
+  const next = form.categoryId != null && String(form.categoryId) === String(c.id) ? undefined : c.id;
+  if (String(form.categoryId ?? '') !== String(next ?? '')) {
+    form.tags = [];
+  }
+  form.categoryId = next;
 }
 
-/** 标签候选池＝（选定分类后）该分类下已有物料的标签聚合，按频次降序取 Top 30 */
+/** 可选分类＝当前上架类型的分类 + 通用分类（空 resourceType） */
+const categoryOptions = computed(() =>
+  categories.value.filter((c) => !c.resourceType || c.resourceType === form.resourceType)
+);
+
+/** 标签候选池＝本类型物料已用标签 ＋ 分类 default_tags，按频次降序取 Top 30 */
 const tagOptions = computed(() => {
   const counts = new Map<string, number>();
   for (const it of allItems.value) {
+    if (it.resourceType !== form.resourceType) {
+      continue;
+    }
     if (form.categoryId != null && String(it.categoryId ?? '') !== String(form.categoryId)) {
       continue;
     }
     for (const t of it.tags ?? []) {
       counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+  }
+  // 分类侧推荐标签：选了分类只取该分类，未选时取当前上架类型的所有分类（连接器无物料也能有候选）
+  const applicable = categories.value.filter(
+    (c) =>
+      (form.categoryId == null || String(c.id) === String(form.categoryId)) &&
+      (!c.resourceType || c.resourceType === form.resourceType)
+  );
+  for (const c of applicable) {
+    for (const t of c.defaultTags ?? []) {
+      if (!counts.has(t)) {
+        counts.set(t, 0);
+      }
     }
   }
   return [...counts.entries()]
@@ -264,10 +297,32 @@ const tagOptions = computed(() => {
     .map(([t]) => ({ value: t, label: t }));
 });
 
+/** 当前选中的源是否已有我的上架记录：有＝重提（后端会把状态打回待审），才需要「修改说明」 */
+const resubmitItem = computed(() => {
+  if (!form.sourceId) {
+    return null;
+  }
+  return (
+    market.mine.value.find(
+      (it) => it.resourceType === form.resourceType && String(it.sourceId ?? '') === String(form.sourceId)
+    ) ?? null
+  );
+});
+const showModifyNote = computed(() => resubmitItem.value != null);
+
+/** 换源/换类型后说明作废，避免把上一个源的说明带到新提交 */
+watch(
+  () => [form.resourceType, form.sourceId],
+  () => {
+    form.modifyNote = '';
+  }
+);
+
 onMounted(async () => {
   // 连接器类型下不渲染 ResourceSelector，selectorRef 为空，跳过预取
   void selectorRef.value?.refresh();
   market.loadCategories();
+  market.loadMine();
   try {
     const { data } = await listMarketItems({ pageNum: 1, pageSize: 999 });
     allItems.value = data?.rows ?? [];

@@ -13,7 +13,6 @@
     <header class="mkt__head">
       <div class="mkt__titles">
         <h2 class="mkt__title">{{ ownerCode ? `@${ownerCode} 的作品` : '物料市场' }}</h2>
-        <p class="mkt__sub">{{ browseSub }}</p>
       </div>
       <el-button v-if="ownerCode" class="mkt__manage" size="small" @click="market.clearOwner()">
         <SvgIcon icon-class="lucide:x" /><span>退出作者筛选</span>
@@ -94,7 +93,7 @@
         已安装
       </button>
       <button
-        v-for="c in categories"
+        v-for="c in categoryChips"
         :key="c.id"
         type="button"
         class="mkt__chip"
@@ -251,6 +250,11 @@ const emit = defineEmits<{
 const market = useMarketData();
 const { categories, loading, activeType, activeChip, ownerCode, groups, installedCounts, mineCounts } = market;
 
+/** 分类 chips 按当前分段过滤：分类的适用类型匹配才出现，空串＝通用（三个分段都出现） */
+const categoryChips = computed(() =>
+  categories.value.filter((c) => !c.resourceType || c.resourceType === activeType.value)
+);
+
 /** 市场页搜索（手动触发/清空时重拉） */
 const keyword = computed({
   get: () => market.keyword.value,
@@ -289,6 +293,8 @@ watch(
     }
     void market.refresh();
     void market.loadInstalled();
+    // 分类治理（物料分类视角）动过目录后，chips 要按新目录重取
+    void market.loadCategories();
     if (canPublish.value) {
       void market.loadMine();
     }
@@ -325,18 +331,7 @@ watch(
 
 /* ---------------- 展示辅助 ---------------- */
 
-/** 市场头副标题：按分段说明安装语义（链路 fork 副本 / 组件共享注册 / 连接器 enable 全局生效） */
-const browseSub = computed(() => {
-  if (activeType.value === 'CHAIN') {
-    return '链路安装即 fork 副本到你的目录，上游改动不影响本地副本。';
-  }
-  if (activeType.value === 'CONNECTOR') {
-    return '连接器安装即写入你的个人安装清单（无需目录）；启用/停用与废弃是治理动作，在「物料管理 → 治理」操作。';
-  }
-  return '组件安装即共享注册到物料面板，上游更新直接生效。';
-});
-
-/** 市场空态是否由筛选造成（关键字 / 非「全部」chip / 作者过滤） */
+/* 市场空态是否由筛选造成（关键字 / 非「全部」chip / 作者过滤） */
 const browseFiltered = computed(() => !!keyword.value.trim() || activeChip.value !== 'ALL' || !!ownerCode.value);
 
 /* ---------------- 安装 / 使用 ---------------- */

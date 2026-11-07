@@ -62,8 +62,27 @@ export interface DatabusMarketCategoryVo {
   parentId?: string | number;
   name: string;
   sort?: number;
-  /** 分类下物料数（管理/浏览 chips 用） */
+  /** 适用物料类型（COMPONENT / CHAIN / CONNECTOR；空串＝通用） */
+  resourceType?: MarketResourceType | '';
+  /** 推荐标签（发布页标签候选池的分类侧补充值） */
+  defaultTags?: string[];
+  /** 分类下物料数（不限状态：治理侧据此判断能否直接删 / 只能合并） */
   itemCount?: number;
+}
+
+/** 分类新增 / 改名表单（治理动作） */
+export interface MarketCategoryForm {
+  name: string;
+  /** 适用物料类型（仅新增生效；空串＝通用） */
+  resourceType?: MarketResourceType | '';
+  sort?: number;
+  /** 推荐标签（与分类下物料的 tags 合并去重后作为发布页候选池） */
+  defaultTags?: string[];
+}
+
+/** 分类合并表单（目标为空＝未分类） */
+export interface MarketCategoryMergeForm {
+  targetCategoryId?: string | number | null;
 }
 
 /** 安装级联清单条目（decisions §十四-2 链路全 fork：闭包内子链随主链一并复制/复用） */

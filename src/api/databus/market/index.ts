@@ -2,6 +2,8 @@ import request from '@/utils/request';
 import { AxiosPromise } from '@/utils/api-types';
 import {
   DatabusMarketCategoryVo,
+  MarketCategoryForm,
+  MarketCategoryMergeForm,
   MarketInstallForm,
   DatabusMarketInstallVo,
   DatabusMarketItemVo,
@@ -35,6 +37,43 @@ export function listMarketCategories(): AxiosPromise<DatabusMarketCategoryVo[]> 
   return request({
     url: '/databus/market/categories',
     method: 'get'
+  });
+}
+
+/* ---------------- 分类治理（物料管理 tab「物料分类」视角） ---------------- */
+
+/** 新增分类 */
+export function addMarketCategory(data: MarketCategoryForm): AxiosPromise<string | number> {
+  return request({
+    url: '/databus/market/categories',
+    method: 'post',
+    data
+  });
+}
+
+/** 改名 / 排序（适用类型创建后不再变更） */
+export function updateMarketCategory(id: string | number, data: MarketCategoryForm): AxiosPromise<void> {
+  return request({
+    url: '/databus/market/categories/' + id,
+    method: 'put',
+    data
+  });
+}
+
+/** 删除分类（仅限没有物料挂在它下面的分类） */
+export function delMarketCategory(id: string | number): AxiosPromise<void> {
+  return request({
+    url: '/databus/market/categories/' + id,
+    method: 'delete'
+  });
+}
+
+/** 合并分类：物料整批迁到目标分类（目标为空＝未分类）后删源分类 */
+export function mergeMarketCategory(id: string | number, data: MarketCategoryMergeForm): AxiosPromise<void> {
+  return request({
+    url: '/databus/market/categories/' + id + '/merge',
+    method: 'post',
+    data
   });
 }
 
