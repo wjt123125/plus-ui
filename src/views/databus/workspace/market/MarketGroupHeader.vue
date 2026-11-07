@@ -8,7 +8,7 @@
   <button type="button" class="mkt__group-title" :class="{ 'is-collapsed': collapsed }" @click="emit('toggle')">
     <SvgIcon class="mkt__group-chevron" icon-class="lucide:chevron-down" />
     <span>{{ label }}</span>
-    <span class="mkt__group-count">{{ count }}</span>
+    <span v-if="count !== undefined" class="mkt__group-count">{{ count }}</span>
   </button>
 </template>
 
@@ -19,12 +19,12 @@ withDefaults(
   defineProps<{
     /** 分组类型名（组件 / 链路 / 连接器） */
     label: string;
-    /** 组内行数 */
+    /** 组内行数；不传则不画计数胶囊（加载器这类没有「条数」语义的分组） */
     count?: number;
     /** 是否已折叠（箭头转 -90°、列表不渲染，渲染与否由调用方决定） */
     collapsed?: boolean;
   }>(),
-  { count: 0, collapsed: false }
+  { collapsed: false }
 );
 
 const emit = defineEmits<{

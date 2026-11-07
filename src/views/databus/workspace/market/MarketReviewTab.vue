@@ -198,7 +198,7 @@
     <!-- 操作栏钉底部：通过 / 驳回就地完成；禁自审；非待审态只读；
          闭包联审：依赖未全 ONLINE 时锁主链审核按钮（倒逼先就地审依赖，与依赖行 blockedBy 锁同模式） -->
     <footer v-if="detail?.item" class="mrt__ops">
-      <span v-if="isSelf" class="mrt__self">自己上架 · 待审核（禁自审）</span>
+      <span v-if="isSelf" class="mrt__self">禁自审</span>
       <template v-else-if="detail.item.status === 'PENDING'">
         <span v-if="!depsAllOnline" class="mrt__ops-hint">
           依赖未全部过审（还剩 {{ depsBlockingCount }} 项），依赖全清后这里出现审核按钮。

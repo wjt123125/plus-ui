@@ -185,32 +185,6 @@
                 </el-tag>
               </div>
 
-              <!-- 两条警示照正本原文写死（§1.3）；其余引擎档没有既定结论，不臆造文案，只在上面亮出档位 -->
-              <el-alert
-                v-if="connectorDef.engine === 'jvm'"
-                class="mkti__alert"
-                type="warning"
-                :closable="false"
-                show-icon
-                title="此连接器将获得服务器权限"
-              >
-                <p class="mkti__alert-p">
-                  jvm 档＝包内实现类与它自带的驱动 jar 由 PluginClassLoader 装载进平台同一个 JVM 进程执行，没有进程隔离也没有沙箱。
-                  信任边界只有两道：上传权限（只给管理员）＋另一位管理员看过代码后勾 verified（提交人 ≠ 审批人）。
-                  审核是「人看代码」，拦得住的是上传门槛、默认未启用与留痕，拦不住蓄意破坏。
-                </p>
-                <p class="mkti__alert-p">连接器代表平台直连数据库，请使用最小权限账号。</p>
-              </el-alert>
-
-              <!-- verified 的两项放权要写清，否则这个标记只是个好看的标签，看不出它改变了什么行为 -->
-              <p class="mkti__impl-summary mkti__verified-tip">
-                {{
-                  connectorDef.verified
-                    ? '已核验：审核人看过代码并确认它不会干坏事，因此放开两项限制——试连失败回显归一化后的异常、私网地址黑名单豁免。'
-                    : '未核验：审核人还没勾信任档，试连异常按归一化处理、私网地址不放行。启停开关即治理动作（databus:connector:edit）。'
-                }}
-              </p>
-
               <ConnectorCapabilityTables :operations="connectorDef.operations" :config-schema="connectorDef.configSchema" />
             </template>
             <el-empty v-else :description="connectorDefEmptyText" :image-size="72" />
@@ -696,17 +670,45 @@ async function onUninstallConnector() {
   margin-top: 14px;
 }
 
+/* 指标区对齐监控大盘：一整块容器 + 0.5px 内部分割线（不是三张独立灰卡），
+   格与格之间靠内阴影画线，容器自己不再铺第二层框 */
 .mkti__metrics {
-  display: flex;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
   margin-top: 20px;
+  background: var(--db-bg-card, #fff);
+  border-radius: var(--db-r-card, 14px);
+  box-shadow:
+    var(--db-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.06)),
+    inset 0 0 0 0.5px var(--db-rule, rgba(60, 60, 67, 0.12));
 }
 
 .mkti__metric {
-  flex: 1;
-  padding: 12px;
-  border-radius: 10px;
-  background: var(--el-fill-color-light, #f5f7fa);
+  position: relative;
+  padding: 12px 16px;
+  background: transparent;
+  box-shadow: inset 1px 0 0 var(--db-rule, rgba(60, 60, 67, 0.12));
+  transition:
+    transform var(--db-dur-normal, 0.22s) var(--db-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    box-shadow var(--db-dur-normal, 0.22s) var(--db-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    background-color var(--db-dur-normal, 0.22s) var(--db-ease, ease);
+
+  /* 第一列不画左线，避免与容器左边缘叠成双线 */
+  &:nth-child(3n + 1) {
+    box-shadow: none;
+  }
+
+  /* hover：从整块里浮起，补回完整圆角 + 大阴影；1px 同色垫片盖掉底边上移露出的分割线 */
+  &:hover {
+    z-index: 5;
+    transform: translateY(var(--db-lift, -2px)) scale(var(--db-zoom, 1.025));
+    border-radius: var(--db-r-card, 14px);
+    background: var(--db-bg-solid, #fff);
+    box-shadow:
+      0 0 0 1px var(--db-bg-solid, #fff),
+      var(--db-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.12));
+  }
 
   &-num {
     font-size: 20px;
@@ -946,28 +948,5 @@ async function onUninstallConnector() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* ---------------- 连接器实现页（2026-10-30，§10.3） ---------------- */
-
-/* jvm 档警示：底色由 el-alert 给，这里只管与上下文的间距（操作/配置字段两张表与运行时驱动页已抽成独立组件） */
-.mkti__alert {
-  margin: 4px 0 12px;
-}
-
-.mkti__alert-p {
-  margin: 0 0 6px;
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--el-text-color-regular);
-
-  &:last-child {
-    margin-bottom: 0;
-  }
-}
-
-/* verified 解释段复用 .mkti__impl-summary 的字形，只把它从「无外边距」里捞出来 */
-.mkti__verified-tip {
-  margin: 0 0 4px;
 }
 </style>

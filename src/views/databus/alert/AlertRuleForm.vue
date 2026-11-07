@@ -152,7 +152,7 @@
 
           <el-form-item v-if="notifyTypes.includes('EMAIL')" label="收件邮箱" prop="notifyType">
             <el-input v-model="emailConfig.emails" maxlength="500" placeholder="多个用逗号分隔，如 a@x.com,b@y.com" />
-            <div class="alert-rule-form__hint">依赖后端 mail.enabled=true；未启用时该渠道仅留痕不发送</div>
+            <div class="alert-rule-form__hint">未启用邮件服务时只记录不发送</div>
           </el-form-item>
 
           <template v-if="notifyTypes.includes('WEBHOOK')">
@@ -190,7 +190,7 @@
               />
             </el-select>
             <div class="alert-rule-form__hint">
-              告警时异步执行该链路（入参=告警事件 JSON + 下方执行参数补空位），链路内可做任意告警动作；通知链自身的执行不参与告警评估，不会死循环
+              告警时执行该链路，入参为告警事件 JSON。
             </div>
           </el-form-item>
 
@@ -248,7 +248,7 @@
                 />
                 <div class="alert-rule-form__json-actions">
                   <el-button size="small" type="primary" @click="applyJsonToForm">应用到表单</el-button>
-                  <span class="alert-rule-form__hint">应用时按链路声明自动分流到上方表单；收起丢弃未应用的编辑</span>
+                  <span class="alert-rule-form__hint">收起会丢弃未应用的编辑</span>
                 </div>
               </template>
             </div>
@@ -256,7 +256,7 @@
               本链路另有嵌套入参 {{ nestedParamPaths.join('、') }}：params 只补顶层键，请在附加参数以对象值补齐（键取首段，如 $.request.password → 参数名 request、值 {"password":"x"}）
             </div>
             <div class="alert-rule-form__hint" v-pre>
-              执行参数合并进告警事件根部（事件字段优先，只补空位）；值支持 {{ $.ruleName }} 这类模板对事件求值
+              执行参数会并入告警事件（事件已有字段优先）；值支持 {{ $.ruleName }} 这类模板求值
             </div>
           </el-form-item>
         </el-tab-pane>

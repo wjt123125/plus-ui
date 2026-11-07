@@ -9,7 +9,6 @@
   <div class="wb-launcher">
     <div class="wb-launcher__inner">
       <h2 class="wb-launcher__title">打开工具</h2>
-      <p class="wb-launcher__desc">选择入口，开启数据总线工作流</p>
       <div class="wb-launcher__grid">
         <button
           v-for="card in cards"
@@ -69,15 +68,10 @@ const cards = computed(() => LAUNCHER_ENTRIES.filter((c) => !c.perm || checkPerm
   color: var(--el-text-color-primary, #1d2129);
 }
 
-.wb-launcher__desc {
-  margin: 10px 0 28px;
-  font-size: 13px;
-  color: var(--el-text-color-secondary, #86909c);
-}
-
 /* 定宽 3 列（每列约 124px）+ 16px 间距，对齐参考截图节奏 */
 .wb-launcher__grid {
   width: 100%;
+  margin-top: 24px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;

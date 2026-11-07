@@ -26,7 +26,7 @@
           <div class="page-header">
             <div class="page-title-wrap">
               <h2 class="page-title">连接管理</h2>
-              <p class="page-subtitle">共 {{ total }} 个连接实例，组件通过连接ID引用此处维护的连接。</p>
+              <p class="page-subtitle">共 {{ total }} 个连接实例</p>
             </div>
             <button v-hasPermi="['databus:connection:add']" class="add-btn db-float" @click="handleAdd">
               <el-icon><Plus /></el-icon>

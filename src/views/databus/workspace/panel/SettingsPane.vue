@@ -42,9 +42,7 @@
         <div class="page-header">
           <div class="page-title-wrap">
             <h2 class="page-title">告警规则</h2>
-            <p class="page-subtitle">
-              每分钟扫描启用规则，命中即按渠道通知（邮件/Webhook/通知链路），恢复即自动收线；持续触发不重复通知。
-            </p>
+            <p class="page-subtitle">规则命中后按渠道通知，恢复后自动收线。</p>
           </div>
           <div class="header-actions">
             <el-button
@@ -172,7 +170,7 @@
         <div class="page-header">
           <div class="page-title-wrap">
             <h2 class="page-title">系统与偏好</h2>
-            <p class="page-subtitle">调整外观主题与数据保留策略，设置即时生效并保存到本地。</p>
+            <p class="page-subtitle">调整外观主题与数据保留时长。</p>
           </div>
         </div>
 
@@ -181,7 +179,7 @@
           <div class="setting-row">
             <div class="setting-row__text">
               <div class="setting-row__label">主题</div>
-              <div class="setting-row__desc">选择浅色或深色界面，切换即时生效</div>
+              <div class="setting-row__desc">选择浅色或深色界面</div>
             </div>
             <el-radio-group v-model="themeMode" @change="handleThemeChange">
               <el-radio-button value="light">浅色</el-radio-button>
@@ -195,7 +193,7 @@
           <div class="setting-row">
             <div class="setting-row__text">
               <div class="setting-row__label">日志保留天数</div>
-              <div class="setting-row__desc">执行记录与告警记录的保留时长（天），暂存本地</div>
+              <div class="setting-row__desc">执行记录与告警记录的保留天数</div>
             </div>
             <el-input-number
               v-model="retentionDays"
@@ -296,7 +294,7 @@ const handleThemeChange = () => {
 
 const retentionDays = useStorage<number>('databus-retention-days', 30);
 const handleRetentionChange = () => {
-  ElMessage.success(`保留天数已设为 ${retentionDays.value} 天（本地保存）`);
+  ElMessage.success(`保留天数已设为 ${retentionDays.value} 天`);
 };
 
 const ENABLED_OPTIONS = [

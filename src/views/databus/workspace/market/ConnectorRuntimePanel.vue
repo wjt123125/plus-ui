@@ -24,29 +24,42 @@
         </template>
       </el-alert>
 
+      <!-- 两组各自折叠、缺省展开：加载器一行说明「装没装上」，驱动表才是逐条明细 -->
+      <MarketGroupHeader
+        label="连接器加载器"
+        :collapsed="!loaderOpen"
+        @toggle="loaderOpen = !loaderOpen"
+      />
       <!-- 连接器本体是否装载看这一行：有值＝该类型已从包加载（后端只有 registry 里注册过才填），空＝没装载 -->
-      <div class="crp__meta">
-        <span>连接器加载器</span>
+      <div v-if="loaderOpen" class="crp__meta">
         <span class="crp__meta-code">{{ info?.classLoader || '未装载' }}</span>
       </div>
 
-      <el-table v-if="drivers.length" :data="drivers" size="small" border>
-        <!-- 首列照后端行键 type 收（不是 dbType）：对 JDBC 连接器它就是库种，前端不另造字段名 -->
-        <el-table-column label="类型" prop="type" width="140" show-overflow-tooltip />
-        <el-table-column label="驱动类" prop="driverClass" min-width="200" show-overflow-tooltip />
-        <el-table-column label="版本" min-width="120">
-          <template #default="{ row }">{{ row.version || '—' }}</template>
-        </el-table-column>
-        <el-table-column label="生效来源" width="96" align="center">
-          <template #default="{ row }">
-            <el-tag v-if="row.loadedFrom === 'PLUGIN'" size="small" type="success" effect="light">包内</el-tag>
-            <el-tag v-else-if="row.loadedFrom === 'PLATFORM'" size="small" type="warning" effect="light">平台</el-tag>
-            <!-- SPI 声明了但类没加载上＝包打漏了驱动，鼠标停上去看后端给的原因，不另开一列 -->
-            <span v-else class="crp__fail" :title="row.error || '驱动类加载失败'">加载失败</span>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-empty v-else :description="emptyText" :image-size="72" />
+      <MarketGroupHeader
+        label="运行时驱动"
+        :count="drivers.length"
+        :collapsed="!driversOpen"
+        @toggle="driversOpen = !driversOpen"
+      />
+      <template v-if="driversOpen">
+        <el-table v-if="drivers.length" :data="drivers" size="small" border>
+          <!-- 首列照后端行键 type 收（不是 dbType）：对 JDBC 连接器它就是库种，前端不另造字段名 -->
+          <el-table-column label="类型" prop="type" width="140" show-overflow-tooltip />
+          <el-table-column label="驱动类" prop="driverClass" min-width="200" show-overflow-tooltip />
+          <el-table-column label="版本" min-width="120">
+            <template #default="{ row }">{{ row.version || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="生效来源" width="96" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.loadedFrom === 'PLUGIN'" size="small" type="success" effect="light">包内</el-tag>
+              <el-tag v-else-if="row.loadedFrom === 'PLATFORM'" size="small" type="warning" effect="light">平台</el-tag>
+              <!-- SPI 声明了但类没加载上＝包打漏了驱动，鼠标停上去看后端给的原因，不另开一列 -->
+              <span v-else class="crp__fail" :title="row.error || '驱动类加载失败'">加载失败</span>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else :description="emptyText" :image-size="72" />
+      </template>
     </template>
   </div>
 </template>
@@ -57,8 +70,13 @@ import { getConnectorRuntimeInfo } from '@/api/databus/connector';
 import type { ConnectorRuntimeDriver, ConnectorRuntimeInfo } from '@/api/databus/connector/types';
 import { useUserStore } from '@/store/modules/user';
 import InfoHint from './InfoHint.vue';
+import MarketGroupHeader from './MarketGroupHeader.vue';
 
 defineOptions({ name: 'ConnectorRuntimePanel' });
+
+/** 两组折叠缺省展开：加载器与驱动清单互不牵连，收起一组不影响另一组 */
+const loaderOpen = ref(true);
+const driversOpen = ref(true);
 
 const props = defineProps<{
   /** 连接器类型键 */
@@ -145,7 +163,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 2px 0 12px;
+  margin: 0 0 12px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }

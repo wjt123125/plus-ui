@@ -491,7 +491,7 @@ function marketLeaf(it: DatabusMarketInstallVo): ResourceTreeNode | null {
     marks: row ? marksOfComponent(row) : undefined,
     children: [],
     favorited: it.localResourceId != null && isFavorited('component', it.localResourceId),
-    tip: row ? '来自市场的共享组件（上游更新实时生效）' : '来自市场的共享组件（源已不在台账，可卸载）'
+    tip: row ? '来自市场的共享组件' : '来自市场的共享组件（源已不在台账，可卸载）'
   };
 }
 

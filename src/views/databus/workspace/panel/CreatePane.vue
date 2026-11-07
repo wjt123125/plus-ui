@@ -3,7 +3,7 @@
     <header class="create__head">
       <div class="create__titles">
         <h2 class="create__title">新建</h2>
-        <p class="create__sub">选择资源类型填写保存，保存后表单复位可连续新建；草稿随 tab 保留</p>
+        <p class="create__sub">选择资源类型，填写后保存。</p>
       </div>
     </header>
     <nav class="create__bar">

@@ -12,9 +12,7 @@
         <div class="page-header">
           <div class="page-title-wrap">
             <h2 class="page-title">告警记录</h2>
-            <p class="page-subtitle">
-              一次告警生命周期一行：FIRING 触发中、RECOVERED 已恢复（同规则持续触发不重复留存），恢复即自动收线。
-            </p>
+            <p class="page-subtitle">记录每条规则的触发与恢复。</p>
           </div>
           <div class="header-actions">
             <el-button

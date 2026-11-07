@@ -17,9 +17,7 @@
           <div class="page-header">
             <div class="page-title-wrap">
               <h2 class="page-title">执行记录</h2>
-              <p class="page-subtitle">
-                链路正式执行的审计台账，只增不改；OFF 档不留记录，BASIC 记总账，FULL 另记每步明细。
-              </p>
+              <p class="page-subtitle">链路每次执行的记录。</p>
             </div>
             <div class="header-actions">
               <button

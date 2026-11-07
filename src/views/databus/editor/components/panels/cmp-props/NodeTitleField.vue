@@ -21,7 +21,7 @@
           </el-icon>
         </template>
       </el-input>
-      <div class="cmp-field__hint">留空时显示组件 label；自定义后不随配置变化</div>
+      <div class="cmp-field__hint">留空时显示组件名</div>
     </el-form-item>
   </el-form>
 </template>

@@ -19,9 +19,7 @@
         <div class="page-header">
           <div class="page-title-wrap">
             <h2 class="page-title">监控大盘</h2>
-            <p class="page-subtitle">
-              卡片、趋势和排行榜每小时自动统计一次；刚执行完的链路点「手动聚合」立刻可见。下方错误流实时更新。
-            </p>
+            <p class="page-subtitle">数据每小时汇总一次；刚跑完的链路可点「手动聚合」立即出数。</p>
           </div>
           <div class="header-actions">
             <div class="seg-control" role="group" aria-label="时间范围">
