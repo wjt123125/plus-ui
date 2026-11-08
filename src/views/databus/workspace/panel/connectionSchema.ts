@@ -1,5 +1,5 @@
 import type { PropOption, PropSchema, PropShowWhen, WidgetKind } from '@/api/databus/component/types';
-import type { ConnectorConfigField } from '@/api/databus/connector/types';
+import type { ConnectorConfigField, ConnectorConfigGroup } from '@/api/databus/connector/types';
 
 /**
  * 连接器 configSchema → 组件参数 schema（PropSchema）的适配层（方案 §8.2）。
@@ -12,8 +12,8 @@ import type { ConnectorConfigField } from '@/api/databus/connector/types';
  * 留空即走普通输入框，正是连接表单要的形态。
  */
 
-/** 分组兜底名：schema 没写 group 的字段归「基础」tab */
-export const BASIC_GROUP = '基础';
+/** 未声明 group 的字段归这个默认组（后端 ConfigField 留空时） */
+export const DEFAULT_GROUP = 'default';
 
 /** 控件枚举白名单：后端 widget 是自由字符串，越界值一律走推断，避免透传出未知控件 */
 const KNOWN_WIDGETS: WidgetKind[] = [
@@ -30,6 +30,24 @@ const KNOWN_WIDGETS: WidgetKind[] = [
   'OBJECT',
   'JSON'
 ];
+
+/**
+ * 连接表单的一个 tab（解析后的分组元数据）。
+ * 主组渲染为第一个 tab；栅格份数最终由后端 columns 决定（缺省 2，1=单列）。
+ */
+export interface ResolvedGroup {
+  key: string;
+  title: string;
+  primary: boolean;
+  /** 组内栅格份数（1..12）；字段用 span 声明自己占几份 */
+  columns: number;
+}
+
+/** 分组栅格份数兜底：非法值一律按 2 份（双列），避免前端拿到 0 / 负数 / 小数 */
+function resolveColumns(declared: number | null | undefined): number {
+  const n = Math.trunc(Number(declared));
+  return Number.isFinite(n) && n >= 1 && n <= 12 ? n : 2;
+}
 
 /** widget 缺省 / 越界时按 sensitive + type 推断 */
 function resolveWidget(field: ConnectorConfigField): WidgetKind {
@@ -69,7 +87,7 @@ function toShowWhen(field: ConnectorConfigField): PropShowWhen[] | null {
   if (!w?.field) {
     return null;
   }
-  return [{ field: w.field, eq: w.eq, ne: w.ne, in: w.in, notIn: w.notIn }];
+  return [{ field: w.field, eq: w.eq, ne: w.ne, in: w.in, notIn: w.notIn, empty: w.empty }];
 }
 
 /**
@@ -88,41 +106,86 @@ export function toPropSchema(
     name,
     label: field.label ?? name,
     description: field.description ?? null,
+    help: field.help ?? null,
     widget: resolveWidget(field),
     required: field.sensitive && isEdit ? false : !!field.required,
     placeholder: field.placeholder ?? null,
+    unit: field.unit ?? null,
     options: toOptions(field),
     showWhen: toShowWhen(field)
   };
 }
 
-/** schema → [字段名, 定义] 有序数组（后端是 LinkedHashMap，序列化后键序即声明序，不再另排） */
+/** schema → [字段名, 字段定义] 有序数组（后端是 LinkedHashMap，序列化后键序即声明序，不再另排） */
 export function schemaEntries(
   schema: Record<string, ConnectorConfigField> | undefined
 ): Array<[string, ConnectorConfigField]> {
   return Object.entries(schema ?? {});
 }
 
-/** 分组清单（保持首次出现顺序；无 group 的字段归 BASIC_GROUP，且 BASIC_GROUP 恒排第一） */
-export function schemaGroups(
-  schema: Record<string, ConnectorConfigField> | undefined
-): string[] {
-  const groups: string[] = [];
-  for (const [, field] of schemaEntries(schema)) {
-    const g = field.group || BASIC_GROUP;
-    if (!groups.includes(g)) {
-      groups.push(g);
-    }
-  }
-  if (groups.length === 0) {
-    return [];
-  }
-  // 「基础」永远第一个 tab：连接ID/名称/类型这些平台固定字段也住在这个 tab 里
-  return groups.sort((a, b) => (a === BASIC_GROUP ? -1 : b === BASIC_GROUP ? 1 : 0));
+/** 某分组下的字段（顺序＝schema 声明序；无 group 的字段归 default 组） */
+export function fieldsOfGroup(
+  schema: Record<string, ConnectorConfigField> | undefined,
+  groupKey: string
+): Array<[string, ConnectorConfigField]> {
+  return schemaEntries(schema).filter(([, field]) => (field.group || DEFAULT_GROUP) === groupKey);
 }
 
 /**
- * showWhen 求值，语义与 SchemaField.vue 逐字一致（同字段多条规则 AND，先命中先返回）。
+ * 分组清单＝tab 清单。
+ *
+ * 优先用连接器声明的 groups（key/label/primary/columns 全部来自后端）；
+ * 老包没声明时按字段 group 首次出现顺序兜底：第一组当作主组（单列），其余双列。
+ * 前端不认任何具体 group 名（"基础"/"高级" 都不写死），只认元数据。
+ */
+export function resolveGroups(
+  schema: Record<string, ConnectorConfigField> | undefined,
+  declared: ConnectorConfigGroup[] | undefined
+): ResolvedGroup[] {
+  if (declared?.length) {
+    const groups = declared
+      .filter((g) => !!g?.key)
+      .map<ResolvedGroup>((g) => ({
+        key: String(g.key),
+        title: g.label || String(g.key),
+        primary: !!g.primary,
+        columns: resolveColumns(g.columns)
+      }));
+    if (groups.length) {
+      // 主组恒排第一个 tab（契约），其余保持声明顺序（sort 稳定）
+      groups.sort((a, b) => Number(b.primary) - Number(a.primary));
+      // 声明里漏掉的字段分组补在末尾：宁可多一个没起好名字的 tab，也不让字段静默消失
+      for (const key of keysOfGroups(schema)) {
+        if (!groups.some((g) => g.key === key)) {
+          groups.push({ key, title: key, primary: false, columns: 2 });
+        }
+      }
+      return groups;
+    }
+  }
+
+  const keys = keysOfGroups(schema);
+  return keys.map((key, index) => ({
+    key,
+    title: key,
+    primary: index === 0,
+    columns: index === 0 ? 1 : 2
+  }));
+}
+
+function keysOfGroups(schema: Record<string, ConnectorConfigField> | undefined): string[] {
+  const keys: string[] = [];
+  for (const [, field] of schemaEntries(schema)) {
+    const g = field.group || DEFAULT_GROUP;
+    if (!keys.includes(g)) {
+      keys.push(g);
+    }
+  }
+  return keys;
+}
+
+/**
+ * showWhen 求值，语义与 SchemaField.vue 逐字一致（同字段多条规则 AND）。
  * 渲染层的可见性由 SchemaField 自己算，这里重算一遍是为了两件事：
  * ① 生成 el-form 的 rules 时排除隐藏字段（隐藏的必填项不该拦住提交）；
  * ② 「测试连接」按钮的前置校验与表单口径一致。
@@ -137,6 +200,7 @@ export function isFieldVisible(
     return true;
   }
   const actual = readByPath(model, w.field);
+  if (w.empty != null) return w.empty ? isBlankValue(actual) : !isBlankValue(actual);
   if (w.eq != null) return String(actual) === w.eq;
   if (w.ne != null) return String(actual) !== w.ne;
   if (w.in?.length) return w.in.includes(String(actual));
@@ -163,7 +227,7 @@ function readByPath(source: unknown, path: string): unknown {
  * 三类字段跳过：① 非必填；② showWhen 判为隐藏；③ 编辑态的 sensitive（见 toPropSchema）。
  *
  * **注意：只拦 required，不做「二选一必填」这类跨字段推断**——连接器 schema 表达不了它，
- * 该由连接器自己在执行期精确报错（如 JDBC 的「缺少必填配置 host（或改用高级项「自定义 JDBC URL」）」）。
+ * 该由连接器自己在执行期精确报错（如 JDBC 的「缺少必填配置 host（或改用「连接串」页的自定义 JDBC URL）」）。
  */
 export function buildConfigRules(
   schema: Record<string, ConnectorConfigField> | undefined,
@@ -202,7 +266,7 @@ export function findMissingRequired(
     if (!required || !isFieldVisible(field, model)) {
       continue;
     }
-    if (isBlank(model[name])) {
+    if (isBlankValue(model[name])) {
       return field.label ?? name;
     }
   }
@@ -210,7 +274,7 @@ export function findMissingRequired(
 }
 
 /** 空值判定：null/undefined/空串/纯空白串/空数组/空对象都算没填（0 与 false 是有意义的值，不算） */
-function isBlank(value: unknown): boolean {
+export function isBlankValue(value: unknown): boolean {
   if (value == null) return true;
   if (typeof value === 'string') return value.trim() === '';
   if (Array.isArray(value)) return value.length === 0;

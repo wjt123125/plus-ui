@@ -79,12 +79,14 @@
               :value="item.value"
             />
           </el-select>
-          <div class="status-bar">
+          <!-- 状态分段：胶囊轨道/项走全局 .db-seg / .db-seg__item（databus-tabs），与物料管理同一套 -->
+          <div class="db-seg">
             <button
               v-for="s in ENABLED_OPTIONS"
               :key="s.value"
-              class="filter-tab"
-              :class="{ active: ruleQuery.enabled === s.value }"
+              type="button"
+              class="db-seg__item"
+              :class="{ 'is-active': ruleQuery.enabled === s.value }"
               @click="changeEnabled(s.value)"
             >
               {{ s.label }}
@@ -559,42 +561,7 @@ onMounted(() => {
   max-width: 100%;
 }
 
-.status-bar {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.filter-tab {
-  padding: 6px 16px;
-  border-radius: var(--app-radius-md, 10px);
-  border: 1px solid var(--el-border-color, #e8eaec);
-  background: var(--el-bg-color, #fff);
-  color: var(--el-text-color-regular, #363b41);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    color 0.2s ease,
-    background-color 0.2s ease,
-    border-color 0.2s ease;
-
-  &:hover {
-    border-color: var(--el-color-primary);
-    color: var(--el-color-primary);
-  }
-
-  &.active {
-    background-color: var(--el-color-primary);
-    border-color: var(--el-color-primary);
-    color: #fff;
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--el-color-primary);
-    outline-offset: 2px;
-  }
-}
+/* 状态分段样式由全局 .db-seg / .db-seg__item 提供（databus-tabs），此处不再自造 tab 外观 */
 
 .table-card {
   background: var(--app-surface-bg, #fff);

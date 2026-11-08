@@ -117,7 +117,7 @@
                   <template v-if="row.resourceType === 'CONNECTOR' && installedConnectorCode(row)">
                     {{ installedConnectorCode(row) }}
                   </template>
-                  <template v-else>{{ row.summary }}</template>
+                  <template v-else>{{ row.summary || row.codeDisplay }}</template>
                   <button v-if="row.ownerCode" type="button" class="db-row__author" @click.stop="onAuthor(row.ownerCode!, row.resourceType)">
                     @{{ row.ownerCode }}
                   </button>
@@ -497,7 +497,7 @@ async function loadScope(target: MarketScope): Promise<void> {
   if (target === 'installed') {
     // 已装管理只认安装台账：连接器也一样，没安装记录就不会出现在这里
     await market.loadInstalled();
-    // 已装连接器行要展示 #type · 版本（安装台账不带这两列），有连接器才补拉 defs
+    // 已装连接器行要补版本（展示码由台账接口回填），有连接器才补拉 defs
     if (installed.value.some((row) => row.resourceType === 'CONNECTOR')) {
       await loadConnectorDefs();
     }
@@ -626,9 +626,10 @@ const connectorRows = computed(() => {
 /** 治理行是否还有可治理的已生效 def（空态文案用：区分「没有包」与「有关键字筛掉」） */
 const governableDefCount = computed(() => connectorDefs.value.filter((d) => d.status !== 'PENDING').length);
 
-/** 已装台账分组（组件/链路/连接器）：install 台账按固定顺序拆组 + 关键字过滤（名称/简介），空组丢弃。
- *  连接器和另外两类同口径——有没有这一行，只看有没有自己的安装记录（台账行不带展示码，故不搜 codeDisplay） */
-const installedGroups = computed(() => groupByType(installed.value, manageKeyword.value, ['name', 'summary']));
+/** 已装台账分组（组件/链路/连接器）：install 台账按固定顺序拆组 + 关键字过滤（名称/简介/展示码），空组丢弃。
+ *  连接器和另外两类同口径——有没有这一行，只看有没有自己的安装记录；
+ *  展示码由台账接口从物料行回填，故一并参与搜索 */
+const installedGroups = computed(() => groupByType(installed.value, manageKeyword.value, ['name', 'summary', 'codeDisplay']));
 
 /** 治理组空态文案：区分「本机一个包都没有」（配上传引导）与「有包但被关键字筛掉」 */
 const connectorEmptyText = computed(() => {
@@ -649,13 +650,14 @@ function installedConnectorDef(row: DatabusMarketInstallVo): ConnectorDefVo | nu
   return connectorDefs.value.find((d) => d.id != null && String(d.id) === String(row.localResourceId)) ?? null;
 }
 
-/** 已装连接器副标题：对齐「我的上架 / 物料治理」的 #type · 版本口径（安装台账本身不带这两列） */
+/** 已装连接器副标题：展示码（台账接口从物料行回填）＋ 版本（defs 现取）。
+ *  展示码不依赖 defs——没有 databus:connector:list 时仍能显示「谁的哪一个」；
+ *  defs 拿得到版本时补上，与「我的上架 / 物料治理」的版本口径一致 */
 function installedConnectorCode(row: DatabusMarketInstallVo): string {
   const def = installedConnectorDef(row);
-  if (!def) {
-    return '';
-  }
-  return `#${def.type}${def.version ? ` · ${versionLabel(def.version)}` : ''}`;
+  const code = row.codeDisplay || (def ? `#${def.type}` : '');
+  const version = def?.version ? ` · ${versionLabel(def.version)}` : '';
+  return `${code}${version}`;
 }
 
 /* ---------------- 行交互：整行可点＝唯一入口，ops 区只留治理动作 ---------------- */

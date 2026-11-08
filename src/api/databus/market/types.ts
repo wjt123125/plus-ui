@@ -126,6 +126,8 @@ export interface DatabusMarketInstallVo {
   /** 上架者登录名（管理页行上渲染 @作者；物料行已删时为空则不渲染）。
    *  注意与 ownerId 不是一回事：ownerId 是安装者自己 */
   ownerCode?: string;
+  /** 市场物料展示码 `{ownerCode}/{code}`（后端从物料行回填；物料行已删时为空） */
+  codeDisplay?: string;
   /** 级联清单（仅 CHAIN 安装返回，decisions §十四-2）：主链＋全部级联子链，post-order 序主链居末；
    *  级联子链副本是安装者目录里的普通顶层链不写台账，主链仍以本行记录血缘 */
   cascade?: MarketInstallCascadeItem[];

@@ -3,7 +3,7 @@
 <template>
   <template v-if="visible">
     <!-- 嵌套对象分组：子字段递归（OBJECT 自身不占 form-item） -->
-    <div v-if="field.widget === 'OBJECT'" class="schema-field__group">
+    <div v-if="field.widget === 'OBJECT'" class="schema-field__group" :style="widthStyle">
       <div class="schema-field__group-title">{{ field.label || field.name }}</div>
       <SchemaField
         v-for="child in field.fields ?? []"
@@ -16,7 +16,15 @@
       <div v-if="field.description" class="schema-field__desc">{{ field.description }}</div>
     </div>
 
-    <el-form-item v-else :label="field.label || field.name" :prop="namePath" :required="field.required">
+    <el-form-item v-else :prop="namePath" :required="field.required" :style="widthStyle">
+      <template #label>
+        <span class="schema-field__label">{{ field.label || field.name }}</span>
+        <!-- 说明默认收进 ⓘ 提示：连接表单字段多、说明长，常显会把表单撑成两倍高 -->
+        <el-tooltip v-if="descAsTooltip" :content="field.description" placement="top" :show-after="200">
+          <el-icon class="schema-field__help"><QuestionFilled /></el-icon>
+        </el-tooltip>
+      </template>
+
       <!-- 对象数组行编辑 -->
       <ObjectRowsEditor
         v-if="field.widget === 'OBJECT_ROWS'"
@@ -40,7 +48,7 @@
       <!-- 标量控件统一走 FieldControl -->
       <FieldControl v-else :field="field" :model-value="model[field.name]" @update:model-value="updateValue" />
 
-      <div v-if="field.description" class="schema-field__desc">{{ field.description }}</div>
+      <div v-if="showInlineDesc" class="schema-field__desc">{{ field.description }}</div>
     </el-form-item>
   </template>
 </template>
@@ -48,6 +56,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { ElFormItem } from 'element-plus';
+import { QuestionFilled } from '@element-plus/icons-vue';
 import type { PropSchema, PropShowWhen } from '@/api/databus/component/types';
 import FieldControl from './FieldControl.vue';
 import ObjectRowsEditor from './widgets/ObjectRowsEditor.vue';
@@ -62,9 +71,40 @@ const props = withDefaults(
     model: Record<string, unknown>;
     /** el-form 校验路径（点路径，根字段名起步） */
     namePath?: string;
+    /**
+     * 说明收进 ⓘ 提示（连接表单用）。
+     * 缺省 false＝说明常显在字段下方，与组件参数表单原有行为一致。
+     */
+    descriptionAsTooltip?: boolean;
+    /**
+     * 占满整行（固定语义，与栅格份数无关）。
+     * 用 grid-column:1/-1 而不是 span 2，窄屏退化为单列时自然只剩一列。
+     */
+    fullWidth?: boolean;
+    /**
+     * 栅格占位份数（连接表单用，值来自 schema 的 field.span）。
+     * 份数基数是所属分组的 columns，故 3 份 + 1 份可以同行表达「宽字段：窄字段」；
+     * 1 份是栅格默认值，不落样式。
+     */
+    gridSpan?: number;
   }>(),
-  { namePath: '' }
+  { namePath: '', descriptionAsTooltip: false, fullWidth: false, gridSpan: 0 }
 );
+
+const widthStyle = computed(() => {
+  if (props.fullWidth) {
+    return { gridColumn: '1 / -1' };
+  }
+  return props.gridSpan > 1 ? { gridColumn: `span ${props.gridSpan}` } : undefined;
+});
+
+/** 说明是否收进提示：只有 descriptionAsTooltip 且连接器没声明 help=INLINE 时才收 */
+const descAsTooltip = computed(
+  () => !!props.field.description && props.descriptionAsTooltip && props.field.help !== 'INLINE'
+);
+
+/** 说明是否常显（与 tooltip 互斥） */
+const showInlineDesc = computed(() => !!props.field.description && !descAsTooltip.value);
 
 const emit = defineEmits<{
   (e: 'change'): void;
@@ -107,11 +147,21 @@ function readByPath(source: unknown, path: string): unknown {
 
 function matchRule(rule: PropShowWhen): boolean {
   const actual = readByPath(props.model, rule.field);
+  if (rule.empty != null) return rule.empty ? isBlankValue(actual) : !isBlankValue(actual);
   if (rule.eq != null) return String(actual) === rule.eq;
   if (rule.ne != null) return String(actual) !== rule.ne;
   if (rule.in?.length) return rule.in.includes(String(actual));
   if (rule.notIn?.length) return !rule.notIn.includes(String(actual));
   return true;
+}
+
+/** 空值判定，与 connectionSchema.isBlankValue 同义（同一份语义写两处，改一处必须改两处） */
+function isBlankValue(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value === 'string') return value.trim() === '';
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === 'object') return Object.keys(value as object).length === 0;
+  return false;
 }
 
 const visible = computed(() => {
@@ -127,6 +177,17 @@ const visible = computed(() => {
   font-size: 11px;
   color: var(--el-text-color-secondary);
   line-height: 1.4;
+}
+
+.schema-field__label {
+  display: inline-block;
+}
+
+.schema-field__help {
+  margin-left: 4px;
+  color: var(--el-text-color-placeholder);
+  cursor: help;
+  vertical-align: -1px;
 }
 
 .schema-field__group {

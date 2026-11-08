@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue';
 import { listConnectorDefs, listMyConnectorDefs } from '@/api/databus/connector';
-import type { ConnectorConfigField, ConnectorDefVo } from '@/api/databus/connector/types';
+import type { ConnectorConfigField, ConnectorConfigGroup, ConnectorDefVo } from '@/api/databus/connector/types';
 import { connectorHealthMeta, type ConnectorHealthMeta } from '../market/marketDisplay';
 
 /**
@@ -90,6 +90,14 @@ export function useConnectorOptions() {
   }
 
   /**
+   * 类型值 → 分组元数据（tab 顺序 / 主组 / 列数 / 标签位置）。
+   * 老包（describe 没声明 groups）返回空数组，由 connectionSchema.resolveGroups 兜底分组。
+   */
+  function groupsOf(value?: string): ConnectorConfigGroup[] {
+    return defOf(value)?.groups ?? [];
+  }
+
+  /**
    * 类型值 → 运行态健康结论（§4.2.1）。挡「新建连接 / 测试连接」与给原因文案都从这里取，
    * 与物料管理页连接器行、市场卡片共用 marketDisplay 里同一份口径，不会各判各的。
    */
@@ -97,5 +105,15 @@ export function useConnectorOptions() {
     return connectorHealthMeta(defOf(value));
   }
 
-  return { options, defs, loaded, loadConnectorOptions, connectorLabelOf, defOf, schemaOf, healthOf };
+  return {
+    options,
+    defs,
+    loaded,
+    loadConnectorOptions,
+    connectorLabelOf,
+    defOf,
+    schemaOf,
+    groupsOf,
+    healthOf
+  };
 }

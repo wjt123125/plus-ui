@@ -27,7 +27,7 @@ export interface ConnectorFieldOption {
 
 /**
  * 字段条件显示规则（与后端 ConnectorDescriptor.ShowWhen 逐字对齐）。
- * eq/ne/in/notIn 同时给多条时为 AND；前端只在规则全满足时渲染该字段。
+ * eq/ne/in/notIn/empty 同时给多条时为 AND；前端只在规则全满足时渲染该字段。
  */
 export interface ConnectorShowWhen {
   /** 依据字段名（相对同一层配置对象，支持点路径） */
@@ -36,6 +36,8 @@ export interface ConnectorShowWhen {
   ne?: string | null;
   in?: string[] | null;
   notIn?: string[] | null;
+  /** 空值条件：true=依据字段为空才显示；false=依据字段已填才显示；不传=不启用 */
+  empty?: boolean | null;
 }
 
 /**
@@ -67,8 +69,29 @@ export interface ConnectorConfigField {
   placeholder?: string | null;
   /** 条件显示规则（满足才渲染；被隐藏的字段不参与必填校验） */
   showWhen?: ConnectorShowWhen | null;
-  /** 分组（"基础" / "高级"，连接表单据此分 tab） */
+  /** 分组键（对应 ConnectorDefVo.groups 里的 key；留空归 default 组） */
   group?: string | null;
+  /** 组内栅格占位份数（1..所属分组 columns；组只有 1 列时无意义） */
+  span?: number | null;
+  /** 数值单位后缀（展示用，渲染在输入框右侧；如「毫秒」「行」） */
+  unit?: string | null;
+  /** 说明呈现方式：INLINE=常显在字段下方；留空=收进 ⓘ 提示 */
+  help?: string | null;
+}
+
+/**
+ * 连接表单分组（一个组＝一个 tab），与后端 ConnectorDescriptor.ConfigGroup 对齐。
+ * 平台字段（连接名称 / 类型 / 启用 / 连接ID）与备注不在其中。
+ */
+export interface ConnectorConfigGroup {
+  /** 分组键（与字段的 group 对应） */
+  key?: string;
+  /** tab 标题；缺省取 key */
+  label?: string;
+  /** 主组：渲染为第一个 tab */
+  primary?: boolean;
+  /** 组内栅格份数（正整数，缺省 2；1=单列，4 可表达 3+1 的不等宽同行） */
+  columns?: number | null;
 }
 
 /**
@@ -124,6 +147,8 @@ export interface ConnectorDefVo {
   operations?: ConnectorOperationDef[];
   /** Connection 配置 schema（连接表单动态渲染；字段名 → 字段定义） */
   configSchema?: Record<string, ConnectorConfigField>;
+  /** 连接表单分组元数据（tab 顺序与主组声明）；老包为空，前端按字段 group 自动分组 */
+  groups?: ConnectorConfigGroup[];
   createBy?: string | number;
   /** 上架者登录名（后端反查 market_item.owner_code；没上架过的连接器为空，前端不渲染 @作者） */
   ownerCode?: string;

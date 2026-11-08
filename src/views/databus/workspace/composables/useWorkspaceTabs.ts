@@ -338,7 +338,7 @@ export function useWorkspaceTabs() {
     return wb.open({
       key,
       kind: 'connection-form',
-      title: title ?? (id === 'new' ? '新建连接' : '连接配置'),
+      title: title ?? (id === 'new' ? '新建连接' : '编辑连接'),
       code: '',
       formId: id,
       dirty: false

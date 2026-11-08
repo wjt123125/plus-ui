@@ -74,6 +74,8 @@ export interface PropShowWhen {
   ne?: string | null;
   in?: string[] | null;
   notIn?: string[] | null;
+  /** 空值条件：true=依据字段为空才显示；false=依据字段已填才显示 */
+  empty?: boolean | null;
 }
 
 /** 物料配置字段 schema */
@@ -84,6 +86,11 @@ export interface PropSchema {
   label?: string | null;
   /** 说明文案（表单项下方小灰字） */
   description?: string | null;
+  /**
+   * 说明呈现方式（连接表单专用）：INLINE=常显在字段下方；留空=收进 ⓘ 提示。
+   * 组件参数表单不设此字段，行为与原先一致（直接显示 description）。
+   */
+  help?: string | null;
   /** 最终控件 */
   widget: WidgetKind;
   /** 是否必填（前端表单拦截） */
@@ -92,6 +99,8 @@ export interface PropSchema {
   exprRole?: ExprRole;
   /** 占位提示 */
   placeholder?: string | null;
+  /** 数值单位后缀（展示用，渲染在数值输入框右侧；如「毫秒」「行」） */
+  unit?: string | null;
   /** 排序；0 表示未显式声明（顺序以 fields 数组为准） */
   order?: number;
   /** select/multiselect 候选 */

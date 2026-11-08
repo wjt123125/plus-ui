@@ -73,6 +73,18 @@
       @update:model-value="emit('update:modelValue', $event)"
     />
 
+    <!-- 带单位的数值：用普通输入框 + append 单位后缀，避免步进控件与居中数字 -->
+    <el-input
+      v-else-if="field.widget === 'NUMBER' && field.unit"
+      class="field-control__numeric"
+      :model-value="numberText"
+      :placeholder="field.placeholder ?? undefined"
+      inputmode="decimal"
+      @update:model-value="updateNumberText"
+    >
+      <template #append>{{ field.unit }}</template>
+    </el-input>
+
     <el-input-number
       v-else-if="field.widget === 'NUMBER'"
       :model-value="numberValue"
@@ -156,6 +168,26 @@ const numberValue = computed(() => {
   return typeof v === 'number' ? v : undefined;
 });
 
+/** 带单位数值的展示文本：保留用户已输入的原文（数字或字符串都回显） */
+const numberText = computed(() => {
+  const v = props.modelValue;
+  return typeof v === 'number' || typeof v === 'string' ? String(v) : '';
+});
+
+/**
+ * 带单位数值的落值：能解析成数字就存数字（连接器侧按数字读取），
+ * 清空存 undefined，解析不了的原样保留交给后端校验，不在前端静默吞掉用户输入。
+ */
+function updateNumberText(text: string) {
+  const trimmed = (text ?? '').trim();
+  if (!trimmed) {
+    emit('update:modelValue', undefined);
+    return;
+  }
+  const parsed = Number(trimmed);
+  emit('update:modelValue', Number.isFinite(parsed) ? parsed : trimmed);
+}
+
 const arrayValue = computed<string[]>(() => {
   const v = props.modelValue;
   return Array.isArray(v) ? (v as unknown[]).map((item) => String(item)) : [];
@@ -190,5 +222,12 @@ function updateJsonText(text: string) {
 <style scoped>
 .field-control {
   width: 100%;
+}
+
+/* 单位后缀：保留分段边框、去掉灰底，让它像输入框里的单位而不是一个按钮 */
+.field-control :deep(.el-input-group__append) {
+  padding: 0 10px;
+  background: transparent;
+  color: var(--el-text-color-secondary);
 }
 </style>

@@ -202,8 +202,8 @@ export interface TypeGroup<T> {
 
 /**
  * 平铺视角分组：按关键字过滤 → 按固定类型顺序拆组 → 丢弃空组。
- * fields 由调用方给：同为「搜物料」，「已装管理」只搜名称/简介（台账行不带展示码），
- * 「我的上架 / 待审核」还要搜 codeDisplay。
+ * fields 由调用方给：同为「搜物料」，「已装管理」搜名称/简介/展示码（展示码由台账接口回填），
+ * 「我的上架 / 待审核」还搜 codeDisplay。
  */
 export function groupByType<T extends { resourceType?: MarketResourceType }>(
   list: T[],

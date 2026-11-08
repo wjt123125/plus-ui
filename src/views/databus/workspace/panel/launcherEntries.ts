@@ -33,7 +33,7 @@ export const LAUNCHER_ENTRIES: LauncherEntry[] = [
   // 图标色独立一档——管理 tab 旧用 settings 绿与「设置」入口同屏撞色，菜单里两者必同屏故错开
   { key: 'market-manage', label: '物料管理', icon: 'lucide:boxes', color: '#F59E0B' },
   // 管理类：与上面创作/市场族隔一条分隔线（对齐 Trae 菜单的创作/工具分段）
-  { key: 'admin-connection', label: '连接配置', icon: 'lucide:inbox', color: '#22B8CF', dividerBefore: true },
+  { key: 'admin-connection', label: '连接管理', icon: 'lucide:inbox', color: '#22B8CF', dividerBefore: true },
   { key: 'admin-execution', label: '执行记录', icon: 'lucide:clock', color: '#4F8EF7' },
   { key: 'admin-monitor', label: '监控大盘', icon: 'lucide:layout-grid', color: '#A371F7' },
   { key: 'admin-alert', label: '告警记录', icon: 'lucide:circle-alert', color: '#FF8A5B' },

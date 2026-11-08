@@ -6,6 +6,7 @@
   组件/链路走三态按钮（打开/已上架去管理/安装弹窗）；连接器走安装记录语义
   （已安装标签/安装/卸载，§15.3 安装＝写一条个人安装记录，不改 def 全局启停；上传者和治理者也都先安装，
    启用/停用与废弃属治理动作，统一收口到「物料管理 → 治理」）。
+  未上架（待审 / 驳回 / 下架）的连接器不给安装入口：后端 install 会拒，按钮留着只会点出报错。
   自身调浏览详情、安装与卸载接口；打开本地副本、已上架跳转、作者筛选一律上抛宿主。
 -->
 <template>
@@ -211,6 +212,11 @@
               <SvgIcon icon-class="lucide:trash-2" /><span>卸载</span>
             </el-button>
           </template>
+          <!-- 未上架的连接器装不了（后端 install 对非 ONLINE 物料与未启用 def 都会拒）：
+               待审核 / 已驳回 / 已下架只给结论，不给「安装」按钮 -->
+          <span v-else-if="item.status !== 'ONLINE'" class="mkti__foot-hint">
+            {{ statusMeta.label }}，暂不可安装；通过审核并启用后才能安装
+          </span>
           <el-button v-else type="primary" :loading="installLoading" @click="onInstallConnector">
             <SvgIcon icon-class="lucide:download" /><span>安装</span>
           </el-button>
@@ -755,6 +761,13 @@ async function onUninstallConnector() {
   display: flex;
   justify-content: flex-end;
   padding: 14px 24px 18px;
+}
+
+/* 底部不可安装的原因：与按钮同排右对齐，只陈述结论，不做成可点的禁用按钮 */
+.mkti__foot-hint {
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--el-text-color-secondary);
 }
 
 .mkti__loading {

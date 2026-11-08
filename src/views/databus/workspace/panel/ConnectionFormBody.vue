@@ -1,10 +1,17 @@
 <!--
   连接表单主体（原 ConnectionForm 弹窗剥壳，2026-10-20 管理页 tab 化）。
-  工作台 connection-form tab 与新窗体 standalone 裸页共用同一份，故不含 el-dialog；
-  结构：head（状态点 + 名称 + enabled 开关）+ 表单 tabs（按连接器 configSchema 的 group 动态生成）+ footer（测试/取消/保存）。
+  工作台 connection-form tab 与新窗体 standalone 裸页共用同一份，故不含 el-dialog。
+
+  结构契约（2026-11-08 schema 驱动改造后）：
+  - 页头（平台壳）拥有：标题、启用开关、连接ID（后端生成，只读）与连接器类型标签；
+  - 平台表单区只放可编辑的平台字段：连接名称；新建时额外提供连接器类型选择（编辑态类型不可变，
+    不再重复渲染一次——页头已经是它的唯一落点）；
+  - 页签只承载连接器自己声明的东西：groups 元数据的顺序即 tab 顺序，字段清单一律来自 configSchema；
+  - 平台字段与备注**绝不进 configSchema**，也绝不写死在前端。
+
   红线：无路由依赖、不 import Layout、不自行 router.push；动作一律 emit 上抛。
-  红线：不出现任何具体连接器的字段名（endpoint/host/…），字段清单一律来自 configSchema（万物皆包）。
-  UI 范式承袭原弹窗（Vercel/Linear 极简留白，label-top + 单列）。
+  红线：不出现任何具体连接器的字段名（endpoint/host/…），也不出现 "基础"/"高级" 这类具体分组名——
+  分组标题、主组、列数、标签位置全部读连接器声明（老包才走「按 group 首次出现顺序」兜底）。
 -->
 <template>
   <div class="conn-body">
@@ -20,39 +27,35 @@
           aria-hidden="true"
         />
       </el-tooltip>
-      <div class="conn-body__title-wrap">
-        <span class="conn-body__title">{{ isEdit ? '编辑连接' : '新建连接' }}</span>
-        <span class="conn-body__code">
-          {{ form.connectionId || '未命名连接ID' }} · {{ currentConnectorLabel }}
-        </span>
-      </div>
+      <span class="conn-body__title">{{ isEdit ? '编辑连接' : '新建连接' }}</span>
+      <span class="conn-body__code">
+        {{ form.connectionId || '连接ID 保存后生成' }} · {{ currentConnectorLabel }}
+      </span>
       <span class="conn-body__spacer" />
-      <el-switch v-model="form.enabled" active-value="Y" inactive-value="N" size="small" />
+      <el-tooltip content="停用的连接不会进入运行时连接池" placement="top" :show-after="200">
+        <el-switch v-model="form.enabled" active-value="Y" inactive-value="N" size="small" />
+      </el-tooltip>
     </header>
 
-    <el-form
-      ref="formRef"
-      v-loading="detailLoading"
-      :model="form"
-      :rules="rules"
-      label-position="top"
-      class="conn-body__form"
-    >
-      <el-tabs v-model="activeTab" class="conn-body__tabs db-tabs">
-        <el-tab-pane v-for="tab in tabs" :key="tab" :label="tab" :name="tab">
-          <!-- 平台固定字段（与连接器无关），只住第一个 tab -->
-          <template v-if="tab === BASIC_GROUP">
-            <el-form-item label="连接ID" prop="connectionId">
-              <el-input v-model="form.connectionId" maxlength="64" placeholder="全局唯一,如 bpm-prod" />
-            </el-form-item>
-            <el-form-item label="连接名称" prop="connectionName">
-              <el-input v-model="form.connectionName" maxlength="100" placeholder="请输入连接名称" />
-            </el-form-item>
-            <el-form-item label="连接器类型" prop="connectorType">
+    <div class="conn-body__scroll">
+      <div class="conn-body__rail">
+        <!-- 平台字段区：连接名称（新建时再加连接器类型选择；类型在编辑态不可变，只在页头展示一次），
+             外加它们的空态/故障提示。标签在控件上方，与连接器字段同一套 label-top 节奏；
+             提示必须紧跟所属字段，不能被分割线划到连接器配置那一侧 -->
+        <div class="conn-body__platform">
+          <div class="conn-body__meta">
+            <div class="conn-body__meta-item conn-body__meta-item--grow">
+              <span class="conn-body__meta-label">连接名称</span>
+              <el-input v-model="form.connectionName" maxlength="100" placeholder="给这条连接起个名字" />
+            </div>
+            <!-- 连接器类型：只在新建时可选。编辑态类型不可更改，它的值与连接ID一起放在页头，
+                 同一信息不在同一屏出现两次，也少一个只能看不能点的死控件 -->
+            <div v-if="!isEdit" class="conn-body__meta-item">
+              <span class="conn-body__meta-label">连接器类型</span>
               <el-select
                 v-model="form.connectorType"
                 placeholder="选择连接器类型"
-                style="width: 100%"
+                class="conn-body__meta-type"
                 @change="handleTypeChange"
               >
                 <el-option
@@ -70,42 +73,62 @@
                   </span>
                 </el-option>
               </el-select>
-              <div v-if="!connectorOptions.length" class="conn-body__hint">
-                未取到连接器清单：请确认已有连接器包处于「已上架」，且当前账号具备 databus:connector:list 权限
-              </div>
-              <!-- 已选中的类型后来坏了（编辑存量连接时会遇到）：选项置灰挡不住已存的值，这里补一句人话 -->
-              <div v-if="typeBlockReason" class="conn-body__hint conn-body__hint--warn">{{ typeBlockReason }}</div>
-            </el-form-item>
-          </template>
-
-          <!-- 连接器自己的配置字段：清单/控件/必填/显隐全部来自 configSchema，前端不写死字段名 -->
-          <ConnectionSchemaForm
-            v-if="hasSchema"
-            :model="form.config"
-            :schema="configSchema"
-            :group="tab"
-            :is-edit="isEdit"
-          />
-          <!-- 老包（manifest 没存 configSchema）降级为裸 JSON 编辑，保住可用性 -->
-          <el-form-item v-else-if="tab === BASIC_GROUP && form.connectorType" label="连接配置" prop="config">
-            <el-input
-              v-model="configText"
-              type="textarea"
-              :rows="8"
-              placeholder='连接器配置 JSON，如 {"host":"127.0.0.1","port":5432,"database":"demo","username":"postgres","password":"xxx"}'
-            />
-            <div class="conn-body__hint">
-              该连接器包未提供 configSchema，只能直接填写配置 JSON；敏感字段编辑时留空即沿用旧值
             </div>
-          </el-form-item>
+          </div>
+          <div v-if="!connectorOptions.length && !form.connectorType" class="conn-body__hint">
+            未取到连接器清单：请确认已有连接器包处于「已上架」，且当前账号具备 databus:connector:list 权限
+          </div>
+          <!-- 已选中的类型后来坏了（编辑存量连接时会遇到）：选项置灰挡不住已存的值，这里补一句人话 -->
+          <div v-if="typeBlockReason" class="conn-body__hint conn-body__hint--warn">
+            {{ typeBlockReason }}
+          </div>
+        </div>
 
-          <!-- 备注：平台字段，落在最后一个 tab 末尾 -->
-          <el-form-item v-if="tab === lastTab" label="备注" prop="remark">
-            <el-input v-model="form.remark" type="textarea" :rows="2" maxlength="500" placeholder="请输入备注" />
-          </el-form-item>
-        </el-tab-pane>
-      </el-tabs>
-    </el-form>
+        <el-form
+          ref="formRef"
+          v-loading="detailLoading"
+          :model="form"
+          :rules="rules"
+          label-position="top"
+          class="conn-body__form"
+        >
+          <el-tabs v-model="activeTab" class="conn-body__tabs db-tabs">
+            <el-tab-pane v-for="tab in tabs" :key="tab.key" :label="tab.title" :name="tab.key">
+              <!-- 连接器自己的配置字段：清单/控件/必填/显隐/列数/宽度全部来自声明，前端不写死字段名 -->
+              <ConnectionSchemaForm
+                v-if="hasSchema"
+                :model="form.config"
+                :schema="configSchema"
+                :group="tab.key"
+                :columns="tab.columns"
+                :is-edit="isEdit"
+              />
+              <!-- 老包（manifest 没存 configSchema）降级为裸 JSON 编辑，保住可用性 -->
+              <el-form-item
+                v-else-if="tab.key === firstTabKey && form.connectorType"
+                label="连接配置"
+                prop="config"
+              >
+                <el-input
+                  v-model="configText"
+                  type="textarea"
+                  :rows="8"
+                  placeholder='连接器配置 JSON，如 {"host":"127.0.0.1","port":5432,"database":"demo","username":"postgres","password":"xxx"}'
+                />
+                <div class="conn-body__hint">
+                  该连接器包未提供 configSchema，只能直接填写配置 JSON；敏感字段编辑时留空即沿用旧值
+                </div>
+              </el-form-item>
+
+              <!-- 备注：平台字段，落在最后一个 tab 末尾 -->
+              <el-form-item v-if="tab.key === lastTabKey" label="备注" prop="remark">
+                <el-input v-model="form.remark" type="textarea" :rows="2" maxlength="500" placeholder="请输入备注" />
+              </el-form-item>
+            </el-tab-pane>
+          </el-tabs>
+        </el-form>
+      </div>
+    </div>
 
     <footer class="conn-body__footer">
       <ConnectionTestButton
@@ -137,7 +160,7 @@ import {
 import modal from '@/plugins/modal';
 import ConnectionTestButton from '@/views/databus/connection/ConnectionTestButton.vue';
 import ConnectionSchemaForm from './ConnectionSchemaForm.vue';
-import { BASIC_GROUP, buildConfigRules, schemaGroups } from './connectionSchema';
+import { buildConfigRules, resolveGroups, type ResolvedGroup } from './connectionSchema';
 import { useConnectorOptions } from './useConnectorOptions';
 import type { ConnectionSaved } from '../workbench.types';
 
@@ -182,8 +205,8 @@ const form = ref<ConnectionFormModel>(buildInitFormData());
 
 const isEdit = computed(() => props.connectionId !== 'new');
 
-/* 连接器清单：唯一来源是 def 表（无静态兜底，§15.7）；options 供选择器，schemaOf 供动态表单 */
-const { options: connectorOptions, loadConnectorOptions, connectorLabelOf, schemaOf, healthOf } =
+/* 连接器清单：唯一来源是 def 表（无静态兜底，§15.7）；options 供选择器，schemaOf/groupsOf 供动态表单 */
+const { options: connectorOptions, loadConnectorOptions, connectorLabelOf, schemaOf, groupsOf, healthOf } =
   useConnectorOptions();
 
 /** 当前 connectorType 对应的可读 label */
@@ -208,23 +231,38 @@ const configSchema = computed(() => schemaOf(form.value.connectorType));
 /** 有 schema 才走动态表单，否则降级为裸 JSON 编辑器 */
 const hasSchema = computed(() => Object.keys(configSchema.value).length > 0);
 
-/** tab 清单＝schema 的 group 去重保序（BASIC_GROUP 恒第一）；无 schema 时只剩一个「基础」 */
-const tabs = computed<string[]>(() => {
-  const groups = schemaGroups(configSchema.value);
-  return groups.length > 0 ? groups : [BASIC_GROUP];
+/**
+ * 页签清单＝连接器声明的 groups（顺序即 tab 顺序，主组排第一由声明决定）。
+ * 老包没声明 groups 时由 resolveGroups 按字段 group 首次出现顺序兜底；
+ * 完全没有 schema（降级模式）时给一个承载 JSON 编辑器与备注的单页签。
+ */
+const tabs = computed<ResolvedGroup[]>(() => {
+  const declared = resolveGroups(configSchema.value, groupsOf(form.value.connectorType));
+  if (declared.length > 0) {
+    return declared;
+  }
+  return [
+    {
+      key: 'config',
+      title: '配置',
+      primary: true,
+      columns: 1
+    }
+  ];
 });
 
-/** 备注住最后一个 tab */
-const lastTab = computed(() => tabs.value[tabs.value.length - 1]);
+/** 首个 / 末个页签 key：降级 JSON 编辑器住首个，备注住末个 */
+const firstTabKey = computed(() => tabs.value[0].key);
+const lastTabKey = computed(() => tabs.value[tabs.value.length - 1].key);
 
 /**
- * 激活 tab。换连接器 / 重载后 activeTab 可能停在一个已不存在的分组上（pane 全空），
+ * 激活页签 key。换连接器 / 重载后可能停在一个已不存在的分组上（pane 全空），
  * 一律夹回第一个；不用手动在每处赋值点复位。
  */
-const activeTab = ref(BASIC_GROUP);
+const activeTab = ref('');
 watch(tabs, (list) => {
-  if (!list.includes(activeTab.value)) {
-    activeTab.value = list[0];
+  if (!list.some((t) => t.key === activeTab.value)) {
+    activeTab.value = list[0].key;
   }
 });
 
@@ -260,20 +298,11 @@ const testPayload = computed<SysDatabusConnectionBo>(() => {
 });
 
 /**
- * 校验规则：三个平台固定字段写死，config.* 全部由 schema 生成
- * （键名与 SchemaField 的 namePath 对齐，故 el-form 能按点路径取值）。
+ * 校验规则：平台字段（名称/类型）在页头，走提交时的手工检查；
+ * config.* 全部由 schema 生成（键名与 SchemaField 的 namePath 对齐，故 el-form 能按点路径取值）。
  * 隐藏字段与编辑态的敏感字段由 buildConfigRules 自动跳过。
  */
 const rules = computed<Record<string, unknown>>(() => ({
-  connectionId: [
-    { required: true, message: '连接ID不能为空', trigger: 'blur' },
-    { max: 64, message: '连接ID长度不能超过64', trigger: 'blur' }
-  ],
-  connectionName: [
-    { required: true, message: '连接名称不能为空', trigger: 'blur' },
-    { max: 100, message: '连接名称长度不能超过100', trigger: 'blur' }
-  ],
-  connectorType: [{ required: true, message: '连接器类型不能为空', trigger: 'change' }],
   ...buildConfigRules(configSchema.value, form.value.config, isEdit.value)
 }));
 
@@ -315,7 +344,7 @@ function syncConfigTextFromForm() {
 
 async function reload() {
   form.value = buildInitFormData();
-  activeTab.value = BASIC_GROUP;
+  activeTab.value = tabs.value[0].key;
   configText.value = '';
   if (props.connectionId === 'new') {
     await nextTick();
@@ -326,7 +355,7 @@ async function reload() {
   try {
     const { data } = await getConnection(props.connectionId);
     // config 必须是可变对象：SchemaField 直接原地写 model[name]；老数据可能整列缺省，统一兜成 {}
-    form.value = { ...buildInitFormData(), ...data, config: { ...(data.config ?? {}) } };
+    form.value = { ...buildInitFormData(), ...data, config: { ...data.config } };
     syncConfigTextFromForm();
     await nextTick();
     markBaseline();
@@ -336,6 +365,15 @@ async function reload() {
 }
 
 function handleSubmit() {
+  // 平台字段在页头（不在 el-form 里），先做两道手工检查，再交给 schema 校验
+  if (!form.value.connectionName.trim()) {
+    ElMessage.warning('请填写连接名称');
+    return;
+  }
+  if (!form.value.connectorType) {
+    ElMessage.warning('请选择连接器类型');
+    return;
+  }
   formRef.value?.validate(async (valid: boolean) => {
     if (!valid) {
       return;
@@ -393,22 +431,16 @@ defineExpose({ reload });
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 20px;
+  gap: 12px;
+  padding: 12px 24px;
   border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5);
 }
 
-.conn-body__title-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
 .conn-body__title {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--el-text-color-primary, #1d2129);
+  white-space: nowrap;
 }
 
 .conn-body__code {
@@ -422,6 +454,56 @@ defineExpose({ reload });
 
 .conn-body__spacer {
   flex: 1;
+}
+
+/* 内容区：单栏铁轨 + 最大宽度。表单字段有天然的长度上限，
+   铺满整个工作台宽度会显得松散、控件被拉长，反而比窄栏更难扫读 */
+.conn-body__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 24px 28px;
+}
+
+.conn-body__rail {
+  width: 100%;
+  /* 表单有天然的长度上限：铺满整个工作台会把输入框拉成 900px 的空条，
+     扫读路径变长且控件与内容比例失衡。左对齐窄轨是 Vercel / Linear 设置页的标准做法 */
+  max-width: 640px;
+}
+
+/* 平台字段区（名称/类型 + 提示）：细分割线划开「平台信息」与「连接器配置」——
+   两类字段来源不同，用色彩或卡片区分过重，一条 1px 线足够 */
+.conn-body__platform {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5);
+}
+
+.conn-body__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.conn-body__meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.conn-body__meta-item--grow {
+  flex: 1;
+  min-width: 180px;
+}
+
+.conn-body__meta-label {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--el-text-color-regular);
+}
+
+.conn-body__meta-type {
+  width: 220px;
 }
 
 .conn-body__dot {
@@ -445,20 +527,19 @@ defineExpose({ reload });
 }
 
 .conn-body__form {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 14px 20px 20px;
+  margin-top: 16px;
 
   :deep(.el-form-item) {
-    margin-bottom: 10px;
+    margin-bottom: 14px;
   }
 
+  /* 标签单行、常规字重、次级色：比默认深色加粗更安静，让输入框成为视觉主体 */
   :deep(.el-form-item__label) {
     padding-bottom: 4px;
-    font-weight: 500;
-    color: var(--el-text-color-primary);
+    font-size: 13px;
+    font-weight: 400;
     line-height: 1.5;
+    color: var(--el-text-color-regular);
   }
 
   :deep(.el-form-item__content) {
@@ -469,7 +550,7 @@ defineExpose({ reload });
 /* 页签胶囊样式统一走全局 .db-tabs（databus-tabs），此处只留 pane 内边距修正 */
 .conn-body__tabs {
   :deep(.el-tab-pane) {
-    padding: 0 2px;
+    padding: 2px;
 
     .el-form-item:last-child {
       margin-bottom: 0;
@@ -478,10 +559,10 @@ defineExpose({ reload });
 }
 
 .conn-body__hint {
-  margin-top: 4px;
+  margin-top: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 /* 不可用原因用告警色，与上面的灰色说明分开——它是故障，不是补充说明 */
@@ -502,7 +583,7 @@ defineExpose({ reload });
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 20px;
+  padding: 12px 24px;
   border-top: 1px solid var(--el-border-color-lighter, #ebeef5);
 }
 

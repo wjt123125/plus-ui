@@ -10,6 +10,9 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
+  /* 按内容收缩：轨道放在 flex-col 容器里时默认会被 stretch 拉满整行，分段控件不该通栏 */
+  width: fit-content;
+  max-width: 100%;
   gap: 2px;
   padding: 2px;
   border-radius: 9px;

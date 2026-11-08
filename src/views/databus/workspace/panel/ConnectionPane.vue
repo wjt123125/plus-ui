@@ -50,12 +50,13 @@
             </div>
           </div>
 
-          <!-- 类型筛选 -->
+          <!-- 类型筛选：胶囊轨道/项走全局 .db-seg / .db-seg__item（databus-tabs），与物料管理同一套 -->
           <div class="filter-bar">
-            <div class="filter-tabs">
+            <div class="db-seg">
               <button
-                class="filter-tab"
-                :class="{ active: !queryParams.connectorType }"
+                type="button"
+                class="db-seg__item"
+                :class="{ 'is-active': !queryParams.connectorType }"
                 @click="changeConnectorType('')"
               >
                 全部类型
@@ -63,8 +64,9 @@
               <button
                 v-for="item in connectorOptions"
                 :key="item.value"
-                class="filter-tab"
-                :class="{ active: queryParams.connectorType === item.value }"
+                type="button"
+                class="db-seg__item"
+                :class="{ 'is-active': queryParams.connectorType === item.value }"
                 @click="changeConnectorType(item.value)"
               >
                 {{ item.label }}
@@ -73,24 +75,27 @@
           </div>
 
           <!-- 状态筛选 -->
-          <div class="status-bar">
+          <div class="db-seg">
             <button
-              class="filter-tab status-tab"
-              :class="{ active: !queryParams.enabled }"
+              type="button"
+              class="db-seg__item"
+              :class="{ 'is-active': !queryParams.enabled }"
               @click="changeEnabled('')"
             >
               全部状态
             </button>
             <button
-              class="filter-tab status-tab"
-              :class="{ active: queryParams.enabled === 'Y' }"
+              type="button"
+              class="db-seg__item"
+              :class="{ 'is-active': queryParams.enabled === 'Y' }"
               @click="changeEnabled('Y')"
             >
               启用
             </button>
             <button
-              class="filter-tab status-tab"
-              :class="{ active: queryParams.enabled === 'N' }"
+              type="button"
+              class="db-seg__item"
+              :class="{ 'is-active': queryParams.enabled === 'N' }"
               @click="changeEnabled('N')"
             >
               禁用
@@ -374,7 +379,7 @@ const handleUpdate = (row: Partial<SysDatabusConnectionVo>) => {
     activeFormId.value = row.id;
     return;
   }
-  emit('open', row.id, row.connectionName ?? '连接配置');
+  emit('open', row.id, row.connectionName ?? '编辑连接');
 };
 
 /** 对象视图保存成功：embedded 回列表并刷新；否则上抛宿主 */
@@ -654,47 +659,7 @@ watch(
   flex-wrap: wrap;
 }
 
-.filter-tabs {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.filter-tab {
-  padding: 6px 16px;
-  border-radius: 9999px;
-  border: 1px solid var(--el-border-color, #e8eaec);
-  background: var(--el-bg-color, #fff);
-  color: var(--el-text-color-regular, #363b41);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  transition: all 0.2s ease;
-
-  &:hover {
-    border-color: var(--el-color-primary);
-    color: var(--el-color-primary);
-    box-shadow: 0 2px 6px rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.1);
-  }
-
-  &.active {
-    background-color: var(--el-color-primary);
-    border-color: var(--el-color-primary);
-    color: #fff;
-  }
-
-  &.status-tab.active {
-    background-color: var(--el-color-success);
-    border-color: var(--el-color-success);
-  }
-}
-
-.status-bar {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
+/* 筛选分段样式由全局 .db-seg / .db-seg__item 提供（databus-tabs），此处不再自造 tab 外观 */
 
 /* 行内视觉细节：行布局/浮起/外框都来自基元（.db-row / .db-float / .db-list--framed），
    这里只处理本页特有的着色与排布，勿再在这里写行高、内边距或卡片外观。 */
