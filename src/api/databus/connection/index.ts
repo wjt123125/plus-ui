@@ -95,7 +95,10 @@ export function testConnection(
   return request({
     url: '/databus/connection/test',
     method: 'post',
-    data
+    data,
+    // 探活是只读的幂等探测（不落库），不该吃全局 500ms「重复提交」拦截：
+    // 否则连点/改完密码立刻重测会被拦成「数据正在处理，请勿重复提交」，与真实测试结果混在一起
+    headers: { repeatSubmit: false }
   });
 }
 

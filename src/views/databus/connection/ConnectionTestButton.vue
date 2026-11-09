@@ -49,6 +49,11 @@ const props = withDefaults(
 const loading = ref(false);
 
 async function handleTest() {
+  // 探活要等后端实测（最长 3 秒），期间按钮虽置 loading，但连点仍可能在同一帧里再次进来：
+  // 显式锁住，保证一次点击只发一条 POST
+  if (loading.value) {
+    return;
+  }
   const form = props.formData;
   if (!form.connectorType) {
     ElMessage.warning('请先选择连接器类型');

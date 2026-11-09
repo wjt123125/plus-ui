@@ -26,20 +26,20 @@
         <span class="cf-head__code">{{ form.componentCode || '未命名编码' }}</span>
       </div>
       <span class="cf-head__spacer" />
-      <!-- Safari 分段控件（macOS 工具栏式）：两侧 spacer 把它居中在标题与开关之间的空白区 -->
-      <nav class="cf-head__seg db-seg" aria-label="表单分段">
-        <button
-          v-for="tab in FORM_TABS"
-          :key="tab.name"
-          type="button"
-          class="cf-seg db-seg__item"
-          :class="{ 'is-active': activeTab === tab.name }"
-          @click="activeTab = tab.name"
-        >
-          {{ tab.title }}
-          <i v-if="invalidTabs.has(tab.name)" class="cf-seg__dot" aria-label="校验未通过" />
-        </button>
-      </nav>
+      <!-- Safari 分段控件（macOS 工具栏式）：统一走 DbSeg，选中块跟手滑动 -->
+      <DbSeg
+        class="cf-head__seg"
+        item-class="cf-seg"
+        aria-label="表单分段"
+        :options="formTabOptions"
+        :model-value="activeTab"
+        @change="onFormTabChange"
+      >
+        <template #item="{ option }">
+          {{ option.label }}
+          <i v-if="isTabInvalid(option.value)" class="cf-seg__dot" aria-label="校验未通过" />
+        </template>
+      </DbSeg>
       <span class="cf-head__spacer" />
       <!-- 启停是治理专属动作（databus:component:toggle），与「保存组件」拆权限：
            编辑态拨开关即调独立启停端点，不再随整包提交（后端 edit 已剥离 status）；新增态只是本地草稿 -->
@@ -102,6 +102,7 @@ import AppearanceTab from '@/views/databus/component/form/tabs/AppearanceTab.vue
 import BasicTab from '@/views/databus/component/form/tabs/BasicTab.vue';
 import ParamsTab from '@/views/databus/component/form/tabs/ParamsTab.vue';
 import ScriptTab from '@/views/databus/component/form/tabs/ScriptTab.vue';
+import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
 import type { ComponentSaved, FormPreset } from '../workbench.types';
 import { useCompileConsole } from '@/views/databus/workbench/composables/useCompileConsole';
 
@@ -142,6 +143,18 @@ const FORM_TABS: { name: TabName; title: string }[] = [
   { name: 'script', title: '执行体' },
   { name: 'advanced', title: '高级' }
 ];
+
+/** DbSeg 段选项（value 用 TabName，选中态与 activeTab 同源） */
+const formTabOptions = computed(() => FORM_TABS.map((tab) => ({ label: tab.title, value: tab.name })));
+
+function onFormTabChange(value: string | number) {
+  activeTab.value = value as TabName;
+}
+
+/** 段上红点：该分段内有校验未通过字段 */
+function isTabInvalid(value: string | number) {
+  return invalidTabs.value.has(value as TabName);
+}
 
 const form = ref<ComponentFormModel>(defaultForm());
 

@@ -53,19 +53,12 @@
             clearable
             @change="handleRecordDateChange"
           />
-          <!-- 状态分段：胶囊轨道/项走全局 .db-seg / .db-seg__item（databus-tabs），与物料管理同一套 -->
-          <div class="db-seg">
-            <button
-              v-for="s in STATUS_OPTIONS"
-              :key="s.value"
-              type="button"
-              class="db-seg__item"
-              :class="{ 'is-active': recordQuery.status === s.value }"
-              @click="changeRecordStatus(s.value)"
-            >
-              {{ s.label }}
-            </button>
-          </div>
+          <!-- 状态分段：统一走 DbSeg（全局 .db-seg 轨道 + 滑动滑块） -->
+          <DbSeg
+            :options="STATUS_OPTIONS"
+            :model-value="recordQuery.status"
+            @change="(v) => changeRecordStatus(String(v))"
+          />
         </div>
 
         <!-- 行列表（连接器管理同款）替代 el-table：一次告警一行，右侧触发/恢复时间 -->
@@ -146,6 +139,7 @@ import type {
 } from '@/api/databus/alert/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
+import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
 
 /**
  * 告警记录 pane：只读历史告警列表（分页/筛选）+ 手动评估。

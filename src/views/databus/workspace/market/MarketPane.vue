@@ -23,32 +23,7 @@
     </header>
 
     <div class="mkt__bar">
-      <div class="db-seg">
-        <button
-          type="button"
-          class="db-seg__item"
-          :class="{ 'is-active': activeType === 'COMPONENT' }"
-          @click="market.switchType('COMPONENT')"
-        >
-          组件
-        </button>
-        <button
-          type="button"
-          class="db-seg__item"
-          :class="{ 'is-active': activeType === 'CHAIN' }"
-          @click="market.switchType('CHAIN')"
-        >
-          链路
-        </button>
-        <button
-          type="button"
-          class="db-seg__item"
-          :class="{ 'is-active': activeType === 'CONNECTOR' }"
-          @click="market.switchType('CONNECTOR')"
-        >
-          连接器
-        </button>
-      </div>
+      <DbSeg :options="TYPE_OPTIONS" :model-value="activeType" @change="onTypeChange" />
       <el-input
         v-model="keyword"
         class="mkt__search"
@@ -218,12 +193,20 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import modal from '@/plugins/modal';
 import { useUserStore } from '@/store/modules/user';
-import type { DatabusMarketItemVo } from '@/api/databus/market/types';
+import type { DatabusMarketItemVo, MarketResourceType } from '@/api/databus/market/types';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import type { MarketScope } from '../workbench.types';
 import { useMarketData, marketNavIntent, showChainInstallResult } from './useMarketData';
 import { connectorDefs, connectorHealthMeta, itemIcon, loadConnectorDefs } from './marketDisplay';
 import MarketInstallDialog from './MarketInstallDialog.vue';
+import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
+
+/** 物料类型段选项 */
+const TYPE_OPTIONS = [
+  { label: '组件', value: 'COMPONENT' },
+  { label: '链路', value: 'CHAIN' },
+  { label: '连接器', value: 'CONNECTOR' }
+];
 
 defineOptions({ name: 'MarketPane' });
 
@@ -249,6 +232,11 @@ const emit = defineEmits<{
 
 const market = useMarketData();
 const { categories, loading, activeType, activeChip, ownerCode, groups, installedCounts, mineCounts } = market;
+
+/** 切类型：沿用 market.switchType（重置 chip/关键词并重拉） */
+function onTypeChange(value: string | number) {
+  void market.switchType(value as MarketResourceType);
+}
 
 /** 分类 chips 按当前分段过滤：分类的适用类型匹配才出现，空串＝通用（三个分段都出现） */
 const categoryChips = computed(() =>

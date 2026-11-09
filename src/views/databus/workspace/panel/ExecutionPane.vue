@@ -77,19 +77,12 @@
             />
           </div>
 
-          <!-- 状态分段：胶囊轨道/项走全局 .db-seg / .db-seg__item（databus-tabs），与物料管理同一套 -->
-          <div class="db-seg">
-            <button
-              v-for="s in STATUS_OPTIONS"
-              :key="s.value"
-              type="button"
-              class="db-seg__item"
-              :class="{ 'is-active': queryParams.status === s.value }"
-              @click="changeStatus(s.value)"
-            >
-              {{ s.label }}
-            </button>
-          </div>
+          <!-- 状态分段：统一走 DbSeg（全局 .db-seg 轨道 + 滑动滑块） -->
+          <DbSeg
+            :options="STATUS_OPTIONS"
+            :model-value="queryParams.status"
+            @change="(v) => changeStatus(String(v))"
+          />
 
           <!-- 行列表替代 el-table：一次执行一行，右侧起止时间与耗时，行尾详情/重跑。
                首屏用骨架屏占位，翻页/筛选仍走容器遮罩 loading -->
@@ -199,6 +192,7 @@ import { useLoading } from '@/hooks/async/useLoading';
 import ManualExecuteDialog from '@/views/databus/execution/ManualExecuteDialog.vue';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import ExecutionRecordBody from './ExecutionRecordBody.vue';
+import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
 
 /* 行图标走离线 lucide 子集，否则内网环境图标空白（详见 useLucideSubset 注释） */
 useLucideSubset();

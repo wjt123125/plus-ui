@@ -40,11 +40,8 @@ const LUCIDE_SUBSET: IconifyJSON = {
     'panel-bottom-open': {
       body: `<g ${S}><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18M9 10l3-3l3 3"/></g>`
     },
-    // 用户区下拉（§7 改造点3）：展开箭头、个人中心、退出登录
+    // 用户区下拉（§7 改造点3）：展开箭头、退出登录
     'chevron-down': { body: `<path ${S} d="m6 9l6 6l6-6"/>` },
-    'user-round': {
-      body: `<g ${S}><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></g>`
-    },
     'log-out': {
       body: `<g ${S}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17l5-5l-5-5"/><path d="M21 12H9"/></g>`
     },

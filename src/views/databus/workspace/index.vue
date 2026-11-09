@@ -35,7 +35,7 @@
       >
         <!-- 侧栏底部用户区（n8n 式，§7 改造点3）：头像+昵称+角色整行下拉，替代原 header 右上角用户胶囊 -->
         <template #footer>
-          <WorkbenchUserBar admin-entry @profile="goProfile" @admin="goAdmin" @logout="onLogout" />
+          <WorkbenchUserBar settings-entry @settings="goSettings" @logout="onLogout" />
         </template>
       </AiAssistantRail>
       <Splitter v-if="!aiCollapsed" v-model="aiWidth" :min="AI_MIN_WIDTH" />
@@ -214,16 +214,11 @@ const togglingCode = ref<string>();
 const wb = useWorkspaceTabs();
 const { tabs, activeKey } = wb;
 
-/** 后台管理入口（§7 改造点3）：新标签页打开 RuoYi 后台首页（菜单项可见性由 WorkbenchUserBar 内 checkRole 门控），不中断工作台当前任务 */
+/** 设置入口（§7 改造点3）：壳内开设置 tab（全局单例），不再跳 RuoYi 后台 */
 const router = useRouter();
 const userStore = useUserStore();
-function goAdmin() {
-  const { href } = router.resolve('/index');
-  window.open(href, '_blank');
-}
-/** 个人中心（§7 改造点3）：进 RuoYi 个人中心页 */
-function goProfile() {
-  router.push('/user/profile');
+function goSettings() {
+  wb.openSettings();
 }
 /** 退出登录（§7 改造点3）：确认后复用 RuoYi 登出链路（/auth/logout + 清 token + 回登录页） */
 function onLogout() {

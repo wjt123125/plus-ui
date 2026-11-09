@@ -31,45 +31,14 @@
 
     <!-- 视角分段：待审核数量红色冒泡（有任务才显示）；搜索与视角同行 -->
     <div class="mkt__scopes">
-      <div class="db-seg">
-        <button type="button" class="db-seg__item" :class="{ 'is-active': scope === 'installed' }" @click="switchScope('installed')">
-          已装管理
-        </button>
-        <button type="button" class="db-seg__item" :class="{ 'is-active': scope === 'mine' }" @click="switchScope('mine')">
-          我的上架
-        </button>
-        <!-- 全局治理入口：与「审核」分开——审核管物料能不能上市场，治理管运行时能不能跑。
-             先只放连接器（启停/废弃/卸载），后续组件、链路的治理项也收到这里 -->
-        <button
-          v-if="canGovern"
-          type="button"
-          class="db-seg__item"
-          :class="{ 'is-active': scope === 'governance' }"
-          @click="switchScope('governance')"
-        >
-          物料治理
-        </button>
-        <!-- 分类是治理动作（增删改与合并），与「物料治理」同角色门槛 -->
-        <button
-          v-if="canGovern"
-          type="button"
-          class="db-seg__item"
-          :class="{ 'is-active': scope === 'category' }"
-          @click="switchScope('category')"
-        >
-          物料分类
-        </button>
-        <button
-          v-hasPermi="['databus:market:review']"
-          type="button"
-          class="db-seg__item"
-          :class="{ 'is-active': scope === 'pending' }"
-          @click="switchScope('pending')"
-        >
-          待审核
-          <span v-if="pendingTotal" class="mkt__bubble">{{ pendingTotal > 99 ? '99+' : pendingTotal }}</span>
-        </button>
-      </div>
+      <DbSeg :options="scopeOptions" :model-value="scope" @change="onScopeChange">
+        <template #item="{ option }">
+          {{ option.label }}
+          <span v-if="option.badge" class="mkt__bubble">
+            {{ Number(option.badge) > 99 ? '99+' : option.badge }}
+          </span>
+        </template>
+      </DbSeg>
       <el-input v-if="scope !== 'category'" v-model="manageKeyword" class="mkt__search" placeholder="搜索物料" clearable size="small">
         <template #prefix><SvgIcon icon-class="lucide:search" /></template>
       </el-input>
@@ -401,6 +370,7 @@ import { listConnection } from '@/api/databus/connection';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import { isBrandIconName } from '@/views/databus/workbench/composables/useBrandIcons';
 import StatusDot from '../components/StatusDot.vue';
+import DbSeg, { type DbSegOption } from '@/views/databus/workspace/components/DbSeg.vue';
 import MarketGroupHeader from './MarketGroupHeader.vue';
 import MarketCategoryPane from './MarketCategoryPane.vue';
 import type { MarketScope } from '../workbench.types';
@@ -521,6 +491,11 @@ async function switchScope(next: MarketScope): Promise<void> {
   await loadScope(next);
 }
 
+/** DbSeg 上抛的视角值转 MarketScope，统一走 switchScope */
+function onScopeChange(value: string | number) {
+  void switchScope(value as MarketScope);
+}
+
 /* 宿主改了 tab.marketScope（市场卡片「已上架」/ 空态「去上架」带着视角聚焦过来）→ 跟上 */
 watch(
   () => props.scope,
@@ -609,6 +584,24 @@ const manageSub = computed(
 
 /** 待审核总数（红色冒泡：有任务才显示，>99 显 99+；处理完自动归零消失） */
 const pendingTotal = computed(() => pending.value.length);
+
+/**
+ * 视角段选项：治理/审核入口按能力决定是否成为选项——滑块只按实际渲染的段测量，
+ * 靠 v-if/v-hasPermi 留在模板里会让位移错位；待审核角标也并进选项，随段一起刷新。
+ */
+const scopeOptions = computed<DbSegOption[]>(() => {
+  const options: DbSegOption[] = [
+    { label: '已装管理', value: 'installed' },
+    { label: '我的上架', value: 'mine' }
+  ];
+  if (canGovern.value) {
+    options.push({ label: '物料治理', value: 'governance' }, { label: '物料分类', value: 'category' });
+  }
+  if (hasPermi('databus:market:review')) {
+    options.push({ label: '待审核', value: 'pending', badge: pendingTotal.value });
+  }
+  return options;
+});
 
 /** 我的上架 / 待审核：整表按关键字（名称/简介/展示码）过滤后按类型拆组，空组丢弃 */
 const mineGroups = computed(() => groupByType(mine.value, manageKeyword.value, ['name', 'summary', 'codeDisplay']));

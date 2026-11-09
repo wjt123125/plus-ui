@@ -50,57 +50,21 @@
             </div>
           </div>
 
-          <!-- 类型筛选：胶囊轨道/项走全局 .db-seg / .db-seg__item（databus-tabs），与物料管理同一套 -->
+          <!-- 类型筛选：统一走 DbSeg（全局 .db-seg 轨道 + 滑动滑块） -->
           <div class="filter-bar">
-            <div class="db-seg">
-              <button
-                type="button"
-                class="db-seg__item"
-                :class="{ 'is-active': !queryParams.connectorType }"
-                @click="changeConnectorType('')"
-              >
-                全部类型
-              </button>
-              <button
-                v-for="item in connectorOptions"
-                :key="item.value"
-                type="button"
-                class="db-seg__item"
-                :class="{ 'is-active': queryParams.connectorType === item.value }"
-                @click="changeConnectorType(item.value)"
-              >
-                {{ item.label }}
-              </button>
-            </div>
+            <DbSeg
+              :options="typeOptions"
+              :model-value="queryParams.connectorType"
+              @change="(v) => changeConnectorType(String(v))"
+            />
           </div>
 
           <!-- 状态筛选 -->
-          <div class="db-seg">
-            <button
-              type="button"
-              class="db-seg__item"
-              :class="{ 'is-active': !queryParams.enabled }"
-              @click="changeEnabled('')"
-            >
-              全部状态
-            </button>
-            <button
-              type="button"
-              class="db-seg__item"
-              :class="{ 'is-active': queryParams.enabled === 'Y' }"
-              @click="changeEnabled('Y')"
-            >
-              启用
-            </button>
-            <button
-              type="button"
-              class="db-seg__item"
-              :class="{ 'is-active': queryParams.enabled === 'N' }"
-              @click="changeEnabled('N')"
-            >
-              禁用
-            </button>
-          </div>
+          <DbSeg
+            :options="ENABLED_OPTIONS"
+            :model-value="queryParams.enabled"
+            @change="(v) => changeEnabled(String(v))"
+          />
 
           <!-- 连接列表：框与 16px 留白由 .db-list--framed 提供，行布局与浮起由 .db-row / .db-float 提供
                （见 _primitives.scss），本页不再自写卡片外观。
@@ -241,6 +205,7 @@ import modal from '@/plugins/modal';
 import ConnectionFormBody from './ConnectionFormBody.vue';
 import { findMissingRequired } from './connectionSchema';
 import { useConnectorOptions } from './useConnectorOptions';
+import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
 import { versionLabel } from '../market/marketDisplay';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import { isBrandIconName } from '@/views/databus/workbench/composables/useBrandIcons';
@@ -287,6 +252,18 @@ const queryParams = ref<SysDatabusConnectionQuery>({
   connectorType: '',
   enabled: ''
 });
+
+/** 连接器类型段选项：全部类型 + 后端字典（字典为空时只剩全部） */
+const typeOptions = computed(() => [
+  { value: '', label: '全部类型' },
+  ...connectorOptions.value.map((item) => ({ value: item.value, label: item.label }))
+]);
+
+const ENABLED_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: 'Y', label: '启用' },
+  { value: 'N', label: '禁用' }
+];
 
 /** 连接器类型值转展示文案，未知类型原样显示 */
 const connectorTypeLabel = (value?: string) => connectorLabelOf(value);

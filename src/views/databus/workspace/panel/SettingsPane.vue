@@ -79,19 +79,12 @@
               :value="item.value"
             />
           </el-select>
-          <!-- 状态分段：胶囊轨道/项走全局 .db-seg / .db-seg__item（databus-tabs），与物料管理同一套 -->
-          <div class="db-seg">
-            <button
-              v-for="s in ENABLED_OPTIONS"
-              :key="s.value"
-              type="button"
-              class="db-seg__item"
-              :class="{ 'is-active': ruleQuery.enabled === s.value }"
-              @click="changeEnabled(s.value)"
-            >
-              {{ s.label }}
-            </button>
-          </div>
+          <!-- 状态分段：统一走 DbSeg（全局 .db-seg 轨道 + 滑动滑块） -->
+          <DbSeg
+            :options="ENABLED_OPTIONS"
+            :model-value="ruleQuery.enabled"
+            @change="(v) => changeEnabled(String(v))"
+          />
         </div>
 
         <div class="table-card">
@@ -183,10 +176,7 @@
               <div class="setting-row__label">主题</div>
               <div class="setting-row__desc">选择浅色或深色界面</div>
             </div>
-            <el-radio-group v-model="themeMode" @change="handleThemeChange">
-              <el-radio-button value="light">浅色</el-radio-button>
-              <el-radio-button value="dark">深色</el-radio-button>
-            </el-radio-group>
+            <DbSeg v-model="themeMode" :options="THEME_OPTIONS" @change="handleThemeChange" />
           </div>
         </section>
 
@@ -231,6 +221,7 @@ import {
 import type { DatabusAlertRuleQuery, DatabusAlertRuleVo } from '@/api/databus/alert/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import AlertRuleForm from '@/views/databus/alert/AlertRuleForm.vue';
+import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
 
 /**
  * 设置 pane：左导航 + 右内容。
@@ -284,7 +275,7 @@ const isDark = useDark({
 });
 const themeMode = computed({
   get: () => (isDark.value ? 'dark' : 'light'),
-  set: (v: string) => {
+  set: (v: string | number) => {
     isDark.value = v === 'dark';
   }
 });
@@ -303,6 +294,11 @@ const ENABLED_OPTIONS = [
   { value: '', label: '全部' },
   { value: 'Y', label: '启用' },
   { value: 'N', label: '停用' }
+];
+
+const THEME_OPTIONS = [
+  { value: 'light', label: '浅色' },
+  { value: 'dark', label: '深色' }
 ];
 
 /* ------------------------------ 规则 ------------------------------ */
@@ -456,6 +452,12 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   padding: 8px 12px 16px;
+
+  /* 头像不许参与 flex 收缩：昵称过长时信息区占满剩余宽度，
+     头像若被压缩（宽<高）圆就变成竖椭圆 */
+  :deep(.el-avatar) {
+    flex-shrink: 0;
+  }
 }
 
 .settings-user__info {

@@ -2,11 +2,13 @@
  * databus 页签统一风格（2026-10-24）
  * 唯一基准＝物料市场类型分段：浅灰胶囊轨道 + 白色浮起选中项。
  * 两个入口共用同一视觉，禁止各页面再自造 tab 样式：
- *   - .db-seg / .db-seg__item：按钮式分段（市场类型、新建向导、发布弹窗、组件编辑卡头、终端小页签）
+ *   - .db-seg / .db-seg__item / .db-seg__thumb：按钮式分段，必须用 workspace/components/DbSeg.vue，
+ *     不要手写轨道（thumb 需要组件测量位移；手写会退化成瞬时跳变）
  *   - .db-tabs：el-tabs 复用（市场详情、组件详情、连接器表单、告警表单、抽屉、算子面板）
  * ========================================================================== */
 
 .db-seg {
+  position: relative;
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
@@ -19,8 +21,33 @@
   background: var(--el-fill-color-light, #f5f7fa);
 }
 
+/* 选中滑块：由 DbSeg.vue 注入并按段几何测量后平移；底色/投影交给它，item 只负责文字 */
+.db-seg__thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: 7px;
+  background: var(--el-bg-color, #fff);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform;
+
+  /* 首帧落位完成后再开过渡，避免从左上角 0 宽滑入 */
+  &.is-ready {
+    opacity: 1;
+    transition:
+      transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+      width 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+      height 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 0.12s ease;
+  }
+}
+
 .db-seg__item {
   position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -36,9 +63,7 @@
   border: none;
   border-radius: 7px;
   cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
+  transition: color 0.15s ease;
 
   &:hover {
     color: var(--el-text-color-primary);
@@ -47,8 +72,6 @@
   &.is-active {
     color: var(--el-text-color-primary);
     font-weight: 600;
-    background: var(--el-bg-color, #fff);
-    box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
   }
 }
 

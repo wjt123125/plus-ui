@@ -31,19 +31,8 @@
       <div class="mpub">
         <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="mpub__form">
           <el-form-item label="类型">
-            <!-- 类型分段：胶囊样式统一走全局 .db-seg / .db-seg__item -->
-            <div class="db-seg">
-              <button
-                v-for="opt in TYPE_OPTIONS"
-                :key="opt.value"
-                type="button"
-                class="db-seg__item"
-                :class="{ 'is-active': form.resourceType === opt.value }"
-                @click="setType(opt.value)"
-              >
-                {{ opt.label }}
-              </button>
-            </div>
+            <!-- 类型分段：统一走 DbSeg（全局 .db-seg 轨道 + 滑动滑块） -->
+            <DbSeg :options="TYPE_OPTIONS" :model-value="form.resourceType" @change="onTypeChange" />
           </el-form-item>
 
           <!-- 连接器：上传即上架。包不在别处上传——提交时落包、建 def、建市场物料一起进待审 -->
@@ -138,6 +127,7 @@ import { useMarketData } from './useMarketData';
 import type { MarketPublishedInfo } from './marketDisplay';
 import ResourceSelector from './ResourceSelector.vue';
 import TagSelect from './TagSelect.vue';
+import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
 
 defineOptions({ name: 'MarketPublishPane' });
 
@@ -215,6 +205,11 @@ function setType(type: MarketResourceType) {
   form.tags = [];
   clearPackage();
   formRef.value?.clearValidate('sourceId');
+}
+
+/** DbSeg 上抛的类型值转 MarketResourceType；清空关联字段后滑块随 form.resourceType 落位 */
+function onTypeChange(value: string | number) {
+  setType(value as MarketResourceType);
 }
 
 function pickPackage() {

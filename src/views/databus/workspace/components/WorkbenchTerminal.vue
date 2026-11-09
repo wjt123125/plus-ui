@@ -7,26 +7,19 @@
 <template>
   <section v-if="open" class="ws-term" aria-label="终端">
     <header class="ws-term__head">
-      <nav class="ws-term__tabs db-seg">
-        <button
-          type="button"
-          class="ws-term__tab db-seg__item"
-          :class="{ 'is-active': tab === 'execute' }"
-          @click="switchTab('execute')"
-        >
-          执行
-          <i v-if="exec.errorCount.value" class="ws-term__badge">{{ exec.errorCount.value }}</i>
-        </button>
-        <button
-          type="button"
-          class="ws-term__tab db-seg__item"
-          :class="{ 'is-active': tab === 'compile' }"
-          @click="switchTab('compile')"
-        >
-          编译
-          <i v-if="comp.errorCount.value" class="ws-term__badge">{{ comp.errorCount.value }}</i>
-        </button>
-      </nav>
+      <!-- 终端小页签：统一走 DbSeg（带滑动滑块）；角标内容仍由本页样式渲染 -->
+      <DbSeg
+        class="ws-term__tabs"
+        item-class="ws-term__tab"
+        :options="termOptions"
+        :model-value="tab"
+        @change="onTabChange"
+      >
+        <template #item="{ option }">
+          {{ option.label }}
+          <i v-if="option.badge" class="ws-term__badge">{{ option.badge }}</i>
+        </template>
+      </DbSeg>
       <span class="ws-term__spacer" />
       <el-tooltip content="清空" placement="top" :show-after="300">
         <button type="button" class="ws-term__btn" @click="clearActive">
@@ -48,7 +41,9 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
+import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
 import ExecuteConsole from '@/views/databus/workbench/components/ExecuteConsole.vue';
 import CompileConsole from '@/views/databus/workbench/components/CompileConsole.vue';
 import { useWorkspaceTerminal } from '../composables/useWorkspaceTerminal';
@@ -61,6 +56,16 @@ const emit = defineEmits<{
 }>();
 
 const { open, tab, exec, comp, switchTab, close, clearActive } = useWorkspaceTerminal();
+
+/** 段选项：错误角标并进选项，切段时滑块与角标一起跟手 */
+const termOptions = computed(() => [
+  { label: '执行', value: 'execute', badge: exec.errorCount.value || '' },
+  { label: '编译', value: 'compile', badge: comp.errorCount.value || '' }
+]);
+
+function onTabChange(value: string | number) {
+  switchTab(value === 'compile' ? 'compile' : 'execute');
+}
 
 function onViewRecord(recordId: number | string, title?: string) {
   emit('view-record', recordId, title);

@@ -7,18 +7,12 @@
       </div>
     </header>
     <nav class="create__bar">
-      <div v-if="visibleSegs.length" class="db-seg">
-        <button
-          v-for="seg in visibleSegs"
-          :key="seg.value"
-          type="button"
-          class="db-seg__item"
-          :class="{ 'is-active': currentFiletype === seg.value }"
-          @click="switchFiletype(seg.value)"
-        >
-          {{ seg.label }}
-        </button>
-      </div>
+      <DbSeg
+        v-if="visibleSegs.length"
+        :options="visibleSegs"
+        :model-value="currentFiletype"
+        @change="onSegChange"
+      />
     </nav>
     <main class="create__body">
       <template v-if="visibleSegs.length">
@@ -74,6 +68,7 @@ import ChainFormBody, { type ChainFormSuccessPayload } from '../../chain/ChainFo
 import FormPane from './FormPane.vue';
 import DirectoryFormBody from './DirectoryFormBody.vue';
 import ConnectionFormBody from './ConnectionFormBody.vue';
+import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
 import modal from '@/plugins/modal';
 import { checkPermi } from '@/utils/permission';
 import type { ComponentSaved, ConnectionSaved, CreateFileType, CreateSavedPayload, FormPreset } from '../workbench.types';
@@ -142,6 +137,11 @@ async function switchFiletype(next: CreateFileType) {
   if (next !== props.filetype) {
     emit('filetype-change', next);
   }
+}
+
+/** DbSeg 上抛的段值转资源类型，统一进 switchFiletype（脏确认取消时模型不动，滑块随之回弹） */
+function onSegChange(value: string | number) {
+  void switchFiletype(value as CreateFileType);
 }
 
 /** 外部 openCreate 突变 tab.filetype：进统一切段（脏确认/回滚） */

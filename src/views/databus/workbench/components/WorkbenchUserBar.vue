@@ -1,8 +1,8 @@
 <!--
   工作台侧栏底部用户区（§7 改造点3，n8n 式）：头像 + 昵称 + 角色徽标 + 箭头整行，点击展开下拉
-  （个人中心 / 进入后台 / 退出登录）。数据复用 RuoYi userStore（登录已拉 getInfo，零新接口）；
+  （设置 / 退出登录）。数据复用 RuoYi userStore（登录已拉 getInfo，零新接口）；
   命令一律抛事件由页面统一处理跳转/登出，本组件零路由依赖。
-  「进入后台」adminEntry opt-in + checkRole 角色门控（非后台角色整项隐藏，n8n Owner/Admin 才见管理项模式）。
+  「设置」settingsEntry opt-in：进工作台内的设置 tab（个人中心已并入该 tab，不再单列）。
   2026-10-24 极简化（QLM 参考图）：面板向上弹（top-start）且宽度实测同步下方触发器胶囊
   （ResizeObserver，侧栏拖拽跟着变）；菜单项默认融入底色、hover 才浮胶囊底；去分隔线、
   面板去边框只留阴影。
@@ -25,13 +25,9 @@
     </button>
     <template #dropdown>
       <el-dropdown-menu class="wb-userbar__menu" :style="menuStyle">
-        <el-dropdown-item command="profile">
-          <SvgIcon class="wb-userbar__ico wb-userbar__ico--profile" icon-class="lucide:user-round" />
-          <span>个人中心</span>
-        </el-dropdown-item>
-        <el-dropdown-item v-if="adminEntry && canEnterAdmin" command="admin">
-          <SvgIcon class="wb-userbar__ico wb-userbar__ico--admin" icon-class="lucide:external-link" />
-          <span>进入后台</span>
+        <el-dropdown-item v-if="settingsEntry" command="settings">
+          <SvgIcon class="wb-userbar__ico wb-userbar__ico--settings" icon-class="lucide:settings" />
+          <span>设置</span>
         </el-dropdown-item>
         <el-dropdown-item command="logout" class="wb-userbar__logout">
           <SvgIcon class="wb-userbar__ico wb-userbar__ico--logout" icon-class="lucide:log-out" />
@@ -45,24 +41,21 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useUserStore } from '@/store/modules/user';
-import { checkRole } from '@/utils/permission';
 import { useLucideSubset } from '../composables/useLucideSubset';
 
 defineOptions({ name: 'WorkbenchUserBar' });
 
 withDefaults(
   defineProps<{
-    /** 是否渲染「进入后台」菜单项（opt-in）；undefined = 不渲染 */
-    adminEntry?: boolean;
+    /** 是否渲染「设置」菜单项（opt-in）；undefined = 不渲染 */
+    settingsEntry?: boolean;
   }>(),
   {}
 );
 
 const emit = defineEmits<{
-  /** 点「个人中心」：交页面跳转，本组件零路由依赖 */
-  (e: 'profile'): void;
-  /** 点「进入后台」：交页面跳转，本组件零路由依赖 */
-  (e: 'admin'): void;
+  /** 点「设置」：交页面打开设置 tab，本组件零路由依赖 */
+  (e: 'settings'): void;
   /** 点「退出登录」：交页面处理登出与跳转，本组件零路由依赖 */
   (e: 'logout'): void;
 }>();
@@ -114,20 +107,11 @@ const roleLabel = computed(() => {
   return databusRole ?? '成员';
 });
 
-/** 「进入后台」角色门控：用 @/utils/permission 的 checkRole（v-hasRoles 的 JS 侧同源代码），不自己拼角色数组。
- *  为什么不用 v-hasRoles 指令：el-dropdown-item 根节点是插槽 Fragment（非元素），
- *  指令挂不上 DOM，Vue 会报「Runtime directive used on component with non-element root node」。
- *  superadmin 要显式列进白名单：checkRole 只把 admin 当超管直通，本项目超管 role_key 是 superadmin */
-const canEnterAdmin = computed(() => checkRole(['superadmin', 'admin', 'databus_ops', 'databus_gov']));
-
 /** 下拉命令 → 抛事件：页面统一处理跳转/登出 */
 function handleCommand(command: string) {
   switch (command) {
-    case 'profile':
-      emit('profile');
-      break;
-    case 'admin':
-      emit('admin');
+    case 'settings':
+      emit('settings');
       break;
     case 'logout':
       emit('logout');
@@ -238,15 +222,11 @@ function handleCommand(command: string) {
     }
   }
 
-  /* 菜单项彩色图标：个人中心蓝 / 进入后台绿 / 退出登录红 */
+  /* 菜单项彩色图标：设置绿 / 退出登录红 */
   &__ico {
     font-size: 14px;
 
-    &--profile {
-      color: var(--el-color-primary, #409eff);
-    }
-
-    &--admin {
+    &--settings {
       color: var(--el-color-success, #67c23a);
     }
 

@@ -23,14 +23,6 @@
       label-position="top"
       class="dir-body__form"
     >
-      <el-form-item label="目录名" prop="directoryName">
-        <el-input
-          v-model="form.directoryName"
-          maxlength="100"
-          show-word-limit
-          placeholder="目录名"
-        />
-      </el-form-item>
       <el-form-item label="父目录" prop="parentId">
         <el-tree-select
           v-model="form.parentId"
@@ -40,6 +32,14 @@
           default-expand-all
           style="width: 100%"
           placeholder="根目录"
+        />
+      </el-form-item>
+      <el-form-item label="目录名" prop="directoryName">
+        <el-input
+          v-model="form.directoryName"
+          maxlength="100"
+          show-word-limit
+          placeholder="目录名"
         />
       </el-form-item>
       <el-form-item label="排序号" prop="sort">
