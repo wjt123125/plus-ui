@@ -49,9 +49,6 @@
                 <span class="mpub__pkg-size">{{ sizeLabel(packageFile.size) }}</span>
                 <button type="button" class="mpub__pkg-remove" @click="clearPackage">移除</button>
               </div>
-              <p class="mpub__tip">
-                提交后进入审核，通过并启用后才会装载运行。
-              </p>
             </div>
           </el-form-item>
 
@@ -109,8 +106,6 @@
             />
           </el-form-item>
         </el-form>
-
-        <p class="mpub__tip">标签候选来自该分类的推荐标签与已上架物料（最多 30 个）；新增标签请在「物料分类」里维护。</p>
       </div>
     </div>
   </section>

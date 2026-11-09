@@ -118,8 +118,10 @@ export interface ConnectorDefVo {
   id?: string | number;
   /** 类型键（全局唯一；连接管理页 connectorType 引用此值） */
   type: string;
-  /** 版本号（manifest 声明） */
+  /** 版本号（manifest 声明）。与 type 一起构成连接器身份：同 type 不同 version 是不同连接器 */
   version?: string;
+  /** 构建号（manifest 的 buildNo，缺省 0）。同一 type+version 只有 buildNo 变大才算升级 */
+  buildNo?: number;
   /** 构建模块标识（manifest 的 artifact）；包文件名唯一规则 = {artifact}-{version}.zip */
   artifact?: string;
   /** 引擎档（http / jvm / native） */
@@ -220,6 +222,8 @@ export interface ConnectorPackageInspect {
   type?: string;
   /** 版本号 */
   version?: string;
+  /** 构建号（manifest 的 buildNo，缺省 0）：同一 type+version 下越大越新 */
+  buildNo?: number;
   /** 引擎档（http / jvm / native） */
   engine?: string;
   /** 实现类全限定名 */

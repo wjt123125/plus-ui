@@ -48,21 +48,22 @@
               <span class="conn-body__meta-label">连接名称</span>
               <el-input v-model="form.connectionName" maxlength="100" placeholder="给这条连接起个名字" />
             </div>
-            <!-- 连接器类型：只在新建时可选。编辑态类型不可更改，它的值与连接ID一起放在页头，
+            <!-- 连接器类型：只在新建时可选。同 type 多版本共存，选择项是「连接器 + 版本」，
+                 落库锁 connectorDefId；编辑态不可更改，它的值与连接ID一起放在页头，
                  同一信息不在同一屏出现两次，也少一个只能看不能点的死控件 -->
             <div v-if="!isEdit" class="conn-body__meta-item">
-              <span class="conn-body__meta-label">连接器类型</span>
+              <span class="conn-body__meta-label">连接器版本</span>
               <el-select
-                v-model="form.connectorType"
-                placeholder="选择连接器类型"
+                v-model="form.connectorDefId"
+                placeholder="选择连接器与版本"
                 class="conn-body__meta-type"
-                @change="handleTypeChange"
+                @change="handleDefChange"
               >
                 <el-option
-                  v-for="opt in connectorOptions"
+                  v-for="opt in defOptions"
                   :key="opt.value"
                   :label="opt.label"
-                  :value="opt.value"
+                  :value="opt.defId"
                   :disabled="!opt.usable"
                 >
                   <span>{{ opt.label }}</span>
@@ -75,7 +76,7 @@
               </el-select>
             </div>
           </div>
-          <div v-if="!connectorOptions.length && !form.connectorType" class="conn-body__hint">
+          <div v-if="!defOptions.length && !form.connectorType" class="conn-body__hint">
             未取到连接器清单：请确认已有连接器包处于「已上架」，且当前账号具备 databus:connector:list 权限
           </div>
           <!-- 已选中的类型后来坏了（编辑存量连接时会遇到）：选项置灰挡不住已存的值，这里补一句人话 -->
@@ -196,6 +197,7 @@ const buildInitFormData = (): ConnectionFormModel => ({
   connectionId: '',
   connectionName: '',
   connectorType: '',
+  connectorDefId: undefined,
   enabled: 'Y',
   remark: '',
   config: {}
@@ -205,12 +207,26 @@ const form = ref<ConnectionFormModel>(buildInitFormData());
 
 const isEdit = computed(() => props.connectionId !== 'new');
 
-/* 连接器清单：唯一来源是 def 表（无静态兜底，§15.7）；options 供选择器，schemaOf/groupsOf 供动态表单 */
-const { options: connectorOptions, loadConnectorOptions, connectorLabelOf, schemaOf, groupsOf, healthOf } =
+/* 连接器清单：唯一来源是 def 表（无静态兜底，§15.7）；defOptions 供版本级选择，
+   schemaOf/groupsOf/healthOf 按 (type, version) 精确取，存量回显用 defById */
+const { defOptions, loadConnectorOptions, connectorLabelOf, defOf, defById, schemaOf, groupsOf, healthOf } =
   useConnectorOptions();
 
-/** 当前 connectorType 对应的可读 label */
-const currentConnectorLabel = computed(() => connectorLabelOf(form.value.connectorType));
+/** 当前锁定的 def 行：优先按 connectorDefId 精确命中；存量连接没锁版本时按 type 取最新启用版兜底 */
+const currentDef = computed(() => defById(form.value.connectorDefId) ?? defOf(form.value.connectorType));
+
+/** 当前 def 的主键（统一成 number 提交；未取到为 undefined） */
+const currentDefId = computed<number | undefined>(() => {
+  const id = currentDef.value?.id;
+  return id === undefined || id === null || id === '' ? undefined : Number(id);
+});
+
+/** 当前连接器（含版本）的可读标签 */
+const currentConnectorLabel = computed(() => {
+  const label = connectorLabelOf(form.value.connectorType);
+  const version = currentDef.value?.version;
+  return version ? `${label} · v${version}` : label;
+});
 
 /**
  * 当前所选连接器不可用时的原因（§4.2.1：缺驱动 / 未装载 / 未启用一律挡新建连接）。
@@ -221,12 +237,12 @@ const typeBlockReason = computed(() => {
   if (!type) {
     return '';
   }
-  const health = healthOf(type);
+  const health = healthOf(type, currentDef.value?.version);
   return health.usable ? '' : `${health.label}：${health.reason}`;
 });
 
 /** 所选连接器的 configSchema（老包 manifest 没存则为空对象） */
-const configSchema = computed(() => schemaOf(form.value.connectorType));
+const configSchema = computed(() => schemaOf(form.value.connectorType, currentDef.value?.version));
 
 /** 有 schema 才走动态表单，否则降级为裸 JSON 编辑器 */
 const hasSchema = computed(() => Object.keys(configSchema.value).length > 0);
@@ -237,7 +253,7 @@ const hasSchema = computed(() => Object.keys(configSchema.value).length > 0);
  * 完全没有 schema（降级模式）时给一个承载 JSON 编辑器与备注的单页签。
  */
 const tabs = computed<ResolvedGroup[]>(() => {
-  const declared = resolveGroups(configSchema.value, groupsOf(form.value.connectorType));
+  const declared = resolveGroups(configSchema.value, groupsOf(form.value.connectorType, currentDef.value?.version));
   if (declared.length > 0) {
     return declared;
   }
@@ -269,8 +285,13 @@ watch(tabs, (list) => {
 /** 降级模式下的 config JSON 编辑器文本（与 form.config 双向：保存前 parse / 回显时 stringify） */
 const configText = ref('');
 
-/** 换连接器类型：config 是上一个连接器的字段集，必须清空，否则会把无关键提交给新连接器 */
-function handleTypeChange() {
+/**
+ * 切换连接器版本：config 是上一个连接器的字段集，必须清空，否则会把无关键提交给新连接器。
+ * 选项值就是 def 主键，选中即锁定版本；type 从选项里回填（页面标题、标签展示仍按 type）。
+ */
+function handleDefChange(defId: number | string) {
+  const def = defById(defId);
+  form.value.connectorType = def?.type ?? '';
   form.value.config = {};
   configText.value = '';
 }
@@ -281,10 +302,15 @@ function handleTypeChange() {
  * 敏感字段留空**不剥离**：后端 isBlankValue 把 null 与空串同等看待，会自行从库中补齐旧值。
  */
 const testPayload = computed<SysDatabusConnectionBo>(() => {
+  // 带上解析后的 def 主键：存量连接没锁版本时也要按当前回显的那一版测，不能测到别的版本
+  const base: SysDatabusConnectionBo = {
+    ...form.value,
+    connectorDefId: currentDefId.value ?? form.value.connectorDefId
+  };
   if (hasSchema.value) {
-    return { ...form.value };
+    return base;
   }
-  const payload: SysDatabusConnectionBo = { ...form.value };
+  const payload: SysDatabusConnectionBo = { ...base };
   if (!configText.value.trim()) {
     payload.config = undefined;
     return payload;
@@ -371,9 +397,15 @@ function handleSubmit() {
     return;
   }
   if (!form.value.connectorType) {
-    ElMessage.warning('请选择连接器类型');
+    ElMessage.warning('请选择连接器版本');
     return;
   }
+  if (!isEdit.value && !form.value.connectorDefId) {
+    ElMessage.warning('请选择连接器版本');
+    return;
+  }
+  // 锁版：新建必然已选 def；编辑存量连接时把未锁版本的记录锚定到当前回显的那一版
+  form.value.connectorDefId = currentDefId.value ?? form.value.connectorDefId;
   formRef.value?.validate(async (valid: boolean) => {
     if (!valid) {
       return;

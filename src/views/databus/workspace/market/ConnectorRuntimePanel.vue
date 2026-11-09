@@ -81,6 +81,8 @@ const driversOpen = ref(true);
 const props = defineProps<{
   /** 连接器类型键 */
   type: string;
+  /** 连接器版本号：同 type 多版本共存，运行态按 (type, version) 精确取 */
+  version: string;
   /** 连接器没在跑时后端给的人话原因；有值时空态照实说取不到，不再猜「未启用 / 不是 JDBC」 */
   loadProblem?: string | null;
 }>();
@@ -136,13 +138,13 @@ const emptyText = computed(() => {
  * 本组件自己不设闩：el-tab-pane lazy 只会挂一次，重取语义交给宿主更直白。
  */
 onMounted(async () => {
-  if (!props.type || !hasPermi('databus:connector:list')) {
+  if (!props.type || !props.version || !hasPermi('databus:connector:list')) {
     return;
   }
   loading.value = true;
   failed.value = false;
   try {
-    const { data } = await getConnectorRuntimeInfo(props.type);
+    const { data } = await getConnectorRuntimeInfo(props.type, props.version);
     info.value = data ?? null;
   } catch {
     info.value = null; // 拦截器已提示；落空态，不白屏

@@ -66,7 +66,7 @@
               </div>
               <div class="cpk__meta-row">
                 <dt>版本</dt>
-                <dd>{{ versionLabel(defRow.version) || 'dev' }}</dd>
+                <dd>{{ versionLabel(defRow.version) || 'dev' }} (build {{ defRow.buildNo ?? 0 }})</dd>
               </div>
               <div class="cpk__meta-row">
                 <dt>引擎档</dt>
@@ -103,7 +103,12 @@
         <el-tab-pane label="驱动" name="runtime" lazy>
           <div class="cpk__body">
             <!-- key 带重载序号：重载即换装载实例，旧驱动结论不能当现状 -->
-            <ConnectorRuntimePanel :key="`${type}-${runtimeKey}`" :type="type" :load-problem="loadProblem" />
+            <ConnectorRuntimePanel
+              :key="`${type}-${version}-${runtimeKey}`"
+              :type="type"
+              :version="version"
+              :load-problem="loadProblem"
+            />
           </div>
         </el-tab-pane>
       </template>
@@ -120,7 +125,7 @@
               </div>
               <div class="cpk__meta-row">
                 <dt>版本</dt>
-                <dd>{{ versionLabel(inspect?.version || version) }}</dd>
+                <dd>{{ versionLabel(inspect?.version || version) }} (build {{ inspect?.buildNo ?? defRow?.buildNo ?? 0 }})</dd>
               </div>
               <div class="cpk__meta-row">
                 <dt>引擎档</dt>

@@ -94,7 +94,7 @@
             <ul class="mrt__kv">
               <li><span>上架者</span><b>{{ detail.preview?.author || detail.item.ownerCode || '-' }}</b></li>
               <li><span>类型</span><b class="mono">#{{ detail.preview?.code || '-' }}</b></li>
-              <li><span>版本</span><b>v{{ detail.preview?.version || '-' }}</b></li>
+              <li><span>版本</span><b>v{{ detail.preview?.version || '-' }} (build {{ detail.preview?.buildNo ?? 0 }})</b></li>
               <li>
                 <span>启用状态</span>
                 <b>{{ connectorStatusText }}</b>

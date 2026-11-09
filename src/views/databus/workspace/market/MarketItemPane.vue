@@ -23,6 +23,8 @@
           <div class="mkti__badges">
             <el-tag size="small" effect="plain">{{ resourceLabel }}</el-tag>
             <el-tag size="small" :type="statusMeta.type" effect="light">{{ statusMeta.label }}</el-tag>
+            <!-- 已安装是物料的消费态，和上架状态并列放在头部；底部只留安装/卸载动作 -->
+            <el-tag v-if="item.installed" size="small" type="success" effect="light">已安装</el-tag>
           </div>
         </div>
       </header>
@@ -63,6 +65,11 @@
           <div class="mkti__meta-row">
             <dt>展示码</dt>
             <dd>{{ item.codeDisplay }}</dd>
+          </div>
+          <!-- 连接器版本与构建号：物料行不存，详情接口从源 def 行回填（同 type+version 下 buildNo 越大越新） -->
+          <div v-if="item.resourceType === 'CONNECTOR' && item.version" class="mkti__meta-row">
+            <dt>版本</dt>
+            <dd>{{ versionLabel(item.version) }} (build {{ item.buildNo ?? 0 }})</dd>
           </div>
           <div class="mkti__meta-row">
             <dt>上架时间</dt>
@@ -177,7 +184,7 @@
               <div class="mkti__impl-meta">
                 <span class="mkti__impl-meta-code">#{{ connectorDef.type }}</span>
                 <span class="mkti__impl-sep">·</span>
-                <span>{{ versionLabel(connectorDef.version) || '—' }}</span>
+                <span>{{ versionLabel(connectorDef.version) || '—' }} (build {{ connectorDef.buildNo ?? 0 }})</span>
                 <span class="mkti__impl-sep">·</span>
                 <span>引擎档 {{ connectorDef.engine || '—' }}</span>
                 <!-- 信任档是审核结论不是来源推论（§1.3：verified 由审批人勾选，source=ADMIN 不自动带） -->
@@ -196,8 +203,12 @@
              真走了父加载器没人会发现，所以把实际生效的驱动与来源摆出来 -->
         <el-tab-pane v-if="isConnector" label="驱动" name="runtime" lazy>
           <div class="mkti__body">
-            <!-- key 带 type 与重载序号：换物料或启停之后强制重挂重取，不拿旧装载态当现状 -->
-            <ConnectorRuntimePanel :key="`${connectorType ?? ''}-${runtimeKey}`" :type="connectorType ?? ''" />
+            <!-- key 带 type、版本与重载序号：换物料或启停之后强制重挂重取，不拿旧装载态当现状 -->
+            <ConnectorRuntimePanel
+              :key="`${connectorType ?? ''}-${connectorDef?.version ?? ''}-${runtimeKey}`"
+              :type="connectorType ?? ''"
+              :version="connectorDef?.version ?? ''"
+            />
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -207,7 +218,6 @@
              全局启停与废弃属治理动作，收口到「物料管理 → 治理」 -->
         <template v-if="item.resourceType === 'CONNECTOR'">
           <template v-if="item.installed">
-            <el-tag type="success" effect="light">已安装</el-tag>
             <el-button :loading="installLoading" @click="onUninstallConnector">
               <SvgIcon icon-class="lucide:trash-2" /><span>卸载</span>
             </el-button>
@@ -298,8 +308,8 @@ const openImplSections = ref<string[]>(['script']);
 
 /** 首次切到「实现」才请求（懒加载）；仅 ONLINE 物料后端放行，失败按空态展示 */
 async function onTabChange(name: string | number) {
-  // 连接器两页各有各的取数：「实现」在本 pane 拉 def 行，「运行时驱动」由 ConnectorRuntimePanel 挂载即取
-  if (name === 'connectorImpl') {
+  // 连接器两页各有各的取数：「实现」与「运行时驱动」都要先拿到 def 行（版本号是运行时定位键）
+  if (name === 'connectorImpl' || name === 'runtime') {
     await loadConnectorDef();
     return;
   }

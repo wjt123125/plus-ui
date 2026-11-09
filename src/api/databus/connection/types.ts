@@ -13,6 +13,11 @@ export interface SysDatabusConnectionVo {
   connectionName: string;
   /** Connector 类型标识（对应 databus_connector_def.type，如 bpmHttp / jdbc-postgresql） */
   connectorType: string;
+  /**
+   * 锁定的连接器版本（databus_connector_def.id）。
+   * 同 type 多版本共存时由它决定用哪一版；为空的历史连接运行时按该 type 最新启用版本兜底。
+   */
+  connectorDefId?: number;
   /** 是否启用（Y 启用 N 禁用；启用后执行链路自动注入 DatabusContext） */
   enabled?: string;
   /** 备注 */
@@ -83,6 +88,8 @@ export interface SysDatabusConnectionQuery extends PageQuery {
   connectionName?: string;
   /** Connector 类型（精确匹配） */
   connectorType?: string;
+  /** 锁定的连接器版本 id（精确匹配；卸载前查这一版的在用连接） */
+  connectorDefId?: number;
   /** 是否启用（Y/N，精确匹配） */
   enabled?: string;
 }

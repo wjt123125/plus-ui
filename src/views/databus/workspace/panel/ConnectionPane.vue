@@ -128,8 +128,8 @@
                   type="success"
                   size="small"
                   :loading="testingId === row.id"
-                  :disabled="!!testBlockReason(row.connectorType)"
-                  :title="testBlockReason(row.connectorType)"
+                  :disabled="!!testBlockReason(row)"
+                  :title="testBlockReason(row)"
                   @click="handleTest(row)"
                 >
                   <el-icon><Connection /></el-icon>测试
@@ -241,7 +241,7 @@ const togglingId = ref<number | undefined>();
 const testingId = ref<number | undefined>();
 
 /* 连接器清单：动态 defs（唯一来源，§15.7），筛选 tab / label / configSchema 共用 */
-const { options: connectorOptions, loadConnectorOptions, connectorLabelOf, defOf, schemaOf, healthOf } =
+const { options: connectorOptions, loadConnectorOptions, connectorLabelOf, defOf, defById, schemaOf, healthOf } =
   useConnectorOptions();
 
 const queryParams = ref<SysDatabusConnectionQuery>({
@@ -268,10 +268,14 @@ const ENABLED_OPTIONS = [
 /** 连接器类型值转展示文案，未知类型原样显示 */
 const connectorTypeLabel = (value?: string) => connectorLabelOf(value);
 
-/** 行上的类型胶囊：类型标签 + 连接器包版本（版本是类型级常量，与类型同框，不再单开一列） */
+/** 行上锁定的 def 行：优先 connectorDefId 精确命中，历史连接（未锁版本）按 type 兜底 */
+const rowDef = (row: SysDatabusConnectionVo) =>
+  defById(row.connectorDefId) ?? defOf(row.connectorType);
+
+/** 行上的类型胶囊：类型标签 + 该行锁定的连接器版本（同 type 可多版本共存，版本随行走） */
 const typeLabel = (row: SysDatabusConnectionVo) => {
   const label = connectorTypeLabel(row.connectorType);
-  const ver = versionLabel(defOf(row.connectorType)?.version);
+  const ver = versionLabel(rowDef(row)?.version);
   return ver ? `${label} · ${ver}` : label;
 };
 
@@ -302,8 +306,8 @@ const connectorTint = (value?: string) => {
  * 连接器不可用时的人话原因（可用返回空串）：测试按钮据此禁用并说明为什么（§4.2.1）。
  * 健康是运行态、随时会变，故每次渲染现算，不缓存。
  */
-const testBlockReason = (value?: string) => {
-  const health = healthOf(value);
+const testBlockReason = (row: SysDatabusConnectionVo) => {
+  const health = healthOf(row.connectorType, rowDef(row)?.version);
   return health.usable ? '' : `${health.label}：${health.reason}`;
 };
 
@@ -433,7 +437,7 @@ const handleTest = async (row: SysDatabusConnectionVo) => {
   if (!row.id || testingId.value === row.id) {
     return;
   }
-  const schema = schemaOf(row.connectorType);
+  const schema = schemaOf(row.connectorType, rowDef(row)?.version);
   const config = row.config ?? {};
   if (Object.keys(schema).length > 0) {
     const missing = findMissingRequired(schema, config, true);

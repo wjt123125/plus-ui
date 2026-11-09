@@ -27,6 +27,10 @@ export interface DatabusMarketItemVo {
   sourceId?: string | number;
   /** 展示码 `{ownerCode}/{code}` */
   codeDisplay: string;
+  /** 连接器版本（仅 CONNECTOR，详情接口回填；其他类型为空） */
+  version?: string;
+  /** 连接器构建号（仅 CONNECTOR，缺省 0）：同一 type+version 下越大越新 */
+  buildNo?: number;
   name: string;
   summary?: string;
   icon?: string;
@@ -194,8 +198,10 @@ export interface MarketReviewPreview {
   code?: string;
   /** 作者（COMPONENT：上架者展示码） */
   author?: string;
-  /** 版本（COMPONENT） */
+  /** 版本（COMPONENT）／连接器包版本（CONNECTOR） */
   version?: string;
+  /** 连接器构建号（仅 CONNECTOR，缺省 0）：同 type+version 下越大越新 */
+  buildNo?: number;
   /** 脚本语言（COMPONENT） */
   scriptLang?: string;
   /** 描述（COMPONENT） */

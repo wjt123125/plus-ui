@@ -265,7 +265,7 @@
                 <!-- 来源只在副标题说一次：dev 行的来源由行内 DEV 角标表达（带 hover 解释），再拼一遍是重复信息。
                      作者跟在副标题同一行：DEV 行没有作者，单独一行会导致有/无作者的行高不一致 -->
                 <div class="db-row__summary">
-                  #{{ row.type }}{{ row.version ? ` · ${versionLabel(row.version)}` : ''
+                  #{{ row.type }}{{ row.version ? ` · ${versionLabel(row.version)} · b${row.buildNo ?? 0}` : ''
                   }}{{ isDevDef(row) ? '' : ` · ${connectorSourceLabel(row)}` }}
                   <button v-if="row.ownerCode" type="button" class="db-row__author" @click.stop="onAuthor(row.ownerCode!, 'CONNECTOR')">
                     @{{ row.ownerCode }}
@@ -649,7 +649,7 @@ function installedConnectorDef(row: DatabusMarketInstallVo): ConnectorDefVo | nu
 function installedConnectorCode(row: DatabusMarketInstallVo): string {
   const def = installedConnectorDef(row);
   const code = row.codeDisplay || (def ? `#${def.type}` : '');
-  const version = def?.version ? ` · ${versionLabel(def.version)}` : '';
+  const version = def?.version ? ` · ${versionLabel(def.version)} · b${def.buildNo ?? 0}` : '';
   return `${code}${version}`;
 }
 
@@ -763,7 +763,7 @@ async function onToggleDef(row: ConnectorDefVo, enabled: boolean) {
             h(
               'p',
               { style: 'margin:0 0 8px;color:var(--el-text-color-secondary);font-size:12px;font-family:monospace;' },
-              `#${row.type}${row.version ? ` · ${versionLabel(row.version)}` : ''}`
+              `#${row.type}${row.version ? ` · ${versionLabel(row.version)} · b${row.buildNo ?? 0}` : ''}`
             ),
             h(
               ElCheckbox,
@@ -785,10 +785,10 @@ async function onToggleDef(row: ConnectorDefVo, enabled: boolean) {
         ElMessage.warning('请先勾选「已审核代码」后启用');
         return;
       }
-      await enableConnector(row.type, verified.value);
+      await enableConnector(row.type, row.version, verified.value);
       ElMessage.success(`已启用「${row.label || row.type}」，全局生效`);
     } else {
-      await disableConnector(row.type);
+      await disableConnector(row.type, row.version);
       ElMessage.success(`已停用「${row.label || row.type}」`);
     }
     await afterConnectorGoverned();
@@ -802,13 +802,13 @@ async function onToggleDef(row: ConnectorDefVo, enabled: boolean) {
 async function onDeprecateDef(row: ConnectorDefVo) {
   try {
     await modal.confirm(
-      `确认废弃连接器「${row.label || row.type}」？废弃后立即停机（存量连接失效），且为终态不可逆：不能再启用，也不能升版本热更新，只能卸载。`
+      `确认废弃连接器「${row.label || row.type}」？废弃后立即停机（存量连接失效），且为终态不可逆：不能再启用，同一版本也不能再上传覆盖，只能卸载。`
     );
   } catch {
     return;
   }
   try {
-    await deprecateConnector(row.type);
+    await deprecateConnector(row.type, row.version);
     ElMessage.success(`已废弃「${row.label || row.type}」`);
     await afterConnectorGoverned();
   } catch {
@@ -832,7 +832,7 @@ async function onUninstallDef(row: ConnectorDefVo) {
   // 先查在用连接数，再决定发哪种卸载：避免先发一次注定被拒的请求、弹红条后又弹绿条
   let inUse = 0;
   try {
-    const res = await listConnection({ connectorType: row.type, pageNum: 1, pageSize: 1 });
+    const res = await listConnection({ connectorDefId: Number(row.id), pageNum: 1, pageSize: 1 });
     inUse = Number(res.data?.total ?? 0);
   } catch {
     /* 查不到就按无连接处理，交给后端普通卸载兜底 */
@@ -847,7 +847,7 @@ async function onUninstallDef(row: ConnectorDefVo) {
     }
   }
   try {
-    await uninstallConnector(row.type, inUse > 0);
+    await uninstallConnector(row.type, row.version, inUse > 0);
     ElMessage.success(inUse > 0 ? '已强制卸载' : '已卸载');
     await afterConnectorGoverned();
   } catch {

@@ -33,11 +33,12 @@ export function listMyConnectorDefs(): AxiosPromise<ConnectorDefVo[]> {
 
 /**
  * 审核启用（§1.3）：提交人 ≠ 审批人，勾 verified；启用即装载实例。
- * POST /databus/connector/defs/{type}/enable（权限 databus:connector:edit）
+ * 同 type 多版本共存，启用是版本级动作，必须带 version。
+ * POST /databus/connector/defs/{type}/{version}/enable（权限 databus:connector:edit）
  */
-export function enableConnector(type: string, verified: boolean) {
+export function enableConnector(type: string, version: string, verified: boolean) {
   return request({
-    url: `/databus/connector/defs/${encodeURIComponent(type)}/enable`,
+    url: `/databus/connector/defs/${encodeURIComponent(type)}/${encodeURIComponent(version)}/enable`,
     method: 'post',
     params: { verified }
   });
@@ -45,33 +46,33 @@ export function enableConnector(type: string, verified: boolean) {
 
 /**
  * 禁用（DISABLED：挡新建连接，存量 Connection 与数据保留；市场侧＝停用）。
- * POST /databus/connector/defs/{type}/disable（权限 databus:connector:edit）
+ * POST /databus/connector/defs/{type}/{version}/disable（权限 databus:connector:edit）
  */
-export function disableConnector(type: string) {
+export function disableConnector(type: string, version: string) {
   return request({
-    url: `/databus/connector/defs/${encodeURIComponent(type)}/disable`,
+    url: `/databus/connector/defs/${encodeURIComponent(type)}/${encodeURIComponent(version)}/disable`,
     method: 'post'
   });
 }
 
 /**
  * 废弃（DEPRECATED，终态不可逆）：从可执行态停机退役，def 行与包保留，之后只能卸载。
- * POST /databus/connector/defs/{type}/deprecate（权限 databus:connector:edit）
+ * POST /databus/connector/defs/{type}/{version}/deprecate（权限 databus:connector:edit）
  */
-export function deprecateConnector(type: string) {
+export function deprecateConnector(type: string, version: string) {
   return request({
-    url: `/databus/connector/defs/${encodeURIComponent(type)}/deprecate`,
+    url: `/databus/connector/defs/${encodeURIComponent(type)}/${encodeURIComponent(version)}/deprecate`,
     method: 'post'
   });
 }
 
 /**
  * 卸载（默认拒绝在用连接；force=true 管理员强制，存量连接悬空自然衰减）。
- * DELETE /databus/connector/defs/{type}（权限 databus:connector:remove）
+ * DELETE /databus/connector/defs/{type}/{version}（权限 databus:connector:remove）
  */
-export function uninstallConnector(type: string, force = false) {
+export function uninstallConnector(type: string, version: string, force = false) {
   return request({
-    url: `/databus/connector/defs/${encodeURIComponent(type)}`,
+    url: `/databus/connector/defs/${encodeURIComponent(type)}/${encodeURIComponent(version)}`,
     method: 'delete',
     params: { force }
   });
@@ -115,11 +116,11 @@ export function downloadConnectorPackageUrl(type: string, version: string): stri
  * 运行时信息（§4.2.1 child-first 的配套）：当前生效加载器 + 驱动清单（含 loadedFrom）。
  * loadedFrom=PLATFORM 说明包内那份没生效，前端须黄色告警。
  * 连接器未装载时后端照常 200，只是 classLoader 为 null、drivers 为空。
- * GET /databus/connector/{type}/runtime-info（权限 databus:connector:list）
+ * GET /databus/connector/{type}/{version}/runtime-info（权限 databus:connector:list）
  */
-export function getConnectorRuntimeInfo(type: string): AxiosPromise<ConnectorRuntimeInfo> {
+export function getConnectorRuntimeInfo(type: string, version: string): AxiosPromise<ConnectorRuntimeInfo> {
   return request({
-    url: `/databus/connector/${encodeURIComponent(type)}/runtime-info`,
+    url: `/databus/connector/${encodeURIComponent(type)}/${encodeURIComponent(version)}/runtime-info`,
     method: 'get'
   });
 }
