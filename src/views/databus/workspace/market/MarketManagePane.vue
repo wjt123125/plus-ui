@@ -24,7 +24,15 @@
         <h2 class="mkt__title">{{ manageTitle }}</h2>
         <p class="mkt__sub">{{ manageSub }}</p>
       </div>
-      <el-button v-hasPermi="['databus:market:publish']" type="primary" @click="emit('open-publish')">
+      <!-- 页头主按钮跟着视角走：分类视角的主操作是新增分类，不是上架物料 -->
+      <el-button
+        v-if="scope === 'category' && canGovern"
+        type="primary"
+        @click="categoryPaneRef?.openCreate()"
+      >
+        <SvgIcon icon-class="lucide:plus" /><span>新增分类</span>
+      </el-button>
+      <el-button v-else v-hasPermi="['databus:market:publish']" type="primary" @click="emit('open-publish')">
         <SvgIcon icon-class="lucide:plus" /><span>上架物料</span>
       </el-button>
     </header>
@@ -223,7 +231,7 @@
 
       <!-- 视角五：物料分类（治理动作：增 / 改名 / 排序 / 删除空分类 / 合并） -->
       <template v-else-if="scope === 'category' && canGovern">
-        <MarketCategoryPane @changed="emit('installed')" />
+        <MarketCategoryPane ref="categoryPaneRef" @changed="emit('installed')" />
       </template>
 
       <!-- 视角四：治理（全局运行态，与审核分开）。当前只有连接器：启停 / 废弃 / 卸载 / dev 重载。
@@ -429,6 +437,8 @@ const { installed, mine, pending, loading } = market;
 const scope = ref<MarketScope>(props.scope ?? 'installed');
 /** 管理页搜索（客户端过滤当前视角列表） */
 const manageKeyword = ref('');
+/** 分类子 pane：页头「新增分类」调它的 openCreate（弹窗与表单都在子组件内） */
+const categoryPaneRef = ref<InstanceType<typeof MarketCategoryPane> | null>(null);
 
 /* 分组折叠：key = `${视角}:${类型}`（治理只有连接器一组，类型固定 'CONNECTOR'）。
    只记录「已折叠」，缺省即展开——新分组默认可见，切视角各自记住自己那几组的开合。 */

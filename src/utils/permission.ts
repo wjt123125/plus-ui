@@ -34,10 +34,12 @@ export const checkRole = (value: any): boolean => {
   if (value && value instanceof Array && value.length > 0) {
     const roles = useUserStore().roles;
     const permissionRoles = value;
-    const super_admin = 'admin';
+    // 超管角色 key 旁路：RuoYi-Vue-Plus 为 superadmin，老版 RuoYi 为 admin，两者都视为超管
+    // （与 v-hasRoles 指令、后端 LoginHelper.isSuperAdmin 同口径）
+    const SUPER_ADMIN_ROLE_KEYS = ['superadmin', 'admin'];
 
     const hasRole = roles.some(role => {
-      return super_admin === role || permissionRoles.includes(role);
+      return SUPER_ADMIN_ROLE_KEYS.includes(role) || permissionRoles.includes(role);
     });
 
     if (!hasRole) {

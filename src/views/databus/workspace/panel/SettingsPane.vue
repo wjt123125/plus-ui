@@ -176,7 +176,21 @@
               <div class="setting-row__label">主题</div>
               <div class="setting-row__desc">选择浅色或深色界面</div>
             </div>
-            <DbSeg v-model="themeMode" :options="THEME_OPTIONS" @change="handleThemeChange" />
+            <button
+              type="button"
+              class="theme-toggle"
+              :class="{ 'is-dark': themeMode === 'dark' }"
+              :aria-pressed="themeMode === 'dark'"
+              aria-label="切换浅色/深色主题"
+              @click="toggleTheme"
+            >
+              <span class="theme-toggle__thumb">
+                <span class="theme-toggle__icons">
+                  <SvgIcon class="theme-toggle__icon theme-toggle__icon--sun" icon-class="lucide:sun" />
+                  <SvgIcon class="theme-toggle__icon theme-toggle__icon--moon" icon-class="lucide:moon" />
+                </span>
+              </span>
+            </button>
           </div>
         </section>
 
@@ -282,6 +296,10 @@ const themeMode = computed({
 const handleThemeChange = () => {
   ElMessage.success(`已切换为${isDark.value ? '深色' : '浅色'}主题`);
 };
+const toggleTheme = () => {
+  themeMode.value = themeMode.value === 'dark' ? 'light' : 'dark';
+  handleThemeChange();
+};
 
 /* ------------------------------ 数据保留天数（无后端，先存本地） ------------------------------ */
 
@@ -294,11 +312,6 @@ const ENABLED_OPTIONS = [
   { value: '', label: '全部' },
   { value: 'Y', label: '启用' },
   { value: 'N', label: '停用' }
-];
-
-const THEME_OPTIONS = [
-  { value: 'light', label: '浅色' },
-  { value: 'dark', label: '深色' }
 ];
 
 /* ------------------------------ 规则 ------------------------------ */
@@ -631,5 +644,97 @@ onMounted(() => {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   line-height: 1.5;
+}
+
+/* 主题开关：自绘 iOS 质感开关。
+   不用 el-switch 的原因：其圆点固定 16px，放 14px 图标过挤，且图标色只能取浅色轨道色，
+   无法按亮/暗态分别着色。自绘后尺寸、圆点阴影、图标交叉过渡都可控。
+   颜色一律引用 EP 全局主题变量，跟随 settings.ts 的主题色配置，不在组件内写死。 */
+.theme-toggle {
+  --toggle-w: 46px;
+  --toggle-h: 26px;
+  --toggle-pad: 2px;
+  --toggle-thumb: calc(var(--toggle-h) - var(--toggle-pad) * 2);
+
+  position: relative;
+  flex-shrink: 0;
+  width: var(--toggle-w);
+  height: var(--toggle-h);
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--el-fill-color-darker);
+  cursor: pointer;
+  transition: background-color 0.24s ease;
+
+  &:hover {
+    background: var(--el-fill-color-dark);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--el-color-primary-light-7);
+    outline-offset: 2px;
+  }
+}
+
+.theme-toggle__thumb {
+  position: absolute;
+  top: var(--toggle-pad);
+  left: var(--toggle-pad);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--toggle-thumb);
+  height: var(--toggle-thumb);
+  border-radius: 50%;
+  background: var(--el-color-white);
+  box-shadow: var(--el-box-shadow-lighter);
+  transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 两个图标叠在同一格，靠透明度+旋转做交叉过渡，避免 v-if 切换时的闪跳 */
+.theme-toggle__icons {
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+}
+
+.theme-toggle__icon {
+  grid-area: 1 / 1;
+  transition: opacity 0.18s ease, transform 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.theme-toggle__icon--sun {
+  color: var(--el-color-warning);
+  opacity: 1;
+  transform: none;
+}
+
+.theme-toggle__icon--moon {
+  color: var(--el-color-primary);
+  opacity: 0;
+  transform: rotate(-75deg) scale(0.7);
+}
+
+.theme-toggle.is-dark {
+  background: var(--el-color-primary);
+
+  &:hover {
+    background: var(--el-color-primary-light-3);
+  }
+
+  .theme-toggle__thumb {
+    transform: translateX(calc(var(--toggle-w) - var(--toggle-thumb) - var(--toggle-pad) * 2));
+  }
+
+  .theme-toggle__icon--sun {
+    opacity: 0;
+    transform: rotate(75deg) scale(0.7);
+  }
+
+  .theme-toggle__icon--moon {
+    opacity: 1;
+    transform: none;
+  }
 }
 </style>
