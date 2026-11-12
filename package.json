@@ -56,6 +56,7 @@
     "highlight.js": "11.11.1",
     "image-conversion": "2.1.1",
     "jsencrypt": "3.5.4",
+    "markdown-it": "^15.0.3",
     "nprogress": "0.2.0",
     "pinia": "4.0.2",
     "vue": "3.5.40",
@@ -71,6 +72,7 @@
   "devDependencies": {
     "@iconify-json/lucide": "^1.2.140",
     "@types/crypto-js": "4.2.2",
+    "@types/markdown-it": "^14.2.0",
     "@types/node": "^26.1.1",
     "@types/nprogress": "0.2.3",
     "@unocss/preset-attributify": "66.7.5",

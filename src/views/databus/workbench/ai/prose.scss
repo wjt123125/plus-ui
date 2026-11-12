@@ -1,0 +1,319 @@
+/**
+ * Markdown 排版层（与解析库无关）。
+ *
+ * 命名空间：.md-prose
+ * - 只描述"一段 Markdown 长什么样"，谁解析出来的都行；
+ * - 颜色统一取 databus 的 --db-* 令牌（见 assets/styles/databus/_tokens.scss），
+ *   不再用 Element Plus 的 --el-* 灰蓝体系——那套是给表单页设计的；
+ * - 尺寸走 --md-* 变量，换容器密度只换档位类，不复制样式。
+ *
+ * 档位：
+ * - 默认（侧栏气泡）：13.5px 正文
+ * - .md-prose--roomy（全屏对话 / 文档预览）：15px 正文
+ */
+.md-prose {
+  --md-body: 13.5px;
+  --md-line: 1.75;
+  --md-gap: 10px;
+  --md-h1: 17px;
+  --md-h2: 15.5px;
+  --md-h3: 14px;
+  --md-code: 12px;
+  --md-table: 12.5px;
+
+  /* 代码块固定深色，作为整屏唯一的深色锚点；两种主题下都不跟随 */
+  --md-code-bg: #282c34;
+  --md-code-head: rgba(255, 255, 255, 0.04);
+  --md-code-dim: #8b93a3;
+  --md-code-ink: #e6e6e6;
+
+  color: var(--db-ink, #1c1c1e);
+  font-size: var(--md-body);
+  line-height: var(--md-line);
+  word-break: break-word;
+
+  /* 首个元素不留上边距，气泡顶部才不会空一块 */
+  > :first-child {
+    margin-top: 0;
+  }
+
+  /* ---------- 标题：层级靠留白，不只靠字号 ---------- */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-weight: 600;
+    line-height: 1.45;
+    color: var(--db-ink, #1c1c1e);
+  }
+
+  /* 上间距约为下间距的 2.5 倍，段落感来自这里 */
+  h1 {
+    margin: 24px 0 8px;
+    font-size: var(--md-h1);
+  }
+
+  h2 {
+    margin: 22px 0 8px;
+    font-size: var(--md-h2);
+  }
+
+  h3 {
+    margin: 18px 0 6px;
+    font-size: var(--md-h3);
+  }
+
+  h4 {
+    margin: 14px 0 6px;
+    font-size: var(--md-h3);
+  }
+
+  h5,
+  h6 {
+    margin: 12px 0 4px;
+    font-size: var(--md-body);
+    color: var(--db-ink-secondary, #3a3a3c);
+  }
+
+  /* ---------- 段落与列表 ---------- */
+  p {
+    margin: 0 0 var(--md-gap);
+  }
+
+  ul,
+  ol {
+    margin: 0 0 var(--md-gap);
+    padding-left: 18px;
+  }
+
+  li {
+    margin: 3px 0;
+  }
+
+  li::marker {
+    color: var(--db-ink-muted, #6e6e73);
+  }
+
+  /* 嵌套列表收紧，避免缩进层层外扩 */
+  li > ul,
+  li > ol {
+    margin: 3px 0 0;
+  }
+
+  strong {
+    font-weight: 600;
+  }
+
+  em {
+    color: var(--db-ink-secondary, #3a3a3c);
+  }
+
+  del {
+    color: var(--db-ink-muted, #6e6e73);
+  }
+
+  /* ---------- 行内代码：几乎看不出底色，靠等宽字体区分 ---------- */
+  code {
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
+    font-family: var(--el-font-family-mono, ui-monospace, monospace);
+    font-size: var(--md-code);
+  }
+
+  /* 行内代码里只允许出现真实文本：清空伪元素，任何外部样式（第三方库的图标字体、
+     浏览器插件注入的 content）都不能往胶囊里塞字符。 */
+  code::before,
+  code::after {
+    content: none;
+  }
+
+  /* ---------- 代码块：深色 + 顶部语言/复制栏 ---------- */
+  .md-code-block {
+    margin: 0 0 var(--md-gap);
+    border-radius: var(--db-r-control, 10px);
+    overflow: hidden;
+    background: var(--md-code-bg);
+  }
+
+  .md-code-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 6px 4px 12px;
+    background: var(--md-code-head);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .md-code-lang {
+    overflow: hidden;
+    color: var(--md-code-dim);
+    font-family: var(--el-font-family-mono, ui-monospace, monospace);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .md-copy {
+    flex: none;
+    padding: 2px 6px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--md-code-dim);
+    font-size: 11px;
+    line-height: 18px;
+    cursor: pointer;
+  }
+
+  .md-copy:hover,
+  .md-copy:focus-visible {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--md-code-ink);
+  }
+
+  pre.md-code {
+    margin: 0;
+    padding: 10px 12px;
+    max-height: 220px;
+    overflow: auto;
+    background: transparent;
+  }
+
+  pre.md-code code {
+    display: block;
+    overflow: visible;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    font-size: var(--md-code);
+    line-height: 1.65;
+    white-space: pre;
+  }
+
+  /* ---------- 表格：无外框，表头浅底，只留横线 ---------- */
+  .md-table-wrap {
+    margin: 0 0 var(--md-gap);
+    overflow-x: auto;
+    border-radius: var(--db-r-control, 10px);
+  }
+
+  .md-table-wrap > table {
+    width: 100%;
+    /* collapse 会让单元格圆角失效，必须 separate；线全部靠 border-bottom，不会叠边 */
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: var(--md-table);
+  }
+
+  th,
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--db-rule, rgba(60, 60, 67, 0.12));
+    text-align: left;
+    vertical-align: top;
+  }
+
+  thead th {
+    background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
+    color: var(--db-ink-secondary, #3a3a3c);
+    font-size: var(--md-code);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  /* 表头两角随容器圆角，表格才不像一块贴边的方板 */
+  thead th:first-child {
+    border-top-left-radius: var(--db-r-control, 10px);
+  }
+
+  thead th:last-child {
+    border-top-right-radius: var(--db-r-control, 10px);
+  }
+
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  /* ---------- 引用、分隔线、链接 ---------- */
+  blockquote {
+    margin: 0 0 var(--md-gap);
+    padding: 1px 0 1px 10px;
+    border-left: 2px solid var(--db-rule-strong, rgba(60, 60, 67, 0.24));
+    color: var(--db-ink-muted, #6e6e73);
+  }
+
+  blockquote > :last-child {
+    margin-bottom: 0;
+  }
+
+  hr {
+    margin: 12px 0;
+    border: 0;
+    border-top: 1px solid var(--db-rule, rgba(60, 60, 67, 0.12));
+  }
+
+  a {
+    color: var(--db-blue, #007aff);
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  /* ---------- 图片：懒加载 + 点击放大 ---------- */
+  .md-img-btn {
+    display: block;
+    max-width: 100%;
+    margin: 0 0 var(--md-gap);
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: zoom-in;
+  }
+
+  .md-img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--db-r-control, 10px);
+  }
+}
+
+/* 全屏对话 / 文档预览档位：只改尺寸变量，结构不变 */
+.md-prose--roomy {
+  --md-body: 15px;
+  --md-line: 1.7;
+  --md-gap: 12px;
+  --md-h1: 22px;
+  --md-h2: 19px;
+  --md-h3: 16px;
+  --md-code: 13px;
+  --md-table: 13px;
+}
+
+/* 图片放大遮罩挂在 body 上，不受容器 overflow 影响 */
+.md-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.72);
+  cursor: zoom-out;
+}
+
+.md-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 10px;
+}

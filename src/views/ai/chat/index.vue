@@ -1,53 +1,32 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { registerCurrentSnailUser } from '@/api/ai/agent';
-import { getToken } from '@/utils/auth';
+/**
+ * 完整 AI 助手页。
+ *
+ * 直接复用工作台侧栏的对话面板（AgentChatPanel → MarkdownBlock），
+ * 会话状态在 useAgentChat 模块级单例里，与侧栏共用同一条会话。
+ * 不再走 SnailAI 自带前端，渲染口径完全由我们自己控制。
+ */
+import { ref } from 'vue';
+import AgentChatPanel from '@/views/databus/workbench/ai/AgentChatPanel.vue';
 
 defineOptions({ name: 'AiChatPage' });
 
-const chatUrl = ref('');
-const loadError = ref('');
-const loading = ref(false);
-const baseUrl = import.meta.env.VITE_APP_BASE_API;
+const panelRef = ref<InstanceType<typeof AgentChatPanel> | null>(null);
 
-function buildChatUrl(openId: string, trustedCredential: string) {
-  const params = new URLSearchParams({ openId, trustedCredential });
-  return `${baseUrl}/snail-chat/?${params.toString()}`;
+function onNewSession() {
+  void panelRef.value?.newSession();
 }
-
-async function loadChat() {
-  loading.value = true;
-  loadError.value = '';
-  try {
-    const token = getToken();
-    if (!token) {
-      loadError.value = '登录凭证不存在，请重新登录后再试';
-      return;
-    }
-    const { data: user } = await registerCurrentSnailUser();
-    if (!user?.openId) {
-      loadError.value = '获取 AI 用户身份失败';
-      return;
-    }
-    chatUrl.value = buildChatUrl(user.openId, token);
-  } catch {
-    loadError.value = '加载 AI 聊天失败，请稍后重试';
-  } finally {
-    loading.value = false;
-  }
-}
-
-onMounted(() => {
-  loadChat();
-});
 </script>
 
 <template>
-  <div v-loading="loading" class="ai-chat-page">
-    <iframe v-if="chatUrl" class="chat-frame" :src="chatUrl" title="Snail AI" allow="clipboard-read; clipboard-write" />
-    <el-empty v-else class="chat-empty" :description="loadError || '正在加载 Snail AI'">
-      <el-button v-if="loadError" type="primary" @click="loadChat">重新加载</el-button>
-    </el-empty>
+  <div class="ai-chat-page">
+    <div class="ai-chat-head">
+      <span class="ai-chat-head__title">数据总线助手</span>
+      <el-button text size="small" @click="onNewSession">新会话</el-button>
+    </div>
+    <div class="ai-chat-body">
+      <AgentChatPanel ref="panelRef" class="ai-chat-panel" />
+    </div>
   </div>
 </template>
 
@@ -55,22 +34,39 @@ onMounted(() => {
 .ai-chat-page {
   height: calc(100vh - 123px);
   min-height: 0;
-  background: var(--el-bg-color-page);
+  display: flex;
+  flex-direction: column;
+  background: var(--app-surface-bg);
   border-radius: var(--app-radius-base);
   overflow: hidden;
 }
 
-.chat-frame {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: var(--app-surface-bg);
+.ai-chat-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
-.chat-empty {
-  height: 100%;
-  background: var(--app-surface-bg);
+.ai-chat-head__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+/* 整页比侧栏宽得多，正文与输入区收进一列，避免长行读不动 */
+.ai-chat-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.ai-chat-panel {
+  width: 100%;
+  max-width: 880px;
 }
 
 @media (max-width: 768px) {

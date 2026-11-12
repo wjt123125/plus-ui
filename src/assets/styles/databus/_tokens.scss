@@ -74,7 +74,8 @@
   --db-zoom: 1.025;
 
   /* —— 字体 —— */
-  --db-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Segoe UI', sans-serif;
+  --db-font: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Noto Sans SC', 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
   --db-font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
 
   /* —— 焦点环（外发光，不是硬边框）—— */

@@ -21,6 +21,9 @@
         <li class="cmp-ctx-menu__item" @click="onCopy">
           <el-icon><CopyDocument /></el-icon><span>复制</span>
         </li>
+        <li v-if="canAddToAgent" class="cmp-ctx-menu__item" @click="onAddToAgent">
+          <el-icon><MagicStick /></el-icon><span>加入会话</span>
+        </li>
         <li class="cmp-ctx-menu__item is-danger" @click="onDeleteNode">
           <el-icon><Delete /></el-icon><span>删除节点</span>
         </li>
@@ -80,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount } from 'vue';
+import { computed, onBeforeUnmount } from 'vue';
 import { useVueFlow } from '@vue-flow/core';
 import {
   ArrowLeftBold,
@@ -90,6 +93,7 @@ import {
   Delete,
   DocumentCopy,
   FolderChecked,
+  MagicStick,
   Operation,
   Plus,
   RefreshLeft,
@@ -102,13 +106,33 @@ import type { CmpNodeData } from '../../composables/useElTreeModel';
 import type { PickerMode } from '../../composables/useCanvasController';
 import { useCanvasController } from '../../composables/useCanvasController';
 import { useEditorActions } from '../../composables/useEditorActions';
+import { ElMessage } from 'element-plus';
+import { useAgentRefs } from '@/views/databus/workbench/ai/useAgentRefs';
+import { getDef } from '../../cmp-defs';
 
 defineOptions({ name: 'CmpContextMenu' });
 
 const ctrl = useCanvasController();
 /** 文档级动作（撤销/保存/试运行…）由 ChainCanvasPane 装配注入 */
 const act = useEditorActions();
-const { onPaneContextMenu, onNodeContextMenu, onEdgeContextMenu } = useVueFlow();
+const { onPaneContextMenu, onNodeContextMenu, onEdgeContextMenu, getNodes } = useVueFlow();
+/** 引用卡：画布节点右键「加入会话」只暂存引用 */
+const { addRef } = useAgentRefs();
+
+/** 当前右键的节点是否是一个真实业务组件（起止/网关/占位节点不算） */
+const canAddToAgent = computed(() => {
+  const data = getNodes.value.find((n) => n.id === ctrl.menu.nodeId)?.data as CmpNodeData | undefined;
+  return (
+    !!data &&
+    !data.virtual &&
+    !data.operator &&
+    !data.isCondition &&
+    !data.junctionOf &&
+    !data.placeholderOf &&
+    !!data.defType &&
+    !!getDef(data.defType)
+  );
+});
 
 /**
  * VueFlow 回调事件类型是 MouseEvent | TouchEvent，TouchEvent 上没有 clientX/clientY。
@@ -156,6 +180,18 @@ function onDeleteNode() {
   const nodeId = ctrl.menu.nodeId ?? undefined;
   ctrl.closeMenu();
   void ctrl.requestDeleteNode(nodeId);
+}
+
+/** 把当前节点对应的组件塞进 AI 对话引用卡（虚拟起止节点没有组件，忽略） */
+function onAddToAgent() {
+  const nodeId = ctrl.menu.nodeId;
+  ctrl.closeMenu();
+  const data = getNodes.value.find((n) => n.id === nodeId)?.data as CmpNodeData | undefined;
+  if (!data || data.virtual || !data.defType) {
+    return;
+  }
+  addRef({ type: 'component', code: data.defType, name: data.title || data.label });
+  ElMessage.success(`已加入会话引用：${data.title || data.label}`);
 }
 
 function onSelectAll() {

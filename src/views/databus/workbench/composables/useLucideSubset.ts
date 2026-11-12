@@ -117,6 +117,11 @@ const LUCIDE_SUBSET: IconifyJSON = {
       body: `<g ${S}><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></g>`
     },
     plus: { body: `<path ${S} d="M5 12h14m-7-7v14"/>` },
+    // AI 对话输入区：发送（面性倾斜纸飞机；lucide 只有描边版，这里是同路径填充版）、停止（方形，靠 CSS fill 变实心）
+    'send-filled': {
+      body: `<path fill="currentColor" stroke="none" d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/>`
+    },
+    square: { body: `<rect width="18" height="18" x="3" y="3" rx="2"/>` },
     // 链路工作台（链树/链 tab）：目录归属移动、链路（样条曲线）、树工具栏
     // path 数据取自 @iconify-json/lucide icons.json（api.iconify.design/lucide.json 同源）
     'folder-input': {
@@ -153,6 +158,11 @@ const LUCIDE_SUBSET: IconifyJSON = {
     },
     sparkles: {
       body: '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594zM20 2v4m2-2h-4"/><circle cx="4" cy="20" r="2"/></g>'
+    },
+    // AI 助手身份标识（面性）：lucide 只有描边版 sparkles，这里是同形填充版，
+    // 与 send-filled 同一策略——小尺寸（13px）下描边会糊成一团，实心才立得住
+    'sparkle-filled': {
+      body: '<path fill="currentColor" stroke="none" d="M11 2.6c.4 0 .76.27.87.66l1.2 4.4a5.2 5.2 0 0 0 3.04 3.04l4.4 1.2a.9.9 0 0 1 0 1.74l-4.4 1.2a5.2 5.2 0 0 0-3.04 3.04l-1.2 4.4a.9.9 0 0 1-1.74 0l-1.2-4.4a5.2 5.2 0 0 0-3.04-3.04l-4.4-1.2a.9.9 0 0 1 0-1.74l4.4-1.2A5.2 5.2 0 0 0 8.93 7.66l1.2-4.4A.9.9 0 0 1 11 2.6z"/><path fill="currentColor" stroke="none" d="M19.5 1.6c.28 0 .52.19.58.46l.36 1.5a1.6 1.6 0 0 0 1.1 1.1l1.5.36a.6.6 0 0 1 0 1.16l-1.5.36a1.6 1.6 0 0 0-1.1 1.1l-.36 1.5a.6.6 0 0 1-1.16 0l-.36-1.5a1.6 1.6 0 0 0-1.1-1.1l-1.5-.36a.6.6 0 0 1 0-1.16l1.5-.36a1.6 1.6 0 0 0 1.1-1.1l.36-1.5a.6.6 0 0 1 .58-.46z"/>'
     },
     // AI 助手栏：会话历史折叠区（history 语义 + 新会话钮 + 折叠箭头）
     history: {

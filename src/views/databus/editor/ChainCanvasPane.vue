@@ -105,6 +105,7 @@ import { Expand } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { useUserStore } from '@/store/modules/user';
 import { generateEl } from '@/api/databus/el';
+import type { CmpProperty } from '@/api/databus/el/types';
 import CmpPalette from './components/palette/CmpPalette.vue';
 import FlowCanvas from './components/canvas/FlowCanvas.vue';
 import EditorIdentityCard from './components/shell/EditorIdentityCard.vue';
@@ -517,6 +518,39 @@ useEditorHotkeys(
   },
   () => props.active && !isReadonly.value
 );
+
+/**
+ * AI 画布重画（§3.8 全量重画）：loadFromCmpProperty → project() → controller.reproject() → revealNode。
+ *
+ * 只重建内存里的模型树与画布，不写库、不调 resetHistory（AI 改动靠服务端快照回滚，不指望 Ctrl+Z）。
+ * §12.4 的脏画布判定与确认弹窗由宿主（工作区）在做，这里只管拿到允许后重画。
+ */
+function applyAgentCanvas(payload: { cmpProperty?: CmpProperty | null; revealNodeId?: string | null }) {
+  treeModel.loadFromCmpProperty(payload.cmpProperty ?? null);
+  treeModel.project();
+  ctrl.reproject();
+  // 服务端刚落完草稿，画布与库一致 → 清掉脏标记（watch(dirty) 会同步给宿主 tab）
+  dirty.value = false;
+  elPreview.schedule();
+  nextTick(() => {
+    ctrl.autoLayout();
+    if (payload.revealNodeId) {
+      ctrl.revealNode(payload.revealNodeId);
+    }
+  });
+}
+
+/** 按服务端最新结构重建画布（「回到 AI 动手前」回滚成功后调用，回滚只认服务端快照） */
+async function reloadFromServer() {
+  const id = editingId.value ?? props.loadChainId;
+  if (id == null) {
+    return;
+  }
+  await loadChainToEditor(id);
+  viewportSettled = true;
+}
+
+defineExpose({ applyAgentCanvas, reloadFromServer });
 
 onMounted(() => {
   // 预拉物料（唯一数据源）：成功后重投影一次，把加载瞬间渲染为「未注册」的业务卡刷新成真物料

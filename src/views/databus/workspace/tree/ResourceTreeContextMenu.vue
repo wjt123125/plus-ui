@@ -18,6 +18,9 @@
         <li v-hasPermi="['databus:editor:add']" class="res-tree-ctx__item is-primary" @click="onCommand('copy-chain')">
           <SvgIcon icon-class="lucide:copy" /><span>复制链路</span>
         </li>
+        <li class="res-tree-ctx__item is-primary" @click="onCommand('add-to-agent')">
+          <SvgIcon icon-class="lucide:sparkles" /><span>加入会话</span>
+        </li>
         <li class="res-tree-ctx__divider" />
         <li
           v-if="menu.node.status !== STATUS_PUBLISHED"
@@ -80,6 +83,10 @@
         <li class="res-tree-ctx__item is-warning" @click="onCommand('changes-component')">
           <SvgIcon icon-class="lucide:file-diff" /><span>代码变更</span>
         </li>
+        <div class="res-tree-ctx__divider" />
+        <li class="res-tree-ctx__item is-primary" @click="onCommand('add-to-agent')">
+          <SvgIcon icon-class="lucide:sparkles" /><span>加入会话</span>
+        </li>
         <li class="res-tree-ctx__divider" />
         <li v-hasPermi="['databus:directory:edit']" class="res-tree-ctx__item is-primary" @click="onCommand('move')">
           <SvgIcon icon-class="lucide:folder-input" /><span>移动到目录…</span>
@@ -115,10 +122,13 @@
         </li>
       </template>
 
-      <!-- 系统组件叶子（内置件只读）：仅查看 -->
+      <!-- 系统组件叶子（内置件只读）：查看 · 加入会话 -->
       <template v-else-if="menu.node.type === 'system-leaf'">
         <li class="res-tree-ctx__item is-primary" @click="onCommand('view-component')">
           <SvgIcon icon-class="lucide:file-text" /><span>查看</span>
+        </li>
+        <li class="res-tree-ctx__item is-primary" @click="onCommand('add-to-agent')">
+          <SvgIcon icon-class="lucide:sparkles" /><span>加入会话</span>
         </li>
         <li class="res-tree-ctx__divider" />
         <li class="res-tree-ctx__item is-primary" @click="onCopy">
@@ -133,6 +143,9 @@
       <template v-else-if="menu.node.type === 'market-ref'">
         <li class="res-tree-ctx__item is-primary" @click="onCommand('open')">
           <SvgIcon icon-class="lucide:external-link" /><span>打开</span>
+        </li>
+        <li class="res-tree-ctx__item is-primary" @click="onCommand('add-to-agent')">
+          <SvgIcon icon-class="lucide:sparkles" /><span>加入会话</span>
         </li>
         <li class="res-tree-ctx__divider" />
         <li v-hasPermi="['databus:directory:edit']" class="res-tree-ctx__item is-primary" @click="onCommand('move')">

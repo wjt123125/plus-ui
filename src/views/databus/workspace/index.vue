@@ -20,23 +20,32 @@
     />
 
     <div class="wsp">
-      <!-- 栏 1：会话历史（AI 助手的兄弟栏，v1 无会话后端，列表走空态） -->
-      <AiHistoryRail :collapsed="historyCollapsed" :width="historyWidth" />
+      <!-- 栏 1：会话历史（AI 助手的兄弟栏，v1 无会话后端，列表走空态）；用户区挂在它底部 -->
+      <AiHistoryRail :collapsed="historyCollapsed" :width="historyWidth">
+        <!-- 用户区（n8n 式，§7 改造点3）：头像+昵称+角色整行下拉，替代原 header 右上角用户胶囊 -->
+        <template #footer>
+          <WorkbenchUserBar settings-entry @settings="goSettings" @logout="onLogout" />
+        </template>
+      </AiHistoryRail>
       <Splitter v-if="!historyCollapsed" v-model="historyWidth" :min="180" />
 
-      <!-- 栏 2：AI 助手（v1 空壳预留，点击建议即定位台账组件） -->
+      <!-- 栏 2：AI 助手（对话面板薄壳，状态在 useAgentChat 模块级单例） -->
       <AiAssistantRail
         :collapsed="aiCollapsed"
         :width="aiWidth"
         title="AI 助手"
-        welcome-title="数据总线助手"
+        welcome-title="DB Copilot"
         welcome-desc="用自然语言定位链路与组件、解释编排意图、排查脚本编译与执行问题。"
         @select="onAiSelect"
+        @new-session="onAiNewSession"
       >
-        <!-- 侧栏底部用户区（n8n 式，§7 改造点3）：头像+昵称+角色整行下拉，替代原 header 右上角用户胶囊 -->
-        <template #footer>
-          <WorkbenchUserBar settings-entry @settings="goSettings" @logout="onLogout" />
-        </template>
+        <!-- 对话面板接管 body + input 区；链路 id 随每句话带给后端 -->
+        <AgentChatPanel
+          ref="agentPanelRef"
+          :chain-id="activeChainId"
+          @agent-rolled-back="onAgentRolledBack"
+          @ref-open="onAgentRefOpen"
+        />
       </AiAssistantRail>
       <Splitter v-if="!aiCollapsed" v-model="aiWidth" :min="AI_MIN_WIDTH" />
 
@@ -44,6 +53,7 @@
            终端放进中栏而不是整页 flex 兄弟：宽度只吃中栏，右抽屉折叠时中栏变宽、终端跟着变宽 -->
       <div class="wsp__center">
         <WorkspaceWorkPanel
+          ref="workPanelRef"
           v-model:active-key="activeKey"
           :tabs="tabs"
           :rows="rows"
@@ -175,12 +185,17 @@ import Splitter from '@/views/databus/workbench/components/Splitter.vue';
 import WorkbenchHeader from '@/views/databus/workbench/components/WorkbenchHeader.vue';
 import WorkbenchUserBar from '@/views/databus/workbench/components/WorkbenchUserBar.vue';
 import AiAssistantRail from '@/views/databus/workbench/ai/AiAssistantRail.vue';
+import AgentChatPanel from '@/views/databus/workbench/ai/AgentChatPanel.vue';
 import AiHistoryRail from '@/views/databus/workbench/ai/AiHistoryRail.vue';
 import { useAiSessionHistory } from '@/views/databus/workbench/ai/useAiSessionHistory';
+import { useAgentRefs, type AgentRefItem } from '@/views/databus/workbench/ai/useAgentRefs';
+import { useAgentChat } from '@/views/databus/workbench/ai/useAgentChat';
+import { useAgentPush } from '@/views/databus/workbench/ai/useAgentPush';
+import type { CmpProperty } from '@/api/databus/el/types';
 import ChainForm from '../chain/ChainForm.vue';
 import type { ChainFormSuccessPayload } from '../chain/ChainFormBody.vue';
 import ChainCopyDialog from '../chain/ChainCopyDialog.vue';
-import { useWorkspaceTabs, EXECUTION_LIST_KEY } from './composables/useWorkspaceTabs';
+import { useWorkspaceTabs, canvasKey, EXECUTION_LIST_KEY } from './composables/useWorkspaceTabs';
 import { useRecentResources } from './composables/useRecentResources';
 import { useWorkspaceTerminal } from './composables/useWorkspaceTerminal';
 import WorkspaceWorkPanel from './panel/WorkspaceWorkPanel.vue';
@@ -803,6 +818,34 @@ function onAiSelect(payload: string) {
   }
 }
 
+/** AI 栏头「新会话」：清空对话与本地会话 id（进行中的 run 由面板内部先停） */
+const agentPanelRef = ref<InstanceType<typeof AgentChatPanel>>();
+function onAiNewSession() {
+  void agentPanelRef.value?.newSession();
+}
+
+/**
+ * AI 对话里点引用卡：链路开画布 tab，组件开详情 tab。
+ * 组件只带 code 时按台账反查，查不到（如未登记的内置件）只提示、不跳转。
+ */
+function onAgentRefOpen(item: AgentRefItem) {
+  if (item.type === 'chain') {
+    if (item.id == null) {
+      ElMessage.warning(`链路「${item.name}」缺少 id，暂无法打开`);
+      return;
+    }
+    wb.openCanvas(item.id, item.name);
+    touchRecent({ type: 'chain', refId: item.id, title: item.name });
+    return;
+  }
+  const row = item.code ? rowByCode(item.code) : undefined;
+  if (!row) {
+    ElMessage.warning(`未找到组件「${item.name}」，暂无法打开`);
+    return;
+  }
+  openDetail(row);
+}
+
 // 台账刷新后剔除已不存在的「最近访问」自建组件项（链路项由资源树按链路表过滤）
 watch(rows, (list) => {
   if (!list.length) {
@@ -815,11 +858,101 @@ watch(rows, (list) => {
 /* ---------------- 统一资源树命令承接 ---------------- */
 
 const treeRef = ref<InstanceType<typeof ResourceTree>>();
+const workPanelRef = ref<InstanceType<typeof WorkspaceWorkPanel>>();
 const chainFormRef = ref<InstanceType<typeof ChainForm>>();
 const copyDialogRef = ref<InstanceType<typeof ChainCopyDialog>>();
 
 function reloadTree() {
   return treeRef.value?.reload();
+}
+
+/* ---------------- AI 画布事件接线（§12.4 四分支） ---------------- */
+
+/** AI canvas 推送的 data 载荷（§12.2；message 留给人类可读文案） */
+interface AgentCanvasEvent {
+  eventCode?: string;
+  runId?: string;
+  seq?: number;
+  chainId?: number | string;
+  chainName?: string;
+  cmpProperty?: CmpProperty | null;
+  revealNodeId?: string | null;
+}
+
+const { appendSystem } = useAgentChat();
+/** 引用卡：右键「加入会话」只暂存引用，发消息时由对话面板拼进问题 */
+const { addRef } = useAgentRefs();
+
+/** 丢弃 canvas 事件后回推一条提示：让面板与用户都知道 AI 的改动没被采纳 */
+function notifyCanvasSkipped(chainName?: string) {
+  appendSystem(
+    `已丢弃 AI 对「${chainName ?? '当前链路'}」的画布更新：画布上有未保存的改动。请先保存或放弃本地修改，再让 AI 重试。`,
+    'databus:agent:canvas-skipped'
+  );
+}
+
+/** 按 §3.8 重画指定链路画布；pane 不在（tab 刚关）时只刷链树兜底 */
+function redrawAgentCanvas(evt: AgentCanvasEvent) {
+  if (evt.chainId == null) {
+    return;
+  }
+  const done = workPanelRef.value?.applyAgentCanvas(evt.chainId, {
+    cmpProperty: evt.cmpProperty ?? null,
+    revealNodeId: evt.revealNodeId ?? null
+  });
+  if (!done) {
+    void reloadTree();
+  }
+}
+
+useAgentPush((payload) => {
+  const evt = payload.data as AgentCanvasEvent | undefined;
+  const code = evt?.eventCode;
+  // draft：只刷新链树（新链路/改名/草稿态）
+  if (code === 'databus:agent:draft') {
+    void reloadTree();
+    return;
+  }
+  if (code !== 'databus:agent:canvas' || evt?.chainId == null) {
+    return;
+  }
+
+  // 结构变了，链树先跟上（新建链路/改名/未归组都要重新分组）
+  void reloadTree();
+
+  const target = tabs.value.find((t) => t.key === canvasKey(evt.chainId!));
+  const current = tabs.value.find((t) => t.key === activeKey.value);
+  const currentCanvas = current?.kind === 'canvas' ? current : undefined;
+
+  // 分支 4：目标链画布没开着 → 只更新链树，不强行弹画布
+  if (!target) {
+    // 分支 3 的延伸：当前正看着另一条脏画布 → 在新 tab 打开目标链，绝不覆盖当前
+    if (currentCanvas?.dirty) {
+      wb.openCanvas(evt.chainId!, evt.chainName || String(evt.chainId));
+    }
+    return;
+  }
+
+  // 分支 1：同一条链且画布干净 → 直接重画
+  if (!target.dirty) {
+    redrawAgentCanvas(evt);
+    return;
+  }
+
+  // 分支 2：脏且是同一 chainId → 人工确认；拒绝则丢弃事件并回推提示（绝不静默覆盖）
+  ElMessageBox.confirm('AI 要更新这张画布，你未保存的改动会被覆盖，是否继续？', '画布有未保存改动', {
+    confirmButtonText: '覆盖并重画',
+    cancelButtonText: '丢弃本次更新',
+    type: 'warning'
+  })
+    .then(() => redrawAgentCanvas(evt))
+    .catch(() => notifyCanvasSkipped(evt.chainName));
+});
+
+/** 「回到 AI 动手前」回滚完成：刷链树 + 按服务端结构重建画布（回滚只认服务端快照） */
+async function onAgentRolledBack(chainId: number | string) {
+  void reloadTree();
+  await workPanelRef.value?.reloadCanvas(chainId);
 }
 
 /** 树节点链路主键（空串/null 视为无） */
@@ -848,6 +981,41 @@ function openResourceNode(node: ResourceTreeNode) {
   if (row) {
     openDetail(row);
   }
+}
+
+/**
+ * 右键「加入会话」：往引用卡里塞一条，不直接发消息。
+ * 链路给 chainId，自建组件给 dbId，系统内置件没有 DB 行就只给 componentCode。
+ */
+function addNodeToAgent(node: ResourceTreeNode) {
+  const ref = toAgentRef(node);
+  if (!ref) {
+    return;
+  }
+  addRef(ref);
+  ElMessage.success(`已加入会话引用：${ref.name}`);
+}
+
+/** 树节点 → 引用卡条目；没有可引用主键/编码时返回 null */
+function toAgentRef(node: ResourceTreeNode): AgentRefItem | null {
+  if (node.type === 'chain') {
+    const chainId = nodeChainId(node);
+    return chainId == null
+      ? null
+      : { type: 'chain', id: chainId, code: node.chainCode, name: node.label };
+  }
+  if (node.type !== 'component' && node.type !== 'system-leaf' && node.type !== 'market-ref') {
+    return null;
+  }
+  if (!node.componentCode) {
+    return null;
+  }
+  return {
+    type: 'component',
+    id: node.dbId ?? undefined,
+    code: node.componentCode,
+    name: node.label,
+  };
 }
 
 /** 资源树业务动作统一入口：树内只派发不闭环（对标旧两菜单上抛） */
@@ -891,6 +1059,9 @@ function onTreeCommand(command: ResourceMenuCommand, node: ResourceTreeNode) {
       break;
     case 'share-link':
       copyShareLink(node);
+      break;
+    case 'add-to-agent':
+      addNodeToAgent(node);
       break;
 
     /* —— 组件 —— */

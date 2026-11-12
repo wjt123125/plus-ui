@@ -10,7 +10,7 @@
     -->
     <!-- 头部 30px：与工作台顶部 header、会话历史栏头、右栏抽屉 tab、资源树头同一条水平线 -->
     <div class="ai-rail__head">
-      <el-icon class="ai-rail__spark"><MagicStick /></el-icon>
+      <SvgIcon class="ai-rail__spark" icon-class="lucide:sparkle-filled" />
       <span class="ai-rail__title">{{ title }}</span>
       <el-tooltip content="新会话" placement="bottom">
         <button type="button" class="ai-rail__head-btn" @click="emit('new-session')">
@@ -19,27 +19,29 @@
       </el-tooltip>
     </div>
 
-    <div class="ai-rail__body">
-      <div class="ai-rail__welcome">
-        <el-icon class="ai-rail__welcome-icon"><MagicStick /></el-icon>
-        <p class="ai-rail__welcome-title">{{ welcomeTitle }}</p>
-        <p class="ai-rail__welcome-desc">{{ welcomeDesc }}</p>
+    <!-- 默认插槽：宿主注入真实对话面板（AgentChatPanel）时接管 body + input 区，栏只留头部 -->
+    <div v-if="$slots.default" class="ai-rail__panel">
+      <slot />
+    </div>
+
+    <template v-else>
+      <div class="ai-rail__body">
+        <div class="ai-rail__welcome">
+          <SvgIcon class="ai-rail__welcome-icon" icon-class="lucide:sparkle-filled" />
+          <p class="ai-rail__welcome-title">{{ welcomeTitle }}</p>
+          <p class="ai-rail__welcome-desc">{{ welcomeDesc }}</p>
+        </div>
       </div>
-    </div>
 
-    <div class="ai-rail__input">
-      <el-input disabled type="textarea" :rows="3" resize="none" :placeholder="inputPlaceholder" />
-    </div>
-
-    <!-- 侧栏底部插槽（n8n 式用户区位）：页面注入 WorkbenchUserBar 等，栏自身保持零业务依赖 -->
-    <div v-if="$slots.footer" class="ai-rail__footer">
-      <slot name="footer" />
-    </div>
+      <div class="ai-rail__input">
+        <el-input disabled type="textarea" :rows="3" resize="none" :placeholder="inputPlaceholder" />
+      </div>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { MagicStick } from '@element-plus/icons-vue';
+import { useLucideSubset } from '../composables/useLucideSubset';
 
 withDefaults(
   defineProps<{
@@ -58,6 +60,9 @@ withDefaults(
     inputPlaceholder: 'AI 助手开发中，敬请期待…'
   }
 );
+
+/** 身份图标走 lucide 子集，离线可用（与工作台其它图标同源） */
+useLucideSubset();
 
 const emit = defineEmits<{
   /** 预留：AI 选中某个业务对象（编码 / 链路 id），宿主做树联动 + 开 tab */
@@ -79,8 +84,9 @@ const emit = defineEmits<{
   overflow: hidden;
 
   &__spark {
-    color: var(--el-color-primary);
-    font-size: 17px;
+    flex: none;
+    color: var(--db-blue, #007aff);
+    font-size: 15px;
   }
 
   &__head {
@@ -127,6 +133,13 @@ const emit = defineEmits<{
     }
   }
 
+  &__panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
   &__body {
     flex: 1;
     min-height: 0;
@@ -144,11 +157,14 @@ const emit = defineEmits<{
   }
 
   &__welcome-icon {
-    font-size: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
     padding: 14px;
     border-radius: 14px;
-    color: var(--el-color-primary);
-    background: var(--el-color-primary-light-9, #ecf2ff);
+    color: var(--db-blue, #007aff);
+    background: rgba(0, 122, 255, 0.1);
   }
 
   &__welcome-title {
@@ -168,14 +184,6 @@ const emit = defineEmits<{
   &__input {
     flex-shrink: 0;
     padding: 10px 12px 12px;
-    border-top: 1px solid var(--el-border-color-lighter, #ebeef5);
-  }
-
-  /* 侧栏底部用户区位（n8n 式）：顶边线与输入区分隔，内容（WorkbenchUserBar）自带行内边距 */
-  &__footer {
-    flex-shrink: 0;
-    padding: 6px;
-    border-top: 1px solid var(--el-border-color-lighter, #ebeef5);
   }
 }
 </style>

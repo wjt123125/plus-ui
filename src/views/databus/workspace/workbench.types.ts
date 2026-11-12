@@ -265,6 +265,8 @@ export type ResourceMenuCommand =
   | 'delete-component'
   // 分享（链路/组件共用，复制只读分享链接）
   | 'share-link'
+  // 加入 AI 会话（引用卡：链路/组件/系统组件/市场模板共用）
+  | 'add-to-agent'
   // 目录
   | 'add-chain'
   | 'add-component'

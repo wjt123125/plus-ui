@@ -79,6 +79,7 @@
         <div v-show="tab.key === activeKey" class="ws-panel__pane">
           <ChainCanvasPane
             v-if="tab.kind === 'canvas' && tab.chainId != null"
+            :ref="(el) => setCanvasPane(tab.key, el)"
             host="workbench"
             :load-chain-id="tab.chainId"
             :active="tab.key === activeKey"
@@ -265,8 +266,10 @@ import type { ScriptSaveResult } from '@/api/databus/component/types';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import ChainCanvasPane from '@/views/databus/editor/ChainCanvasPane.vue';
 import type { ComponentRegistryRow } from '@/views/databus/component/model/registry';
+import type { CmpProperty } from '@/api/databus/el/types';
 import type { DatabusMarketItemVo } from '@/api/databus/market/types';
 import type { MarketPublishedInfo } from '../market/marketDisplay';
+import { canvasKey } from '../composables/useWorkspaceTabs';
 import type { ComponentSaved, ConnectionSaved, CreateFileType, CreateSavedPayload, LauncherCommand, MarketScope, TabMenuCommand, WorkspaceTab, WorkspaceTabKind } from '../workbench.types';
 import { LAUNCHER_ENTRIES } from './launcherEntries';
 import DetailPane from './DetailPane.vue';
@@ -393,6 +396,50 @@ const emit = defineEmits<{
 function rowOf(tab: WorkspaceTab): ComponentRegistryRow | undefined {
   return props.rows.find((r) => r.code === tab.code);
 }
+
+/* ---------------- canvas pane 句柄（AI 重画/回滚重建的统一入口） ---------------- */
+
+/** ChainCanvasPane 对宿主暴露的两个动作（defineExpose 见该组件） */
+type CanvasPaneExpose = {
+  applyAgentCanvas: (payload: { cmpProperty?: CmpProperty | null; revealNodeId?: string | null }) => void;
+  reloadFromServer: () => Promise<void>;
+};
+
+/** tab.key → pane 实例；v-show 保活，卸载（关 tab）时置空 */
+const canvasPanes = new Map<string, CanvasPaneExpose>();
+
+function setCanvasPane(key: string, el: unknown) {
+  if (el) {
+    canvasPanes.set(key, el as CanvasPaneExpose);
+  } else {
+    canvasPanes.delete(key);
+  }
+}
+
+function canvasPaneOf(chainId: number | string): CanvasPaneExpose | undefined {
+  return canvasPanes.get(canvasKey(chainId));
+}
+
+defineExpose({
+  /** 按 AI 推来的全量快照重画该链路画布；返回 false 表示这条链的画布没开着 */
+  applyAgentCanvas(
+    chainId: number | string,
+    payload: { cmpProperty?: CmpProperty | null; revealNodeId?: string | null }
+  ): boolean {
+    const pane = canvasPaneOf(chainId);
+    pane?.applyAgentCanvas(payload);
+    return Boolean(pane);
+  },
+  /** 回滚后按服务端结构重建该链路画布；返回 false 表示没开着 */
+  async reloadCanvas(chainId: number | string): Promise<boolean> {
+    const pane = canvasPaneOf(chainId);
+    if (!pane) {
+      return false;
+    }
+    await pane.reloadFromServer();
+    return true;
+  }
+});
 
 /** 代码变更 tab 的当前版本：台账行最新值优先（编辑保存/回滚后随刷新变化） */
 function currentVersionOf(tab: WorkspaceTab): number | null {

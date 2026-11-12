@@ -5,7 +5,9 @@ import { useNoticeStore } from '@/store/modules/notice';
 import { useUserStore } from '@/store/modules/user';
 import { getToken } from '@/utils/auth';
 import { isMessageRead } from '@/utils/message-read';
+import { isAgentPush, dispatchAgentPush } from '@/utils/agent-push';
 import { parsePushMessage, resolveNoticeGroup, resolveNoticeTitle, shouldAppendNotice } from '@/utils/push-message';
+import type { PushMessagePayload } from '@/utils/push-message';
 
 let closePushConnection: (() => void) | undefined;
 let stopPushWatchers: Array<() => void> = [];
@@ -18,8 +20,7 @@ const formatNoticeTime = (timestamp?: number | string) => {
   return time.toLocaleString();
 };
 
-const appendNotice = (raw: string) => {
-  const payload = parsePushMessage(raw);
+const appendNotice = (payload: PushMessagePayload) => {
   if (!shouldAppendNotice(payload)) {
     return;
   }
@@ -53,7 +54,13 @@ const handlePushMessage = (raw: string) => {
     closePush();
     return;
   }
-  appendNotice(raw);
+  const payload = parsePushMessage(raw);
+  // AI agent 事件（data.eventCode 以 databus:agent: 开头）不进消息中心，前置分流给侧栏
+  if (isAgentPush(payload)) {
+    dispatchAgentPush(payload);
+    return;
+  }
+  appendNotice(payload);
 };
 
 const toNoticeItem = (item: MessageVO) => {

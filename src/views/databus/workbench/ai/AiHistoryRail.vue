@@ -27,6 +27,11 @@
         <span v-if="s.time" class="ai-hist-rail__item-time">{{ s.time }}</span>
       </button>
     </div>
+
+    <!-- 栏底插槽（n8n 式用户区位）：宿主注入 WorkbenchUserBar，栏自身保持零业务依赖 -->
+    <div v-if="$slots.footer" class="ai-hist-rail__footer">
+      <slot name="footer" />
+    </div>
   </div>
 </template>
 
@@ -162,6 +167,12 @@ const emit = defineEmits<{
     font-size: 11px;
     color: var(--el-text-color-placeholder, #a8abb2);
     font-variant-numeric: tabular-nums;
+  }
+
+  /* 栏底用户区：不加顶边线，靠列表自身留白分隔 */
+  &__footer {
+    flex-shrink: 0;
+    padding: 6px;
   }
 }
 </style>

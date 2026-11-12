@@ -1,3 +1,19 @@
+/* 内置中文 UI 字体：Noto Sans SC（SIL OFL，许可证见 public/fonts/OFL-NotoSansSC.txt）。
+   Windows 上没有苹方，中文会掉到微软雅黑，同样字号下偏宽偏重；内置后各平台观感一致。 */
+@font-face {
+  font-family: 'Noto Sans SC';
+  src: url('/fonts/noto-sans-sc-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Noto Sans SC';
+  src: url('/fonts/noto-sans-sc-600.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+}
+
 /* Global document styles and lightweight utility helpers. */
 
 // --- 视口与排版根 ---
