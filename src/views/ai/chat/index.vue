@@ -3,18 +3,18 @@
  * 完整 AI 助手页。
  *
  * 直接复用工作台侧栏的对话面板（AgentChatPanel → MarkdownBlock），
- * 会话状态在 useAgentChat 模块级单例里，与侧栏共用同一条会话。
+ * 会话状态在 useAgentChat 模块级单例里，与侧栏共用同一份（按会话分桶）。
  * 不再走 SnailAI 自带前端，渲染口径完全由我们自己控制。
  */
-import { ref } from 'vue';
 import AgentChatPanel from '@/views/databus/workbench/ai/AgentChatPanel.vue';
+import { useAgentChat } from '@/views/databus/workbench/ai/useAgentChat';
 
 defineOptions({ name: 'AiChatPage' });
 
-const panelRef = ref<InstanceType<typeof AgentChatPanel> | null>(null);
+const { createSession } = useAgentChat();
 
 function onNewSession() {
-  void panelRef.value?.newSession();
+  createSession();
 }
 </script>
 
@@ -25,7 +25,7 @@ function onNewSession() {
       <el-button text size="small" @click="onNewSession">新会话</el-button>
     </div>
     <div class="ai-chat-body">
-      <AgentChatPanel ref="panelRef" class="ai-chat-panel" />
+      <AgentChatPanel class="ai-chat-panel" />
     </div>
   </div>
 </template>

@@ -1,7 +1,14 @@
 import type { AxiosPromise } from '@/utils/api-types';
 import { getToken } from '@/utils/auth';
 import request from '@/utils/request';
-import type { AgentChatBo, AgentChatStartVo, AgentMessageVo, AgentRunVo, AgentSnapshotVo } from './types';
+import type {
+  AgentChatBo,
+  AgentChatStartVo,
+  AgentConversationVo,
+  AgentMessageVo,
+  AgentRollbackVo,
+  AgentRunVo
+} from './types';
 
 /**
  * 发起一次 AI 对话：后端建 run 落库，返回 run 句柄与会话 id。
@@ -23,6 +30,18 @@ export function stopAgentRun(runId: string) {
   return request({
     url: `/databus/agent/run/${runId}/stop`,
     method: 'post'
+  });
+}
+
+/**
+ * 上报「用户丢弃了本次画布更新」：后端记一行审计，下一轮对话让模型知道改动未采纳。
+ * POST /databus/agent/run/{runId}/canvas-skip
+ */
+export function reportAgentCanvasSkip(runId: string, chainName?: string) {
+  return request({
+    url: `/databus/agent/run/${runId}/canvas-skip`,
+    method: 'post',
+    params: { chainName }
   });
 }
 
@@ -61,26 +80,25 @@ export function listAgentHistory(conversationId: string): AxiosPromise<AgentRunV
 }
 
 /**
- * 列某个 run 的链路快照（每轮动手前一行，按 round 升序）。
- * GET /databus/agent/run/{runId}/snapshots
+ * 列出当前用户的会话（按最近活跃倒序，供左侧历史栏用）。
+ * GET /databus/agent/conversations?limit=50
  */
-export function listSnapshots(runId: string): AxiosPromise<AgentSnapshotVo[]> {
+export function listAgentConversations(limit = 50): AxiosPromise<AgentConversationVo[]> {
   return request({
-    url: `/databus/agent/run/${runId}/snapshots`,
-    method: 'get'
+    url: '/databus/agent/conversations',
+    method: 'get',
+    params: { limit }
   });
 }
 
 /**
- * 把链路回滚到该 run 的某一轮动手前（只认服务端快照，不复制 run、不再写快照）。
- * POST /databus/agent/run/{runId}/rollback?round=n
- * @returns 回滚后的链路 id
+ * 回到这次对话前：按 run 整体回滚（新建的删掉、改过的写回对话前结构）。
+ * POST /databus/agent/run/{runId}/rollback
  */
-export function rollbackTo(runId: string, round: number): AxiosPromise<number | string> {
+export function rollbackRun(runId: string): AxiosPromise<AgentRollbackVo[]> {
   return request({
     url: `/databus/agent/run/${runId}/rollback`,
-    method: 'post',
-    params: { round }
+    method: 'post'
   });
 }
 

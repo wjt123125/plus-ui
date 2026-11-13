@@ -11,8 +11,8 @@
       </div>
 
       <div v-for="m in messages" :key="m.id" class="agent-chat__row" :class="`is-${m.role}`">
-        <!-- 系统行：侧栏收到的 databus:agent:* 推送、以及错误提示 -->
-        <div v-if="m.role === 'system'" class="agent-chat__system">
+        <!-- 系统行：错误提示、画布更新被丢弃等结论性提示 -->
+        <div v-if="m.role === 'system'" class="agent-chat__system" :class="{ 'is-error': isErrorNotice(m) }">
           <span class="agent-chat__system-text">{{ noticeText(m) }}</span>
         </div>
         <!-- 用户消息：原样纯文本，不解析 Markdown -->
@@ -107,17 +107,17 @@
           @keydown="onKeydown"
         />
         <div class="agent-chat__toolbar">
-          <!-- 左侧工具区：回到 AI 动手前（按服务端快照回滚）+ 后续附件入口 -->
+          <!-- 左侧工具区：回到这次对话前（按服务端快照整体回滚）+ 后续附件入口 -->
           <div class="agent-chat__tools">
             <button
               type="button"
               class="agent-chat__tool"
-              title="回到 AI 动手前"
-              :disabled="running"
-              @click="openRollback"
+              title="回到这次对话前"
+              :disabled="running || rollbackRunning"
+              @click="backToBeforeConversation"
             >
               <SvgIcon icon-class="lucide:history" />
-              <span>回到 AI 动手前</span>
+              <span>回到这次对话前</span>
             </button>
           </div>
           <button v-if="running" type="button" class="agent-chat__send is-stop" @click="stop">
@@ -135,37 +135,6 @@
         </div>
       </div>
     </div>
-  <!-- 「回到 AI 动手前」：按 run 列轮次（只认服务端快照），确认后回滚并由宿主重建画布 -->
-    <el-dialog v-model="rollbackVisible" title="回到 AI 动手前" width="460px" append-to-body>
-      <p class="agent-chat__rollback-hint">
-        回滚只认服务端快照：选中轮次后，链路会写回该轮动手前的结构，画布按库重建。
-      </p>
-      <el-select
-        v-model="rollbackKey"
-        class="agent-chat__rollback-select"
-        placeholder="选择要回到的轮次"
-        :loading="rollbackLoading"
-        filterable
-      >
-        <el-option v-for="o in rollbackOptions" :key="o.key" :label="o.label" :value="o.key" />
-      </el-select>
-      <el-empty
-        v-if="!rollbackLoading && !rollbackOptions.length"
-        :image-size="48"
-        description="这个会话还没有 AI 动手前的快照"
-      />
-      <template #footer>
-        <el-button @click="rollbackVisible = false">取消</el-button>
-        <el-button
-          type="danger"
-          :disabled="!rollbackKey"
-          :loading="rollbackRunning"
-          @click="confirmRollback"
-        >
-          回滚
-        </el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
@@ -178,30 +147,21 @@
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { listAgentHistory, listSnapshots, rollbackTo } from '@/api/databus/agent';
+import { listAgentHistory, rollbackRun } from '@/api/databus/agent';
 import { useLucideSubset } from '../composables/useLucideSubset';
 import MarkdownBlock from './MarkdownBlock.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
 import { useAgentChat, type AgentChatMessage, type AgentSegment } from './useAgentChat';
 import { useAgentRefs, type AgentRefItem } from './useAgentRefs';
 import { refMeta } from './agentRefTypes';
-import { useAgentPush } from './useAgentPush';
 
 defineOptions({ name: 'AgentChatPanel' });
 
 useLucideSubset();
 
-const props = withDefaults(
-  defineProps<{
-    /** 当前画布链路 id，随每句话带给后端，可为空 */
-    chainId?: string | number | null;
-  }>(),
-  { chainId: null }
-);
-
 const emit = defineEmits<{
-  /** 回滚完成：宿主据此按 chainId 重新拉结构重建画布 */
-  'agent-rolled-back': [chainId: number | string];
+  /** 回滚完成：宿主据此重建画布、关掉已删除链路的 tab */
+  'agent-rolled-back': [chains: { chainId: number | string; deleted: boolean }[]];
   /** 点引用卡：跳转由宿主承接，面板不感知工作台内部路由 */
   'ref-open': [ref: AgentRefItem];
 }>();
@@ -238,6 +198,9 @@ function segmentText(message: AgentChatMessage, kind: AgentSegment['kind']): str
 const textOf = (message: AgentChatMessage) => segmentText(message, 'text');
 const noticeText = (message: AgentChatMessage) => segmentText(message, 'notice');
 const hasText = (message: AgentChatMessage) => textOf(message).length > 0;
+/** 系统行里的错误提示（连接断开等）单独用警示色，与普通提示区分 */
+const isErrorNotice = (message: AgentChatMessage) =>
+  message.segments.some((s) => s.kind === 'notice' && s.eventCode === 'error');
 
 const draft = ref('');
 const bodyRef = ref<HTMLElement>();
@@ -248,7 +211,7 @@ function sendWithRefs(text: string) {
   const picked = [...refs.value];
   draft.value = '';
   clearRefs();
-  void send(text.trim(), props.chainId, picked);
+  void send(text.trim(), picked);
 }
 
 /** 只在「最后一条是已结束的 AI 回答」时给建议：跑的过程中和用户刚说完都不打扰 */
@@ -300,94 +263,54 @@ watch(
   { deep: true }
 );
 
-// 切片 2 起后端会把画布快照/草稿等产物走全局推送下发，这里先接住并显示为系统行
-useAgentPush((payload) => {
-  const text = payload.message;
-  if (!text) {
-    return;
-  }
-  const code = payload.data?.eventCode;
-  appendSystem(text, typeof code === 'string' ? code : undefined);
-});
+// 画布/草稿推送不在这里回显：它们由工作台按四分支处理（弹窗确认、重画、开 tab），
+// 而 payload.message 是推送中心用的短文案（「画布已更新：xxx」），
+// 既与 AI 正文重复、又会在用户选择「丢弃」时显示成假的「已更新」，且只能排在回复之后。
+// 只有真正需要让用户知道的结果（如丢弃画布更新、错误）才由操作方 appendSystem。
 
 // 刷新后只问一句后端有没有还在跑的 run：旧 SSE 无法续接，这里只提示、不重放、也不停别的标签页
 onMounted(() => {
   void restore();
 });
 
-/* ---------------- 回到 AI 动手前（按服务端快照回滚） ---------------- */
+/* ---------------- 回到这次对话前（按 run 整体回滚） ---------------- */
 
-interface RollbackOption {
-  key: string;
-  label: string;
-  runId: string;
-  round: number;
-  chainId?: number | string;
-}
-
-const rollbackVisible = ref(false);
-const rollbackLoading = ref(false);
 const rollbackRunning = ref(false);
-const rollbackKey = ref('');
-const rollbackOptions = ref<RollbackOption[]>([]);
 
-/** 拉本会话所有 run 的快照，按 run 倒序 + round 倒序平铺成选项 */
-async function openRollback() {
+/**
+ * 回滚只针对最近一次已结束的 run：撤销这次对话的改动，不跨 run。
+ * 服务端对本 run 动过的每条链取最早一份快照，新建的删掉、改过的写回。
+ */
+async function backToBeforeConversation() {
   if (!conversationId.value) {
     appendSystem('还没有对话记录，暂无可回滚的 AI 操作。', 'agent:rollback');
     return;
   }
-  rollbackVisible.value = true;
-  rollbackKey.value = '';
-  rollbackOptions.value = [];
-  rollbackLoading.value = true;
-  try {
-    const { data: runs } = await listAgentHistory(conversationId.value);
-    const options: RollbackOption[] = [];
-    for (const run of (runs ?? []).toReversed()) {
-      const { data: snapshots } = await listSnapshots(run.runId);
-      for (const s of (snapshots ?? []).toReversed()) {
-        options.push({
-          key: `${run.runId}:${s.round}`,
-          label: `${s.chainName || '链路'} · 第 ${s.round} 轮动手前`,
-          runId: run.runId,
-          round: s.round,
-          chainId: s.chainId
-        });
-      }
-    }
-    rollbackOptions.value = options;
-  } catch {
-    appendSystem('读取快照失败，稍后再试。', 'agent:rollback');
-  } finally {
-    rollbackLoading.value = false;
-  }
-}
-
-/** 二次确认后回滚；成功后通知宿主按 chainId 重建画布（回滚只认服务端快照） */
-async function confirmRollback() {
-  const option = rollbackOptions.value.find((o) => o.key === rollbackKey.value);
-  if (!option) {
-    return;
-  }
-  try {
-    await ElMessageBox.confirm(
-      `将把「${option.label}」写回链路，当前画布会被按库重建。是否继续？`,
-      '回到 AI 动手前',
-      { confirmButtonText: '回滚', cancelButtonText: '取消', type: 'warning' }
-    );
-  } catch {
-    return;
-  }
   rollbackRunning.value = true;
   try {
-    const { data } = await rollbackTo(option.runId, option.round);
-    const chainId = data ?? option.chainId;
-    rollbackVisible.value = false;
-    ElMessage.success('已回到 AI 动手前');
-    if (chainId != null) {
-      emit('agent-rolled-back', chainId);
+    const { data: runs } = await listAgentHistory(conversationId.value);
+    const last = (runs ?? []).toReversed().find((run) => run.status !== 'RUNNING');
+    if (!last) {
+      appendSystem('这次对话还没有可回滚的操作。', 'agent:rollback');
+      return;
     }
+    try {
+      await ElMessageBox.confirm(
+        '将撤销这次对话对链路的全部改动：新建的链路会删除，改过的链路会写回对话前的结构。是否继续？',
+        '回到这次对话前',
+        { confirmButtonText: '回滚', cancelButtonText: '取消', type: 'warning' }
+      );
+    } catch {
+      return;
+    }
+    const { data } = await rollbackRun(last.runId);
+    const chains = data ?? [];
+    if (!chains.length) {
+      appendSystem('这次对话没有改动任何链路。', 'agent:rollback');
+      return;
+    }
+    ElMessage.success('已回到这次对话前');
+    emit('agent-rolled-back', chains);
   } catch {
     appendSystem('回滚失败，链路未被改动。', 'agent:rollback');
   } finally {
@@ -565,23 +488,30 @@ defineExpose({ newSession });
   }
 }
 
-/* 系统行：居中细字，不占气泡宽度 */
+/* 系统行：整行浅底提示条，左对齐读得清；错误另用警示色 */
 .agent-chat__system {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  margin: 12px 0;
-  text-align: center;
-  font-size: 11px;
-  line-height: 1.6;
+  margin: 10px 0;
+  font-size: 11.5px;
+  line-height: 1.65;
   color: var(--db-ink-muted, #6e6e73);
+
+  &.is-error {
+    color: var(--el-color-danger, #f56c6c);
+  }
 }
 
 .agent-chat__system-text {
+  display: block;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
   word-break: break-word;
+}
+
+.agent-chat__system.is-error .agent-chat__system-text {
+  background: var(--el-color-danger-light-9, #fef0f0);
 }
 
 .agent-chat__input {
@@ -812,18 +742,6 @@ defineExpose({ newSession });
     width: 14px;
     height: 14px;
   }
-}
-
-/* 「回到 AI 动手前」弹窗 */
-.agent-chat__rollback-hint {
-  margin: 0 0 10px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--db-ink-muted, #6e6e73);
-}
-
-.agent-chat__rollback-select {
-  width: 100%;
 }
 
 /* 发送/停止：同尺寸圆角方形按钮，图标面性、主题色填充 */

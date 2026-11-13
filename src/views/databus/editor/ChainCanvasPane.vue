@@ -225,7 +225,12 @@ const elPreview = useElPreview(treeModel);
 // 画布操作控制器：改树→重投影→入栈→EL 预览刷新
 const ctrl = provideCanvasController({
   treeModel,
-  pushHistory: push,
+  // 每次真实编辑都立刻置脏：不能只靠 watch(canUndo)，保存后 canUndo 一直是 true，
+  // 之后再改永远不会跳回 false→true，脏圆点就再也不亮（AI 覆盖判定会误判成「画布干净」）
+  pushHistory: () => {
+    dirty.value = true;
+    push();
+  },
   onCommit: () => elPreview.schedule(),
   autoLayout: runAutoLayout
 });

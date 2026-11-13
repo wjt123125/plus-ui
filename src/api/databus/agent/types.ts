@@ -4,8 +4,6 @@ export interface AgentChatBo {
   content: string;
   /** 会话 id，为空则新开会话 */
   conversationId?: string;
-  /** 当前画布链路 id，可为空 */
-  chainId?: number | string;
 }
 
 /** 发起对话的返回：run 句柄与会话 id */
@@ -23,7 +21,6 @@ export type AgentRunStatus = 'RUNNING' | 'FINISHED' | 'FAILED' | 'STOPPED' | 'EX
 export interface AgentRunVo {
   runId: string;
   conversationId: string;
-  chainId?: number | string;
   intent?: string;
   status: AgentRunStatus;
   report?: string;
@@ -32,16 +29,26 @@ export interface AgentRunVo {
   createTime?: string;
 }
 
-/** AI 动手前的链路快照（每轮一行，用于「回到 AI 动手前」按轮次回滚） */
-export interface AgentSnapshotVo {
-  id: number | string;
-  runId: string;
-  /** 第几轮动手前（0 表示首轮） */
-  round: number;
-  /** 快照对应的链路 id（从 payload 解析，便于前端定位画布） */
-  chainId?: number | string;
-  chainName?: string;
-  createTime?: string;
+/** 「回到这次对话前」的回滚结果 */
+export interface AgentRollbackVo {
+  /** 被回滚的链路 id */
+  chainId: number | string;
+  /** true 表示本对话新建的链路已整条删除；false 表示结构已写回对话前 */
+  deleted: boolean;
+}
+
+/** 会话摘要（按 run 聚合，不建独立会话表） */
+export interface AgentConversationVo {
+  /** SnailAI 会话 id */
+  conversationId: string;
+  /** 标题：同会话最早一条非 SUPERSEDED run 的原话左截 40 字 */
+  title?: string;
+  /** 最近一次 run 的创建时间 */
+  lastTime?: string;
+  /** 是否有进行中的 run */
+  running?: boolean;
+  /** 该会话的 run 条数 */
+  runCount?: number;
 }
 
 /** AI 已落库的消息（按 seq 升序回放） */

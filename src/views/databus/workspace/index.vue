@@ -20,8 +20,15 @@
     />
 
     <div class="wsp">
-      <!-- 栏 1：会话历史（AI 助手的兄弟栏，v1 无会话后端，列表走空态）；用户区挂在它底部 -->
-      <AiHistoryRail :collapsed="historyCollapsed" :width="historyWidth">
+      <!-- 栏 1：会话历史（AI 助手的兄弟栏）；点条目切会话，表头「＋新建」开新会话 -->
+      <AiHistoryRail
+        :collapsed="historyCollapsed"
+        :width="historyWidth"
+        :sessions="sessionList"
+        :active-id="conversationId"
+        @open="onHistoryOpen"
+        @new="onAiNewSession"
+      >
         <!-- 用户区（n8n 式，§7 改造点3）：头像+昵称+角色整行下拉，替代原 header 右上角用户胶囊 -->
         <template #footer>
           <WorkbenchUserBar settings-entry @settings="goSettings" @logout="onLogout" />
@@ -39,10 +46,8 @@
         @select="onAiSelect"
         @new-session="onAiNewSession"
       >
-        <!-- 对话面板接管 body + input 区；链路 id 随每句话带给后端 -->
+        <!-- 对话面板接管 body + input 区；会话身份只认 conversationId -->
         <AgentChatPanel
-          ref="agentPanelRef"
-          :chain-id="activeChainId"
           @agent-rolled-back="onAgentRolledBack"
           @ref-open="onAgentRefOpen"
         />
@@ -164,11 +169,13 @@ import {
   toggleComponent
 } from '@/api/databus/component';
 import type { ComponentOption, ScriptRuntime, ScriptSaveResult } from '@/api/databus/component/types';
+import { reportAgentCanvasSkip } from '@/api/databus/agent';
 import { delChain, offlineChain, publishChain } from '@/api/databus/chain';
 import type { ChainPublishResultVo } from '@/api/databus/chain/types';
 import { publishMarketBatch, uninstallMarketItem } from '@/api/databus/market';
 import type { DatabusExecutionResult } from '@/api/databus/execution/types';
 import { useLoading } from '@/hooks/async/useLoading';
+import { initPush } from '@/utils/push';
 import modal from '@/plugins/modal';
 import { buildRegistry } from '@/views/databus/component/model/registry';
 import type { ComponentRegistryRow, DefMeta } from '@/views/databus/component/model/registry';
@@ -190,6 +197,7 @@ import AiHistoryRail from '@/views/databus/workbench/ai/AiHistoryRail.vue';
 import { useAiSessionHistory } from '@/views/databus/workbench/ai/useAiSessionHistory';
 import { useAgentRefs, type AgentRefItem } from '@/views/databus/workbench/ai/useAgentRefs';
 import { useAgentChat } from '@/views/databus/workbench/ai/useAgentChat';
+import type { AiSession } from '@/views/databus/workbench/ai/ai.types';
 import { useAgentPush } from '@/views/databus/workbench/ai/useAgentPush';
 import type { CmpProperty } from '@/api/databus/el/types';
 import ChainForm from '../chain/ChainForm.vue';
@@ -818,10 +826,17 @@ function onAiSelect(payload: string) {
   }
 }
 
-/** AI 栏头「新会话」：清空对话与本地会话 id（进行中的 run 由面板内部先停） */
-const agentPanelRef = ref<InstanceType<typeof AgentChatPanel>>();
+/**
+ * 新建会话（AI 栏头 / 历史栏表头共用）：换一个空会话桶并切过去。
+ * 不打断其它会话正在跑的 run —— 会话是并行单位。
+ */
 function onAiNewSession() {
-  void agentPanelRef.value?.newSession();
+  createSession();
+}
+
+/** 历史栏点某条会话：切过去，已加载过的不再重复拉历史 */
+function onHistoryOpen(session: AiSession) {
+  switchSession(session.id);
 }
 
 /**
@@ -872,23 +887,38 @@ function reloadTree() {
 interface AgentCanvasEvent {
   eventCode?: string;
   runId?: string;
+  /** 该事件属于哪个会话（阶段三起由后端带出，用于跨会话提示文案） */
+  conversationId?: string;
   seq?: number;
   chainId?: number | string;
   chainName?: string;
+  /** 本次是新建还是修改链路：新建时即使画布没开着也自动开 tab */
+  operation?: 'CREATE' | 'UPDATE';
   cmpProperty?: CmpProperty | null;
   revealNodeId?: string | null;
 }
 
-const { appendSystem } = useAgentChat();
+const { conversationId, sessionList, createSession, switchSession, appendSystem, refreshSessions } =
+  useAgentChat();
 /** 引用卡：右键「加入会话」只暂存引用，发消息时由对话面板拼进问题 */
 const { addRef } = useAgentRefs();
 
-/** 丢弃 canvas 事件后回推一条提示：让面板与用户都知道 AI 的改动没被采纳 */
-function notifyCanvasSkipped(chainName?: string) {
+// 历史栏首屏数据：进工作台先拉一次会话列表（失败就走空态，不阻塞工作台）
+void refreshSessions();
+
+/** 丢弃 canvas 事件后回推一条提示：让面板与用户都知道 AI 的改动没被采纳，并记入审计供下一轮告知 AI */
+function notifyCanvasSkipped(chainName?: string, runId?: string, sourceConversationId?: string) {
+  // 画布是客观事实，不按会话过滤；来自别的会话的事件加前缀，避免用户误以为是当前会话做的
+  const fromOther = !!sourceConversationId && sourceConversationId !== conversationId.value;
   appendSystem(
-    `已丢弃 AI 对「${chainName ?? '当前链路'}」的画布更新：画布上有未保存的改动。请先保存或放弃本地修改，再让 AI 重试。`,
+    `${fromOther ? '（来自另一个会话）' : ''}已丢弃 AI 对「${chainName ?? '当前链路'}」的画布更新：画布上有未保存的改动。请先保存或放弃本地修改，再让 AI 重试。`,
     'databus:agent:canvas-skipped'
   );
+  if (runId) {
+    reportAgentCanvasSkip(runId, chainName).catch(() => {
+      /* 审计写入失败不影响本地提示 */
+    });
+  }
 }
 
 /** 按 §3.8 重画指定链路画布；pane 不在（tab 刚关）时只刷链树兜底 */
@@ -924,10 +954,10 @@ useAgentPush((payload) => {
   const current = tabs.value.find((t) => t.key === activeKey.value);
   const currentCanvas = current?.kind === 'canvas' ? current : undefined;
 
-  // 分支 4：目标链画布没开着 → 只更新链树，不强行弹画布
+  // 分支 4：目标链画布没开着 → 新建的链必须开 tab（用户要看新链）；只是改一条没开的链则只刷链树
   if (!target) {
     // 分支 3 的延伸：当前正看着另一条脏画布 → 在新 tab 打开目标链，绝不覆盖当前
-    if (currentCanvas?.dirty) {
+    if (evt.operation === 'CREATE' || currentCanvas?.dirty) {
       wb.openCanvas(evt.chainId!, evt.chainName || String(evt.chainId));
     }
     return;
@@ -946,13 +976,25 @@ useAgentPush((payload) => {
     type: 'warning'
   })
     .then(() => redrawAgentCanvas(evt))
-    .catch(() => notifyCanvasSkipped(evt.chainName));
+    .catch(() => notifyCanvasSkipped(evt.chainName, evt.runId, evt.conversationId));
 });
 
-/** 「回到 AI 动手前」回滚完成：刷链树 + 按服务端结构重建画布（回滚只认服务端快照） */
-async function onAgentRolledBack(chainId: number | string) {
+/** 「回到这次对话前」完成：刷链树 + 逐个重建 / 关闭画布 */
+async function onAgentRolledBack(chains: { chainId: number | string; deleted: boolean }[]) {
   void reloadTree();
-  await workPanelRef.value?.reloadCanvas(chainId);
+  let reloaded = false;
+  for (const chain of chains) {
+    if (chain.deleted) {
+      // 撤销新建：链路已被删掉，画布 tab 也一并关掉，不让用户对着空链路
+      wb.close(canvasKey(chain.chainId));
+    } else {
+      await workPanelRef.value?.reloadCanvas(chain.chainId);
+      reloaded = true;
+    }
+  }
+  if (!reloaded && chains.length) {
+    ElMessage.success('AI 新建的链路已撤销');
+  }
 }
 
 /** 树节点链路主键（空串/null 视为无） */
@@ -1355,6 +1397,10 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => {
+  // 工作区是剥壳独立路由（不挂 Layout），Layout 里的全局推送初始化不会执行：
+  // 不在这里补一次 SSE，AI 的 databus:agent:canvas / draft 业务事件就永远收不到（只有对话流可用）。
+  // initPush 内部先 closePush，重复调用安全。
+  initPush();
   // 字典与 ph 图标全集都在树首次渲染前触发；getList 拉台账双源合流
   void ensureTaxonomy();
   void loadPhIcons();
