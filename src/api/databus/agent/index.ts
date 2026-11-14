@@ -2,6 +2,8 @@ import type { AxiosPromise } from '@/utils/api-types';
 import { getToken } from '@/utils/auth';
 import request from '@/utils/request';
 import type {
+  AgentApprovalMode,
+  AgentApprovalModeVo,
   AgentChatBo,
   AgentChatStartVo,
   AgentConversationVo,
@@ -80,7 +82,7 @@ export function listAgentHistory(conversationId: string): AxiosPromise<AgentRunV
 }
 
 /**
- * 列出当前用户的会话（按最近活跃倒序，供左侧历史栏用）。
+ * 列出当前用户的会话（置顶优先，其次按最近活跃倒序，供左侧历史栏用）。
  * GET /databus/agent/conversations?limit=50
  */
 export function listAgentConversations(limit = 50): AxiosPromise<AgentConversationVo[]> {
@@ -92,6 +94,53 @@ export function listAgentConversations(limit = 50): AxiosPromise<AgentConversati
 }
 
 /**
+ * 搜当前用户的会话（标题 + 问句 + 消息内容模糊匹配）。
+ * GET /databus/agent/conversations/search?keyword=
+ */
+export function searchAgentConversations(keyword: string, limit = 50): AxiosPromise<AgentConversationVo[]> {
+  return request({
+    url: '/databus/agent/conversations/search',
+    method: 'get',
+    params: { keyword, limit }
+  });
+}
+
+/**
+ * 重命名会话（只覆盖显示标题，不影响历史问句）。
+ * PUT /databus/agent/conversation/{conversationId}/title
+ */
+export function renameAgentConversation(conversationId: string, title: string) {
+  return request({
+    url: `/databus/agent/conversation/${conversationId}/title`,
+    method: 'put',
+    data: { title }
+  });
+}
+
+/**
+ * 置顶 / 取消置顶会话。
+ * PUT /databus/agent/conversation/{conversationId}/pin
+ */
+export function pinAgentConversation(conversationId: string, pinned: boolean) {
+  return request({
+    url: `/databus/agent/conversation/${conversationId}/pin`,
+    method: 'put',
+    params: { pinned }
+  });
+}
+
+/**
+ * 删除会话（软删覆盖信息，run / step / message 历史保留）。
+ * DELETE /databus/agent/conversation/{conversationId}
+ */
+export function deleteAgentConversation(conversationId: string) {
+  return request({
+    url: `/databus/agent/conversation/${conversationId}`,
+    method: 'delete'
+  });
+}
+
+/**
  * 回到这次对话前：按 run 整体回滚（新建的删掉、改过的写回对话前结构）。
  * POST /databus/agent/run/{runId}/rollback
  */
@@ -99,6 +148,29 @@ export function rollbackRun(runId: string): AxiosPromise<AgentRollbackVo[]> {
   return request({
     url: `/databus/agent/run/${runId}/rollback`,
     method: 'post'
+  });
+}
+
+/**
+ * 读取会话级操作审批模式与部署的完全访问开关。
+ * GET /databus/agent/conversation/{conversationId}/approval-mode
+ */
+export function getAgentApprovalMode(conversationId: string): AxiosPromise<AgentApprovalModeVo> {
+  return request({
+    url: `/databus/agent/conversation/${conversationId}/approval-mode`,
+    method: 'get'
+  });
+}
+
+/**
+ * 保存会话级操作审批模式（MANUAL/AUTO；FULL 需部署开放；CUSTOM 暂未开放）。
+ * PUT /databus/agent/conversation/{conversationId}/approval-mode
+ */
+export function updateAgentApprovalMode(conversationId: string, mode: AgentApprovalMode) {
+  return request({
+    url: `/databus/agent/conversation/${conversationId}/approval-mode`,
+    method: 'put',
+    data: { mode }
   });
 }
 

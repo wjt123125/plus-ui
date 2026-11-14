@@ -107,8 +107,53 @@
           @keydown="onKeydown"
         />
         <div class="agent-chat__toolbar">
-          <!-- 左侧工具区：回到这次对话前（按服务端快照整体回滚）+ 后续附件入口 -->
+          <!-- 左侧工具区：会话归属工作区（本轮只有默认工作区）+ 回到这次对话前 -->
           <div class="agent-chat__tools">
+            <el-dropdown trigger="click" placement="top-start" popper-class="db-menu-popper">
+              <button type="button" class="agent-chat__tool" title="选择会话工作区">
+                <SvgIcon icon-class="lucide:folder" />
+                <span>默认工作区</span>
+                <SvgIcon icon-class="lucide:chevron-down" class="agent-chat__tool-caret" />
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item class="db-menu-item is-primary">
+                    <SvgIcon icon-class="lucide:circle-check" />
+                    <span>默认工作区</span>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-dropdown
+              trigger="click"
+              placement="top-start"
+              popper-class="db-menu-popper"
+              @command="changeApprovalMode"
+            >
+              <button type="button" class="agent-chat__tool" title="操作审批模式（只影响链路试跑）">
+                <SvgIcon icon-class="lucide:circle-check" />
+                <span>{{ approvalModeLabel }}</span>
+                <SvgIcon icon-class="lucide:chevron-down" class="agent-chat__tool-caret" />
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item
+                    v-for="opt in approvalModeOptions"
+                    :key="opt.value"
+                    :command="opt.value"
+                    :disabled="opt.disabled"
+                    :title="opt.hint"
+                  >
+                    <SvgIcon
+                      v-if="approvalMode === opt.value"
+                      icon-class="lucide:circle-check"
+                    />
+                    <span v-else class="agent-chat__mode-placeholder" />
+                    <span>{{ opt.label }}</span>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <button
               type="button"
               class="agent-chat__tool"
@@ -147,7 +192,8 @@
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { listAgentHistory, rollbackRun } from '@/api/databus/agent';
+import { getAgentApprovalMode, listAgentHistory, rollbackRun, updateAgentApprovalMode } from '@/api/databus/agent';
+import type { AgentApprovalMode } from '@/api/databus/agent/types';
 import { useLucideSubset } from '../composables/useLucideSubset';
 import MarkdownBlock from './MarkdownBlock.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
@@ -317,6 +363,84 @@ async function backToBeforeConversation() {
     rollbackRunning.value = false;
   }
 }
+
+/* ---------------- 操作审批模式（会话级，只影响链路试跑） ---------------- */
+
+/**
+ * 四档照抄 Trae：手动 / 自动 / 完全访问 / 自定义。
+ * 「完全访问」是否可选由部署开关决定（allowFullAccess），关闭时该档置灰；
+ * 「自定义」本阶段未开放，固定置灰。模式落库在会话上，切换后立即生效。
+ */
+const approvalMode = ref<AgentApprovalMode>('MANUAL');
+const allowFullAccess = ref(false);
+
+const approvalModeOptions = computed<
+  { value: AgentApprovalMode; label: string; disabled: boolean; hint: string }[]
+>(() => [
+  { value: 'MANUAL', label: '手动审批', disabled: false, hint: '每次试跑前先征求确认' },
+  {
+    value: 'AUTO',
+    label: '自动审批',
+    disabled: false,
+    hint: '纯只读的链路直接跑，含写或外部调用仍要确认'
+  },
+  {
+    value: 'FULL',
+    label: '完全访问',
+    disabled: !allowFullAccess.value,
+    hint: allowFullAccess.value ? '所有试跑不再询问' : '当前部署未开放完全访问'
+  },
+  { value: 'CUSTOM', label: '自定义', disabled: true, hint: '暂未开放' }
+]);
+
+const approvalModeLabel = computed(
+  () => approvalModeOptions.value.find((o) => o.value === approvalMode.value)?.label ?? '手动审批'
+);
+
+/** 读会话当前模式；无会话或读取失败都按「手动审批」展示，不打断对话 */
+async function loadApprovalMode(id: string) {
+  if (!id) {
+    approvalMode.value = 'MANUAL';
+    allowFullAccess.value = false;
+    return;
+  }
+  try {
+    const { data } = await getAgentApprovalMode(id);
+    approvalMode.value = data?.mode ?? 'MANUAL';
+    allowFullAccess.value = Boolean(data?.allowFullAccess);
+  } catch {
+    approvalMode.value = 'MANUAL';
+  }
+}
+
+/** 切换模式：先落库再改本地，失败回读服务端状态，避免界面与真实生效值不一致 */
+async function changeApprovalMode(mode: string) {
+  if (!conversationId.value) {
+    ElMessage.info('还没有对话记录，审批模式会在开始对话后生效。');
+    return;
+  }
+  if (mode === approvalMode.value) {
+    return;
+  }
+  const previous = approvalMode.value;
+  approvalMode.value = mode as AgentApprovalMode;
+  try {
+    await updateAgentApprovalMode(conversationId.value, mode as AgentApprovalMode);
+    ElMessage.success(`已切换为${approvalModeLabel.value}`);
+  } catch {
+    approvalMode.value = previous;
+    ElMessage.error('审批模式切换失败，已恢复原模式');
+  }
+}
+
+// 会话切换（新开会话/切换历史会话）时重新拉取该会话的模式
+watch(
+  conversationId,
+  (id) => {
+    void loadApprovalMode(id);
+  },
+  { immediate: true }
+);
 
 defineExpose({ newSession });
 </script>
@@ -711,6 +835,11 @@ defineExpose({ newSession });
   display: flex;
   align-items: center;
   gap: 2px;
+
+  /* 工作区是稳定入口，不随栏宽收缩；右侧回滚按钮可退化成省略号 */
+  > .el-dropdown {
+    flex-shrink: 0;
+  }
 }
 
 /* 「回到 AI 动手前」：低调文字钮，hover 才显底色 */
@@ -718,6 +847,7 @@ defineExpose({ newSession });
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
   height: 24px;
   padding: 0 6px;
   border: 0;
@@ -725,8 +855,15 @@ defineExpose({ newSession });
   background: transparent;
   color: var(--db-ink-muted, #6e6e73);
   font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
   transition: background 0.15s;
+
+  > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
   &:hover:not(:disabled) {
     background: var(--db-hover, rgb(0 0 0 / 5%));
@@ -742,6 +879,22 @@ defineExpose({ newSession });
     width: 14px;
     height: 14px;
   }
+}
+
+/* 工作区下拉的展开箭头：比主图标再小一号，暗示可展开 */
+.agent-chat__tool .agent-chat__tool-caret {
+  width: 12px;
+  height: 12px;
+  margin-left: -2px;
+  opacity: 0.7;
+}
+
+/* 审批模式菜单里的未选中占位：与勾选图标同宽，保证四档文字左对齐 */
+.agent-chat__mode-placeholder {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 
 /* 发送/停止：同尺寸圆角方形按钮，图标面性、主题色填充 */
