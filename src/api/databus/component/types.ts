@@ -314,3 +314,32 @@ export interface ScriptRuntime {
   registeredAt?: string;
   failedAt?: string;
 }
+
+// ------------------------------------------------------------------
+// 草稿审阅（AI 落下的 DRAFT 行：源码 / 编译产物 / 试跑 → 人点采纳或拒绝）
+// ------------------------------------------------------------------
+
+/** 审阅页探针试跑入参（POST /databus/component/script/probe） */
+export interface ScriptProbeBo {
+  /** 完整 Java 类源码（审阅页直接用草稿正文） */
+  scriptBody: string;
+  /** 上下文根 $ 的 JSON 字符串；不传＝空上下文 */
+  requestData?: string;
+}
+
+/** 探针试跑结果（编译失败同样 200 返回，success=false 带行列诊断） */
+export interface ScriptProbeResult {
+  success: boolean;
+  costMs?: number | null;
+  /** 失败总述（成功为空） */
+  message?: string | null;
+  /** 执行结束后上下文 JSON 快照 */
+  output?: string | null;
+  nodeType?: NodeTypeKind | null;
+  /** 节点级错误（探针单节点，最多一条） */
+  nodeErrors?: string[] | null;
+  /** 危险 API 命中提示 */
+  risks?: string[] | null;
+  /** 编译诊断（编不过时有值） */
+  diagnostics?: ScriptDiagnostic[] | null;
+}

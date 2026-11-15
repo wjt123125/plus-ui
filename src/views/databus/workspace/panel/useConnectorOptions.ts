@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue';
 import { listConnectorDefs, listMyConnectorDefs } from '@/api/databus/connector';
 import type { ConnectorConfigField, ConnectorConfigGroup, ConnectorDefVo } from '@/api/databus/connector/types';
+import { CONNECTOR_DEF_STATUS } from '@/constants/databus';
 import { connectorHealthMeta, versionLabel, type ConnectorHealthMeta } from '../market/marketDisplay';
 
 /**
@@ -48,8 +49,8 @@ function preferDef(list: ConnectorDefVo[]): ConnectorDefVo | undefined {
     return undefined;
   }
   return [...list].toSorted((a, b) => {
-    const enabledA = a.status === 'ENABLED' ? 1 : 0;
-    const enabledB = b.status === 'ENABLED' ? 1 : 0;
+    const enabledA = a.status === CONNECTOR_DEF_STATUS.ENABLED ? 1 : 0;
+    const enabledB = b.status === CONNECTOR_DEF_STATUS.ENABLED ? 1 : 0;
     if (enabledA !== enabledB) {
       return enabledB - enabledA;
     }

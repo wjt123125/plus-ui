@@ -199,6 +199,7 @@ import {
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import { useUserStore } from '@/store/modules/user';
 import download from '@/plugins/download';
+import { CONNECTOR_SOURCE } from '@/constants/databus';
 import { connectorHealthMeta, versionLabel } from './marketDisplay';
 import ConnectorCapabilityTables from './ConnectorCapabilityTables.vue';
 import ConnectorRuntimePanel from './ConnectorRuntimePanel.vue';
@@ -230,7 +231,7 @@ function hasPermi(perm: string): boolean {
   return userStore.permissions.some((p: string) => p === '*:*:*' || p === perm);
 }
 
-const isDev = computed(() => props.source === 'DEV');
+const isDev = computed(() => props.source === CONNECTOR_SOURCE.DEV);
 const title = computed(() => `${props.type} · ${versionLabel(props.version)}`);
 const suspicious = computed(() => inspect.value?.suspicious ?? []);
 const fileCount = computed(() => inspect.value?.files?.length ?? 0);

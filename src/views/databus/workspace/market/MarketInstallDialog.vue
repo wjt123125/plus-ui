@@ -98,6 +98,8 @@ import { computed, ref, watch } from 'vue';
 import { addDirectory, listDirectory } from '@/api/databus/directory';
 import type { DirectoryVo } from '@/api/databus/directory/types';
 import type { DatabusMarketItemVo } from '@/api/databus/market/types';
+import { MARKET_RESOURCE_TYPE } from '@/constants/databus';
+import { DATABUS_DIRECTORY_ROOT_ID } from '@/constants/databus-common';
 import modal from '@/plugins/modal';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 
@@ -125,9 +127,9 @@ const newGroupName = ref('');
 const creating = ref(false);
 
 /** 链路才 fork 副本选目录；组件为共享注册，不落目录 */
-const isChain = computed(() => props.item?.resourceType === 'CHAIN');
+const isChain = computed(() => props.item?.resourceType === MARKET_RESOURCE_TYPE.CHAIN);
 /** 连接器无目录语义（§15.3：安装＝写一条个人安装记录，不改 def 全局启停、不复制副本） */
-const isConnector = computed(() => props.item?.resourceType === 'CONNECTOR');
+const isConnector = computed(() => props.item?.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR);
 
 /** 安装确认只说「装到哪、装完在哪用」，不复述存储模型与上游影响 */
 const installTip = computed(() => {
@@ -140,7 +142,7 @@ const installTip = computed(() => {
 });
 
 const itemIcon = computed(() =>
-  props.item?.resourceType === 'CHAIN' ? 'lucide:spline' : props.item?.icon || 'lucide:box'
+  props.item?.resourceType === MARKET_RESOURCE_TYPE.CHAIN ? 'lucide:spline' : props.item?.icon || 'lucide:box'
 );
 
 interface DirOption {
@@ -159,7 +161,7 @@ function build(parentId: string | number): DirOption[] {
 const options = computed<DirOption[]>(() => [{ value: 0, label: '根目录', children: build(0) }]);
 
 /** 选中「根目录」或未选＝新分组建在根目录下 */
-const isRootSelected = computed(() => !target.value || String(target.value) === '0');
+const isRootSelected = computed(() => !target.value || String(target.value) === DATABUS_DIRECTORY_ROOT_ID);
 
 /** 新分组的父级名（跟随树中选中态，footer 提示用） */
 const parentLabel = computed(() => {
@@ -193,7 +195,7 @@ function submit() {
     modal.msgWarning('请选择安装分组，或在下拉内输入新分组名回车创建');
     return;
   }
-  if (String(target.value) === '0') {
+  if (String(target.value) === DATABUS_DIRECTORY_ROOT_ID) {
     modal.msgWarning('「根目录」只用于指定新分组的父级，安装请选择一个具体分组');
     return;
   }

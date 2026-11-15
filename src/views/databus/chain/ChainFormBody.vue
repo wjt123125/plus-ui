@@ -72,10 +72,10 @@
           <el-button size="small" type="danger" plain @click="handleUnmark">取消模板</el-button>
         </div>
         <template v-else>
-          <el-button size="small" :disabled="templateMeta.status === STATUS_PUBLISHED" @click="openTemplateDialog">
+          <el-button size="small" :disabled="templateMeta.status === CHAIN_STATUS.ENABLED" @click="openTemplateDialog">
             设为精选模板
           </el-button>
-          <p v-if="templateMeta.status === STATUS_PUBLISHED" class="template-tip">
+          <p v-if="templateMeta.status === CHAIN_STATUS.ENABLED" class="template-tip">
             已发布链路需先下线后再设为模板；模板恒为草稿，不进执行入口。
           </p>
         </template>
@@ -98,6 +98,8 @@
 <script setup lang="ts" name="ChainFormBody">
 import type { DatabusChainBo, DatabusChainVo } from '@/api/databus/chain/types';
 import { addChain, getChain, unmarkTemplate, updateChain } from '@/api/databus/chain';
+import { CHAIN_STATUS, LOG_LEVEL } from '@/constants/databus';
+import { DATABUS_TEMPLATE_FLAG_YES } from '@/constants/databus-common';
 import modal from '@/plugins/modal';
 import TemplateMarkDialog from './TemplateMarkDialog.vue';
 import type { FormPreset } from '../workspace/workbench.types';
@@ -138,16 +140,16 @@ const formRef = ref<ElFormInstance>();
 
 /** 记录档位选项（字典 databus_log_level 镜像；默认 BASIC） */
 const LOG_LEVEL_OPTIONS = [
-  { value: 'BASIC', label: '基础', desc: '执行级：入参/出参/状态/耗时' },
-  { value: 'FULL', label: '完整', desc: '基础 + 每个节点的逐步 IO' },
-  { value: 'OFF', label: '关闭', desc: '完全不落库' }
+  { value: LOG_LEVEL.BASIC, label: '基础', desc: '执行级：入参/出参/状态/耗时' },
+  { value: LOG_LEVEL.FULL, label: '完整', desc: '基础 + 每个节点的逐步 IO' },
+  { value: LOG_LEVEL.OFF, label: '关闭', desc: '完全不落库' }
 ] as const;
 
 const buildInitFormData = (): DatabusChainBo => ({
   id: undefined,
   chainCode: '',
   chainName: '',
-  logLevel: 'BASIC',
+  logLevel: LOG_LEVEL.BASIC,
   remark: '',
   // 归属仅新建时随表单提交；树头部新建为 null（未归组），目录右键新建预填目录 id
   directoryId: null
@@ -158,8 +160,6 @@ const form = ref<DatabusChainBo>(buildInitFormData());
 const isEdit = computed(() => props.chainId != null && props.chainId !== '');
 
 /** 模板运营区所需状态（通用保存表单不含这些字段，单独从详情同步） */
-const STATUS_PUBLISHED = 'ENABLED';
-
 interface TemplateMetaState {
   isTemplate: boolean;
   status?: string;
@@ -173,7 +173,7 @@ const templateDialogRef = ref<InstanceType<typeof TemplateMarkDialog>>();
 
 const syncTemplateMeta = (data: DatabusChainVo) => {
   templateMeta.value = {
-    isTemplate: data.isTemplate === '1',
+    isTemplate: data.isTemplate === DATABUS_TEMPLATE_FLAG_YES,
     status: data.status,
     templateDesc: data.templateDesc ?? undefined,
     templateSort: data.templateSort

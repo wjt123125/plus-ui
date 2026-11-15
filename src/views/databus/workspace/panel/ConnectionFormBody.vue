@@ -17,13 +17,13 @@
   <div class="conn-body">
     <header class="conn-body__head">
       <el-tooltip
-        :content="form.enabled === 'Y' ? '已启用' : '已禁用'"
+        :content="form.enabled === FLAG.YES ? '已启用' : '已禁用'"
         placement="top"
         :show-after="200"
       >
         <span
           class="conn-body__dot"
-          :class="form.enabled === 'Y' ? 'is-enabled' : 'is-disabled'"
+          :class="form.enabled === FLAG.YES ? 'is-enabled' : 'is-disabled'"
           aria-hidden="true"
         />
       </el-tooltip>
@@ -33,7 +33,7 @@
       </span>
       <span class="conn-body__spacer" />
       <el-tooltip content="停用的连接不会进入运行时连接池" placement="top" :show-after="200">
-        <el-switch v-model="form.enabled" active-value="Y" inactive-value="N" size="small" />
+        <el-switch v-model="form.enabled" :active-value="FLAG.YES" :inactive-value="FLAG.NO" size="small" />
       </el-tooltip>
     </header>
 
@@ -164,6 +164,7 @@ import ConnectionSchemaForm from './ConnectionSchemaForm.vue';
 import { buildConfigRules, resolveGroups, type ResolvedGroup } from './connectionSchema';
 import { useConnectorOptions } from './useConnectorOptions';
 import type { ConnectionSaved } from '../workbench.types';
+import { FLAG } from '@/constants/databus';
 
 /**
  * 连接表单主体。
@@ -198,7 +199,7 @@ const buildInitFormData = (): ConnectionFormModel => ({
   connectionName: '',
   connectorType: '',
   connectorDefId: undefined,
-  enabled: 'Y',
+  enabled: FLAG.YES,
   remark: '',
   config: {}
 });

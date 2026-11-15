@@ -85,6 +85,7 @@ import { ElButton, ElIcon, ElMessage, ElOption, ElSelect, ElTag, ElTooltip } fro
 import { TopRight } from '@element-plus/icons-vue';
 import type { DatabusChainQuery, DatabusChainVo } from '@/api/databus/chain/types';
 import { useChainOptions } from '../../composables/useChainOptions';
+import { DATABUS_TEMPLATE_FLAG_NO } from '@/constants/databus-common';
 
 defineOptions({ name: 'ChainSelect' });
 
@@ -139,7 +140,7 @@ const query = computed<DatabusChainQuery>(() => ({
   pageSize: 1000,
   ...(props.status ? { status: props.status } : {}),
   // isTemplate：不传=不过滤；默认只看普通链显式传 '0'
-  ...(props.includeTemplate ? {} : { isTemplate: '0' })
+  ...(props.includeTemplate ? {} : { isTemplate: DATABUS_TEMPLATE_FLAG_NO })
 }));
 
 const { chains, loading, failed, ensure } = useChainOptions(() => query.value);

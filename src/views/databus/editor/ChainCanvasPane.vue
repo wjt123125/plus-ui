@@ -137,6 +137,8 @@ import { usePanelCollapse } from './composables/usePanelCollapse';
 import { usePreviewRun } from './composables/usePreviewRun';
 import { useComponentOptions } from './composables/useComponentOptions';
 import { useChainOptions } from './composables/useChainOptions';
+import { DATABUS_CHAIN_DEF_TYPE } from '@/constants/databus-chain';
+import { DATABUS_TEMPLATE_FLAG_NO } from '@/constants/databus-common';
 
 defineOptions({ name: 'ChainCanvasPane' });
 
@@ -274,7 +276,7 @@ function onDropNode(payload: { type: string; x: number; y: number }) {
 //   子链 chainCode 存在节点 cmpId（projectChain 写入），从共享链路选项缓存里解析出 id/名称。
 // - 业务组件卡 → 打开组件详情 tab（defType 即组件编码，物料/内置件通吃）
 //   仅 workbench 宿主支持（工作台台账以 code 为正身开 detail tab）；editor 独立窗口降级提示。
-const chainOpts = useChainOptions(() => ({ pageNum: 1, pageSize: 1000, isTemplate: '0' }));
+const chainOpts = useChainOptions(() => ({ pageNum: 1, pageSize: 1000, isTemplate: DATABUS_TEMPLATE_FLAG_NO }));
 const router = useRouter();
 
 async function onNodeDblClick(node: Node<CmpNodeData>) {
@@ -283,7 +285,7 @@ async function onNodeDblClick(node: Node<CmpNodeData>) {
   const data = node.data;
   if (!data) return;
   // 双击业务组件卡 → 打开组件详情（排除虚拟节点/操作符/连线锚点/占位符）
-  if (data.defType !== 'CHAIN') {
+  if (data.defType !== DATABUS_CHAIN_DEF_TYPE) {
     if (!data.defType || data.virtual || data.operator || data.junctionOf || data.placeholderOf) return;
     if (props.host === 'workbench') {
       emit('open-component', data.defType, data.label || data.defType);

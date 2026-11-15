@@ -107,12 +107,12 @@
                 <span
                   class="status-dot"
                   :class="statusDotClass(row)"
-                  :title="row.enabled === 'Y' ? '已启用' : '已禁用'"
+                  :title="row.enabled === FLAG.YES ? '已启用' : '已禁用'"
                 />
                 <el-switch
                   v-model="row.enabled"
-                  active-value="Y"
-                  inactive-value="N"
+                  :active-value="FLAG.YES"
+                  :inactive-value="FLAG.NO"
                   size="small"
                   :loading="togglingId === row.id"
                   @click.stop
@@ -210,6 +210,7 @@ import { versionLabel } from '../market/marketDisplay';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import { isBrandIconName } from '@/views/databus/workbench/composables/useBrandIcons';
 import type { ConnectionSaved } from '../workbench.types';
+import { FLAG } from '@/constants/databus';
 
 const props = defineProps<{
   /** 对象视图主键（'new' 新建）；embedded 时忽略，改由内部状态驱动 */
@@ -261,8 +262,8 @@ const typeOptions = computed(() => [
 
 const ENABLED_OPTIONS = [
   { value: '', label: '全部状态' },
-  { value: 'Y', label: '启用' },
-  { value: 'N', label: '禁用' }
+  { value: FLAG.YES, label: '启用' },
+  { value: FLAG.NO, label: '禁用' }
 ];
 
 /** 连接器类型值转展示文案，未知类型原样显示 */
@@ -313,7 +314,7 @@ const testBlockReason = (row: SysDatabusConnectionVo) => {
 
 /** enabled → 状态圆点 class（绿=启用 / 灰=禁用） */
 const statusDotClass = (row: SysDatabusConnectionVo) =>
-  row.enabled === 'Y' ? 'status-online' : 'status-offline';
+  row.enabled === FLAG.YES ? 'status-online' : 'status-offline';
 
 /** 查询连接分页列表 */
 const getList = async () => {
@@ -391,12 +392,12 @@ const toggleEnabled = async (row: SysDatabusConnectionVo) => {
     return;
   }
   const nextEnabled = row.enabled;
-  const prevEnabled = nextEnabled === 'Y' ? 'N' : 'Y';
+  const prevEnabled = nextEnabled === FLAG.YES ? FLAG.NO : FLAG.YES;
   togglingId.value = row.id;
   try {
     const bo: SysDatabusConnectionBo = { ...row, enabled: nextEnabled };
     await updateConnection(bo);
-    modal.msgSuccess(nextEnabled === 'Y' ? '已启用' : '已禁用');
+    modal.msgSuccess(nextEnabled === FLAG.YES ? '已启用' : '已禁用');
   } catch (e) {
     row.enabled = prevEnabled;
     throw e;

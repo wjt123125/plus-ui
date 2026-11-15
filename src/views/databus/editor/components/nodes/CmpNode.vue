@@ -56,6 +56,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { Handle, Position, type NodeProps } from '@vue-flow/core';
+import { CHAIN_STATUS } from '@/constants/databus';
+import { DATABUS_CHAIN_DEF_TYPE } from '@/constants/databus-chain';
+import { DATABUS_TEMPLATE_FLAG_NO } from '@/constants/databus-common';
 import type { CmpNodeData } from '../../composables/useElTreeModel';
 import { getDef, materialTick } from '../../cmp-defs';
 import { useChainOptions } from '../../composables/useChainOptions';
@@ -101,7 +104,7 @@ const checkTruncation = () => {
 // cmpId 存的是子链 chainCode，从共享链路选项缓存解析出名称/状态；
 // 列表未加载时降级显示 chainCode，加载后响应式刷新（无需主动 ensure，
 // 链路树/ChainSelect 任意一处拉过即命中模块级缓存）。
-const isChain = computed(() => props.data.defType === 'CHAIN');
+const isChain = computed(() => props.data.defType === DATABUS_CHAIN_DEF_TYPE);
 // ↗ 悬停暗示：可双击下钻的节点（CHAIN 跳子流程 / 业务组件跳详情；排除虚拟/操作符/锚点/占位）
 const canDrill = computed(
   () =>
@@ -111,7 +114,7 @@ const canDrill = computed(
     !props.data.junctionOf &&
     !props.data.placeholderOf
 );
-const chainOpts = useChainOptions(() => ({ pageNum: 1, pageSize: 1000, isTemplate: '0' }));
+const chainOpts = useChainOptions(() => ({ pageNum: 1, pageSize: 1000, isTemplate: DATABUS_TEMPLATE_FLAG_NO }));
 const chainInfo = computed(() => {
   if (!isChain.value) return null;
   const code = props.data.cmpId;
@@ -129,9 +132,9 @@ const displayTitle = computed(() => {
 const statusDotColor = computed(() => {
   if (!isChain.value) return '';
   switch (chainInfo.value?.status) {
-    case 'ENABLED':
+    case CHAIN_STATUS.ENABLED:
       return 'var(--el-color-success)';
-    case 'DISABLED':
+    case CHAIN_STATUS.DISABLED:
       return 'var(--el-color-warning)';
     default:
       return 'var(--el-text-color-placeholder)';

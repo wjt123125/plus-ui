@@ -106,8 +106,8 @@
             </el-table-column>
             <el-table-column label="状态" width="84" align="center">
               <template #default="{ row }">
-                <el-tag :type="row.enabled === 'Y' ? 'success' : 'info'" size="small">
-                  {{ row.enabled === 'Y' ? '启用' : '停用' }}
+                <el-tag :type="row.enabled === FLAG.YES ? 'success' : 'info'" size="small">
+                  {{ row.enabled === FLAG.YES ? '启用' : '停用' }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -236,6 +236,7 @@ import type { DatabusAlertRuleQuery, DatabusAlertRuleVo } from '@/api/databus/al
 import { useLoading } from '@/hooks/async/useLoading';
 import AlertRuleForm from '@/views/databus/alert/AlertRuleForm.vue';
 import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
+import { FLAG } from '@/constants/databus';
 
 /**
  * 设置 pane：左导航 + 右内容。
@@ -310,8 +311,8 @@ const handleRetentionChange = () => {
 
 const ENABLED_OPTIONS = [
   { value: '', label: '全部' },
-  { value: 'Y', label: '启用' },
-  { value: 'N', label: '停用' }
+  { value: FLAG.YES, label: '启用' },
+  { value: FLAG.NO, label: '停用' }
 ];
 
 /* ------------------------------ 规则 ------------------------------ */

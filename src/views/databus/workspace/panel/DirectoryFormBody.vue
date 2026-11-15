@@ -198,7 +198,7 @@ async function reload() {
   form.value = buildInitForm();
   loading.value = true;
   try {
-    const [dirRes] = await Promise.all([listDirectory().catch(() => null)]);
+    const dirRes = await listDirectory().catch(() => null);
     directories.value = dirRes?.data ?? [];
     if (isEdit.value) {
       const { data } = await getDirectory(props.directoryId as string | number);

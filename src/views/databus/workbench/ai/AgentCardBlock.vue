@@ -1,98 +1,115 @@
 <!--
   通用交互卡片：折叠块（像思考块一样），标题行标识「确认」或「选择」+ 卡片标题 + 状态。
   确认卡展开后是影响摘要 + 等宽原文块 + 右下角「取消 / 确认执行（带作用域菜单）」。
+  ref 卡不是交互卡，只留一行「打开审阅」入口，点击交给宿主开 tab。
   pending 默认展开等待操作；已选 / 已结束后自动收起，点标题可回看。
 -->
 <template>
   <div class="agent-card" :class="[`is-${status}`, `is-${card.kind}`, { 'is-open': open }]">
-    <button type="button" class="agent-card__head" @click="open = !open">
-      <span class="agent-card__chip">{{ card.kind === 'confirm' ? '确认' : '选择' }}</span>
-      <span class="agent-card__title">{{ card.title }}</span>
-      <span class="agent-card__state">{{ stateText }}</span>
-      <span class="agent-card__chev" />
+    <!-- 资源卡：整行就是入口，不做折叠，状态也不影响可点 -->
+    <button v-if="card.kind === DATABUS_CARD_KIND_REF" type="button" class="agent-card__ref" @click="emit('open')">
+      <span class="agent-card__chip">{{ card.resource?.type === DATABUS_RESOURCE_TYPE_CHAIN ? '链路' : '组件' }}</span>
+      <span class="agent-card__ref-text">
+        <span class="agent-card__title">{{ card.title }}</span>
+        <span v-if="card.body" class="agent-card__ref-desc">{{ card.body }}</span>
+      </span>
+      <span class="agent-card__ref-go">打开审阅 ›</span>
     </button>
-    <div v-if="open" class="agent-card__panel">
-      <p v-if="card.body" class="agent-card__body">{{ card.body }}</p>
-      <!-- 原文块：把真正要执行的那次调用原样摆出来，等宽 + 可滚动 -->
-      <pre v-if="card.detail" class="agent-card__detail">{{ card.detail }}</pre>
+    <template v-else>
+      <button type="button" class="agent-card__head" @click="open = !open">
+        <span class="agent-card__chip">{{ card.kind === DATABUS_CARD_KIND_CONFIRM ? '确认' : '选择' }}</span>
+        <span class="agent-card__title">{{ card.title }}</span>
+        <span class="agent-card__state">{{ stateText }}</span>
+        <span class="agent-card__chev" />
+      </button>
+      <div v-if="open" class="agent-card__panel">
+        <p v-if="card.body" class="agent-card__body">{{ card.body }}</p>
+        <!-- 原文块：把真正要执行的那次调用原样摆出来，等宽 + 可滚动 -->
+        <pre v-if="card.detail" class="agent-card__detail">{{ card.detail }}</pre>
 
-      <!-- 确认卡：左「取消」，右「确认执行」+ 箭头菜单（复用会话级审批档位） -->
-      <div v-if="card.kind === 'confirm'" class="agent-card__actions">
-        <button
-          v-if="cancelOption"
-          type="button"
-          class="agent-card__btn"
-          :disabled="status !== 'pending'"
-          :title="cancelOption.description"
-          @click="emit('pick', cancelOption)"
-        >
-          {{ cancelOption.label }}
-        </button>
-        <div v-if="confirmOption" class="agent-card__split">
+        <!-- 确认卡：左「取消」，右「确认执行」+ 箭头菜单（复用会话级审批档位） -->
+        <div v-if="card.kind === DATABUS_CARD_KIND_CONFIRM" class="agent-card__actions">
           <button
+            v-if="cancelOption"
             type="button"
-            class="agent-card__btn is-primary is-main"
+            class="agent-card__btn"
             :disabled="status !== 'pending'"
-            :title="confirmOption.description"
-            @click="emit('pick', confirmOption)"
+            :title="cancelOption.description"
+            @click="emit('pick', cancelOption)"
           >
-            {{ confirmOption.label }}
+            {{ cancelOption.label }}
           </button>
-          <el-dropdown
-            trigger="click"
-            placement="top-end"
-            popper-class="db-menu-popper"
-            :disabled="status !== 'pending'"
-            @command="pickScoped"
-          >
+          <div v-if="confirmOption" class="agent-card__split">
             <button
               type="button"
-              class="agent-card__btn is-primary is-arrow"
+              class="agent-card__btn is-primary is-main"
               :disabled="status !== 'pending'"
-              title="选择允许范围"
+              :title="confirmOption.description"
+              @click="emit('pick', confirmOption)"
             >
-              <span class="agent-card__caret" />
+              {{ confirmOption.label }}
             </button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="once">仅本次执行</el-dropdown-item>
-                <el-dropdown-item command="session-auto">本会话改为自动审批</el-dropdown-item>
-                <el-dropdown-item command="session-full" :disabled="!allowFullAccess">
-                  本会话完全允许
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+            <el-dropdown
+              trigger="click"
+              placement="top-end"
+              popper-class="db-menu-popper"
+              :disabled="status !== 'pending'"
+              @command="pickScoped"
+            >
+              <button
+                type="button"
+                class="agent-card__btn is-primary is-arrow"
+                :disabled="status !== 'pending'"
+                title="选择允许范围"
+              >
+                <span class="agent-card__caret" />
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="once">仅本次执行</el-dropdown-item>
+                  <el-dropdown-item command="session-auto">本会话改为自动审批</el-dropdown-item>
+                  <el-dropdown-item command="session-full" :disabled="!allowFullAccess">
+                    本会话完全允许
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </div>
-      </div>
 
-      <!-- 选择卡：选项必须带 description，仍以列表呈现 -->
-      <div v-else class="agent-card__options">
-        <button
-          v-for="option in card.options"
-          :key="option.key"
-          type="button"
-          class="agent-card__option"
-          :class="{ 'is-picked': picked === option.key }"
-          :disabled="status !== 'pending'"
-          @click="emit('pick', option)"
-        >
-          <span class="agent-card__option-label">
-            {{ option.label }}
-            <span v-if="picked === option.key" class="agent-card__check">已选</span>
-          </span>
-          <span v-if="option.description" class="agent-card__option-desc">{{ option.description }}</span>
-        </button>
-      </div>
+        <!-- 选择卡：选项必须带 description，仍以列表呈现 -->
+        <div v-else class="agent-card__options">
+          <button
+            v-for="option in card.options"
+            :key="option.key"
+            type="button"
+            class="agent-card__option"
+            :class="{ 'is-picked': picked === option.key }"
+            :disabled="status !== 'pending'"
+            @click="emit('pick', option)"
+          >
+            <span class="agent-card__option-label">
+              {{ option.label }}
+              <span v-if="picked === option.key" class="agent-card__check">已选</span>
+            </span>
+            <span v-if="option.description" class="agent-card__option-desc">{{ option.description }}</span>
+          </button>
+        </div>
 
-      <p v-if="status === 'disabled'" class="agent-card__foot">本轮已结束，如需执行请重新发起。</p>
-    </div>
+        <p v-if="status === 'disabled'" class="agent-card__foot">本轮已结束，如需执行请重新发起。</p>
+      </div>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import type { AgentCard, AgentCardOption } from '@/api/databus/agent/types';
+import {
+  DATABUS_CARD_KIND_CONFIRM,
+  DATABUS_CARD_KIND_REF,
+  DATABUS_RESOURCE_TYPE_CHAIN
+} from '@/constants/databus-common';
 
 /** 拆分按钮的作用域：本次 / 本会话切自动审批 / 本会话完全允许 */
 type CardPickScope = 'once' | 'session-auto' | 'session-full';
@@ -105,7 +122,11 @@ const props = defineProps<{
   allowFullAccess?: boolean;
 }>();
 
-const emit = defineEmits<{ pick: [option: AgentCardOption, scope?: CardPickScope] }>();
+const emit = defineEmits<{
+  pick: [option: AgentCardOption, scope?: CardPickScope];
+  /** ref 卡：只要求宿主开对应 tab，不回传消息 */
+  open: [];
+}>();
 
 const open = ref(props.status === 'pending');
 
@@ -140,7 +161,7 @@ const pickedLabel = computed(
 /** 标题行右侧状态：不展开也能看出这张卡是待办、已选还是已失效 */
 const stateText = computed(() => {
   if (props.status === 'pending') {
-    return props.card.kind === 'confirm' ? '待确认' : '待选择';
+    return props.card.kind === DATABUS_CARD_KIND_CONFIRM ? '待确认' : '待选择';
   }
   if (props.status === 'answered') {
     return pickedLabel.value ? `已选「${pickedLabel.value}」` : '已选';
@@ -152,6 +173,56 @@ const stateText = computed(() => {
 <style scoped lang="scss">
 .agent-card {
   margin: 2px 0 10px;
+}
+
+/* 资源卡：整行可点，正文说明折行，右侧常驻跳转提示 */
+.agent-card__ref {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--db-rule, rgba(60, 60, 67, 0.14));
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.agent-card__ref:hover {
+  border-color: var(--db-blue, #007aff);
+  background: rgba(0, 122, 255, 0.05);
+}
+
+.agent-card__ref .agent-card__chip {
+  margin-top: 1px;
+}
+
+.agent-card__ref-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.agent-card__ref-desc {
+  color: var(--db-ink-muted, #6e6e73);
+  font-size: 11.5px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.agent-card__ref-go {
+  flex: none;
+  color: var(--db-blue, #007aff);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .agent-card__head {

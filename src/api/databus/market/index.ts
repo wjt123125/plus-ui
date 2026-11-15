@@ -1,5 +1,6 @@
 import request from '@/utils/request';
 import { AxiosPromise } from '@/utils/api-types';
+import { DATABUS_MARKET_RESOURCE_TYPE_CONNECTOR } from '@/constants/databus-market';
 import {
   DatabusMarketCategoryVo,
   MarketCategoryForm,
@@ -172,7 +173,7 @@ export function publishConnector(
   const data = new FormData();
   data.append('file', file);
   // meta 走 JSON 分片（后端 @RequestPart），sourceId 由服务端落包后回填
-  data.append('meta', new Blob([JSON.stringify({ resourceType: 'CONNECTOR', ...meta })], { type: 'application/json' }), 'meta.json');
+  data.append('meta', new Blob([JSON.stringify({ resourceType: DATABUS_MARKET_RESOURCE_TYPE_CONNECTOR, ...meta })], { type: 'application/json' }), 'meta.json');
   return request({
     url: '/databus/market/publish/connector',
     method: 'post',

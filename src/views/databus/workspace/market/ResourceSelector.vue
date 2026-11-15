@@ -56,6 +56,8 @@ import { listComponent } from '@/api/databus/component';
 import { listConnectorDefs } from '@/api/databus/connector';
 import type { ConnectorDefVo } from '@/api/databus/connector/types';
 import type { SelectorResourceType } from '@/api/databus/market/types';
+import { CHAIN_STATUS, COMPONENT_STATUS, CONNECTOR_SOURCE, MARKET_RESOURCE_TYPE } from '@/constants/databus';
+import { DATABUS_TEMPLATE_FLAG_NO } from '@/constants/databus-common';
 
 defineOptions({ name: 'ResourceSelector' });
 
@@ -115,8 +117,8 @@ async function load(): Promise<void> {
   loading.value = true;
   failed.value = false;
   try {
-    if (props.resourceType === 'CHAIN') {
-      const { data } = await listChain({ status: 'ENABLED', isTemplate: '0', pageNum: 1, pageSize: 999 });
+    if (props.resourceType === MARKET_RESOURCE_TYPE.CHAIN) {
+      const { data } = await listChain({ status: CHAIN_STATUS.ENABLED, isTemplate: DATABUS_TEMPLATE_FLAG_NO, pageNum: 1, pageSize: 999 });
       options.value = (data?.rows ?? []).map((c) => ({
         id: c.id ?? '',
         code: c.chainCode,
@@ -124,13 +126,13 @@ async function load(): Promise<void> {
         statusText: CHAIN_STATUS_TEXT[c.status ?? ''] ?? '未知',
         statusType: CHAIN_STATUS_TAG[c.status ?? ''] ?? 'info'
       }));
-    } else if (props.resourceType === 'CONNECTOR') {
+    } else if (props.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR) {
       // 连接器（§15.7）：选 def 行（sourceId＝def.id）
       // 开发目录装载的行（source='DEV'）不进选项：它跑的是编译输出目录，没有落地的 zip，
       // 审核人没有可核对的对象，后端提交上架也会拒（MarketPublishService），这里直接不给选
       const { data } = await listConnectorDefs();
       options.value = (data ?? [])
-        .filter((d: ConnectorDefVo) => d.id != null && d.source !== 'DEV')
+        .filter((d: ConnectorDefVo) => d.id != null && d.source !== CONNECTOR_SOURCE.DEV)
         .map((d: ConnectorDefVo) => ({
           id: d.id as string | number,
           code: d.type,
@@ -140,7 +142,7 @@ async function load(): Promise<void> {
           statusType: CONNECTOR_STATUS_TAG[d.status ?? ''] ?? 'info'
         }));
     } else {
-      const { data } = await listComponent({ status: 'ENABLED', pageNum: 1, pageSize: 999 });
+      const { data } = await listComponent({ status: COMPONENT_STATUS.ENABLED, pageNum: 1, pageSize: 999 });
       options.value = (data?.rows ?? []).map((c) => ({
         id: c.id ?? 0,
         code: c.componentCode,
@@ -161,10 +163,10 @@ const emptyText = computed(() => {
   if (failed.value) {
     return '资源列表加载失败，切换类型可重试';
   }
-  if (props.resourceType === 'CONNECTOR') {
+  if (props.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR) {
     return '暂无可上架的连接器包（先在市场管理上传 zip）';
   }
-  return props.resourceType === 'CHAIN' ? '暂无可上架的链路' : '暂无可上架的组件';
+  return props.resourceType === MARKET_RESOURCE_TYPE.CHAIN ? '暂无可上架的链路' : '暂无可上架的组件';
 });
 
 function optionLabel(opt: ResourceOption): string {

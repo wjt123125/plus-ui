@@ -113,7 +113,7 @@
             />
             <span class="tree-node__label" :class="labelClass(data)">{{ data.label }}</span>
             <span class="tree-node__tail">
-              <span v-if="data.type === 'market-ref'" class="tree-node__mark is-shared">S</span>
+              <span v-if="data.type === DATABUS_RESOURCE_TYPE_MARKET_REF" class="tree-node__mark is-shared">S</span>
               <span
                 v-if="data.lifecycle"
                 class="tree-node__dot"
@@ -194,6 +194,16 @@ import { listChain } from '@/api/databus/chain';
 import type { DatabusChainVo } from '@/api/databus/chain/types';
 import type { CmpProperty } from '@/api/databus/el/types';
 import type { ComponentSource, ScriptRuntime } from '@/api/databus/component/types';
+import { COMPONENT_STATUS, MARKET_MODE, MARKET_RESOURCE_TYPE, OWNER_TYPE } from '@/constants/databus';
+import {
+  DATABUS_DIRECTORY_ROOT_ID,
+  DATABUS_RESOURCE_TYPE_CHAIN,
+  DATABUS_RESOURCE_TYPE_COMPONENT,
+  DATABUS_RESOURCE_TYPE_DIRECTORY,
+  DATABUS_RESOURCE_TYPE_MARKET_REF,
+  DATABUS_RESOURCE_TYPE_SYSTEM_LEAF,
+  DATABUS_TEMPLATE_FLAG_NO
+} from '@/constants/databus-common';
 import { useUserStore } from '@/store/modules/user';
 import { listInstalled, moveInstallDirectory } from '@/api/databus/market';
 import type { DatabusMarketInstallVo } from '@/api/databus/market/types';
@@ -289,7 +299,7 @@ async function reload() {
     const [dirRes, chainRes, installRes] = await Promise.allSettled([
       listDirectory(),
       // 按人隔离：树只拉自己创建的链路（超级管理员后端豁免，admin 仍全量）
-      listChain({ pageNum: 1, pageSize: 9999, isTemplate: '0', onlyMine: true }),
+      listChain({ pageNum: 1, pageSize: 9999, isTemplate: DATABUS_TEMPLATE_FLAG_NO, onlyMine: true }),
       // 引用挂树第三源：install.owner_id=当前用户天然按人隔离（market:list 载体 F 行）
       listInstalled()
     ]);
@@ -326,7 +336,7 @@ const selfBuiltRows = computed(() =>
     ? props.rows.filter((r) => r.db != null)
     : props.rows.filter((r) => r.db != null && r.db.createBy === myUserId.value)
 );
-const systemRows = computed(() => props.rows.filter((r) => r.source === 'SYSTEM'));
+const systemRows = computed(() => props.rows.filter((r) => r.source === OWNER_TYPE.SYSTEM));
 const dirtySet = computed(() => new Set(props.dirtyCodes ?? []));
 const unhealthySet = computed(() => new Set((props.unhealthy ?? []).map((h) => h.componentCode)));
 
@@ -349,7 +359,7 @@ function lifecycleOfChain(status?: string): ResourceLifecycle | undefined {
 
 /** 自建组件生命周期：按 DB 行 status 判定（DRAFT 草稿 / DISABLED 已下线 / 其余已发布） */
 function lifecycleOfComponent(r: ComponentRegistryRow): ResourceLifecycle {
-  if (r.db?.status === 'DRAFT') {
+  if (r.db?.status === COMPONENT_STATUS.DRAFT) {
     return 'draft';
   }
   if (r.disabled) {
@@ -407,7 +417,7 @@ function chainLeaf(c: DatabusChainVo): ResourceTreeNode {
   const missing = missingDepsOf(c);
   return {
     id: `chain:${c.id}`,
-    type: 'chain',
+    type: DATABUS_RESOURCE_TYPE_CHAIN,
     label: c.chainName,
     directoryId: c.directoryId ?? null,
     chainId: c.id,
@@ -420,7 +430,7 @@ function chainLeaf(c: DatabusChainVo): ResourceTreeNode {
       ? `缺依赖：${missing.join('、')}（可到物料市场安装）`
       : undefined,
     children: [],
-    favorited: isFavorited('chain', c.id)
+    favorited: isFavorited(DATABUS_RESOURCE_TYPE_CHAIN, c.id)
   };
 }
 
@@ -428,7 +438,7 @@ function chainLeaf(c: DatabusChainVo): ResourceTreeNode {
 function componentLeaf(r: ComponentRegistryRow): ResourceTreeNode {
   return {
     id: `cmp:${r.code}`,
-    type: 'component',
+    type: DATABUS_RESOURCE_TYPE_COMPONENT,
     label: r.shortName || r.name,
     directoryId: r.db?.directoryId ?? null,
     dbId: r.db?.id ?? null,
@@ -441,7 +451,7 @@ function componentLeaf(r: ComponentRegistryRow): ResourceTreeNode {
     lifecycle: lifecycleOfComponent(r),
     marks: marksOfComponent(r),
     children: [],
-    favorited: r.db?.id != null && isFavorited('component', r.db.id)
+    favorited: r.db?.id != null && isFavorited(DATABUS_RESOURCE_TYPE_COMPONENT, r.db.id)
   };
 }
 
@@ -449,7 +459,7 @@ function componentLeaf(r: ComponentRegistryRow): ResourceTreeNode {
 function systemLeaf(r: ComponentRegistryRow): ResourceTreeNode {
   return {
     id: `sys:${r.code}`,
-    type: 'system-leaf',
+    type: DATABUS_RESOURCE_TYPE_SYSTEM_LEAF,
     label: r.shortName || r.name,
     directoryId: null,
     componentCode: r.code,
@@ -467,7 +477,7 @@ function systemLeaf(r: ComponentRegistryRow): ResourceTreeNode {
  * open 走源组件详情（componentCode 反查台账）；挪动只改 install.directory_id。
  */
 function marketLeaf(it: DatabusMarketInstallVo): ResourceTreeNode | null {
-  if (it.mode !== 'SHARED' || it.resourceType !== 'COMPONENT') {
+  if (it.mode !== MARKET_MODE.SHARED || it.resourceType !== MARKET_RESOURCE_TYPE.COMPONENT) {
     return null;
   }
   const row = it.componentCode ? rowByCode.value.get(it.componentCode) : undefined;
@@ -477,7 +487,7 @@ function marketLeaf(it: DatabusMarketInstallVo): ResourceTreeNode | null {
   }
   return {
     id: `mref:${it.id}`,
-    type: 'market-ref',
+    type: DATABUS_RESOURCE_TYPE_MARKET_REF,
     label: it.name || row?.shortName || row?.name || it.componentCode || '未命名组件',
     directoryId: it.directoryId ?? null,
     installId: it.id,
@@ -490,14 +500,14 @@ function marketLeaf(it: DatabusMarketInstallVo): ResourceTreeNode | null {
     lifecycle: row ? lifecycleOfComponent(row) : undefined,
     marks: row ? marksOfComponent(row) : undefined,
     children: [],
-    favorited: it.localResourceId != null && isFavorited('component', it.localResourceId),
+    favorited: it.localResourceId != null && isFavorited(DATABUS_RESOURCE_TYPE_COMPONENT, it.localResourceId),
     tip: row ? '来自市场的共享组件' : '来自市场的共享组件（源已不在台账，可卸载）'
   };
 }
 
 function favoriteLeaf(f: FavoriteVo): ResourceTreeNode {
   const name = f.resourceName || f.resourceCode || String(f.resourceId);
-  if (f.resourceType === 'chain') {
+  if (f.resourceType === DATABUS_RESOURCE_TYPE_CHAIN) {
     return {
       id: `fav:chain:${f.resourceId}`,
       type: 'favorite',
@@ -508,7 +518,7 @@ function favoriteLeaf(f: FavoriteVo): ResourceTreeNode {
       status: chainMap.value.get(String(f.resourceId))?.status,
       lifecycle: lifecycleOfChain(chainMap.value.get(String(f.resourceId))?.status),
       children: [],
-      favoriteType: 'chain',
+      favoriteType: DATABUS_RESOURCE_TYPE_CHAIN,
       favoriteId: f.resourceId,
       favorited: true
     };
@@ -526,7 +536,7 @@ function favoriteLeaf(f: FavoriteVo): ResourceTreeNode {
     lifecycle: row ? lifecycleOfComponent(row) : undefined,
     marks: row ? marksOfComponent(row) : undefined,
     children: [],
-    favoriteType: 'component',
+    favoriteType: DATABUS_RESOURCE_TYPE_COMPONENT,
     favoriteId: f.resourceId,
     favorited: true
   };
@@ -534,7 +544,7 @@ function favoriteLeaf(f: FavoriteVo): ResourceTreeNode {
 
 /** 最近访问条目 → 叶子；已删资源（不在台账/链路表）返回 null 由上层过滤 */
 function recentLeaf(item: RecentResource): ResourceTreeNode | null {
-  if (item.type === 'chain') {
+  if (item.type === DATABUS_RESOURCE_TYPE_CHAIN) {
     const c = chainMap.value.get(String(item.refId));
     if (!c) {
       return null;
@@ -549,7 +559,7 @@ function recentLeaf(item: RecentResource): ResourceTreeNode | null {
       status: c.status,
       lifecycle: lifecycleOfChain(c.status),
       children: [],
-      favorited: isFavorited('chain', c.id)
+      favorited: isFavorited(DATABUS_RESOURCE_TYPE_CHAIN, c.id)
     };
   }
   const code = String(item.refId);
@@ -569,7 +579,7 @@ function recentLeaf(item: RecentResource): ResourceTreeNode | null {
     lifecycle: lifecycleOfComponent(row),
     marks: marksOfComponent(row),
     children: [],
-    favorited: row.db?.id != null && isFavorited('component', row.db.id)
+    favorited: row.db?.id != null && isFavorited(DATABUS_RESOURCE_TYPE_COMPONENT, row.db.id)
   };
 }
 
@@ -650,7 +660,7 @@ const treeData = computed<ResourceTreeNode[]>(() => {
   for (const d of directories.value) {
     dirNodeMap.set(String(d.id), {
       id: `dir:${d.id}`,
-      type: 'directory',
+      type: DATABUS_RESOURCE_TYPE_DIRECTORY,
       label: d.directoryName,
       directoryId: d.id,
       children: []
@@ -660,7 +670,7 @@ const treeData = computed<ResourceTreeNode[]>(() => {
   for (const d of directories.value) {
     const node = dirNodeMap.get(String(d.id))!;
     const pid = String(d.parentId);
-    if (pid === '0' || !dirIdSet.has(pid)) {
+    if (pid === DATABUS_DIRECTORY_ROOT_ID || !dirIdSet.has(pid)) {
       dirRoots.push(node);
     } else {
       dirNodeMap.get(pid)!.children.push(node);
@@ -751,7 +761,7 @@ const treeData = computed<ResourceTreeNode[]>(() => {
 
   // 目录/未归组徽标：下辖叶子数（后序遍历一次算完）
   for (const root of roots) {
-    if (root.type === 'directory' || root.type === 'ungrouped') {
+    if (root.type === DATABUS_RESOURCE_TYPE_DIRECTORY || root.type === 'ungrouped') {
       root.badge = subtreeLeaves(root) || undefined;
     }
   }
@@ -782,7 +792,7 @@ watch(keyword, (v) => treeRef.value?.filter(v));
 const EXPAND_TYPES = new Set([
   'favorite-root',
   'recent-root',
-  'directory',
+  DATABUS_RESOURCE_TYPE_DIRECTORY,
   'ungrouped',
   'system-root',
   'system-group'
@@ -855,11 +865,11 @@ function onNodeContextMenu(event: MouseEvent, data: ResourceTreeNode) {
 function favTargetOf(
   node: ResourceTreeNode
 ): { type: FavoriteResourceType; id: string | number } | null {
-  if (node.type === 'chain') {
-    return node.chainId != null ? { type: 'chain', id: node.chainId } : null;
+  if (node.type === DATABUS_RESOURCE_TYPE_CHAIN) {
+    return node.chainId != null ? { type: DATABUS_RESOURCE_TYPE_CHAIN, id: node.chainId } : null;
   }
-  if (node.type === 'component' || node.type === 'market-ref') {
-    return node.dbId != null ? { type: 'component', id: node.dbId } : null;
+  if (node.type === DATABUS_RESOURCE_TYPE_COMPONENT || node.type === DATABUS_RESOURCE_TYPE_MARKET_REF) {
+    return node.dbId != null ? { type: DATABUS_RESOURCE_TYPE_COMPONENT, id: node.dbId } : null;
   }
   if (node.type === 'favorite' && node.favoriteType != null && node.favoriteId != null) {
     return { type: node.favoriteType, id: node.favoriteId };
@@ -876,11 +886,11 @@ function onMenuCommand(command: ResourceMenuCommand, node: ResourceTreeNode) {
       emit('add-directory', { directoryId: node.directoryId ?? null });
       break;
     case 'add-chain':
-      emit('add-chain', node.type === 'directory' ? (node.directoryId ?? null) : null);
+      emit('add-chain', node.type === DATABUS_RESOURCE_TYPE_DIRECTORY ? (node.directoryId ?? null) : null);
       break;
     case 'add-component':
       emit('add-component', {
-        directoryId: node.type === 'directory' ? (node.directoryId ?? null) : null
+        directoryId: node.type === DATABUS_RESOURCE_TYPE_DIRECTORY ? (node.directoryId ?? null) : null
       });
       break;
     case 'rename':
@@ -1013,7 +1023,7 @@ const moveDialog = reactive<{
 }>({
   visible: false,
   saving: false,
-  kind: 'chain',
+  kind: DATABUS_RESOURCE_TYPE_CHAIN,
   id: '',
   name: '',
   fromLabel: '',
@@ -1027,12 +1037,12 @@ const moveOptions = computed<DirOption[]>(() => [
 function openMoveDialog(node: ResourceTreeNode) {
   const dir = directories.value.find((d) => String(d.id) === String(node.directoryId));
   // 市场引用叶子：id=安装记录主键（改 install.directory_id，不动源组件）
-  if (node.type === 'market-ref') {
+  if (node.type === DATABUS_RESOURCE_TYPE_MARKET_REF) {
     moveDialog.kind = 'install';
     moveDialog.id = node.installId as string | number;
   } else {
-    moveDialog.kind = node.type === 'component' ? 'component' : 'chain';
-    moveDialog.id = node.type === 'component' ? (node.dbId as number) : (node.chainId as string | number);
+    moveDialog.kind = node.type === DATABUS_RESOURCE_TYPE_COMPONENT ? DATABUS_RESOURCE_TYPE_COMPONENT : DATABUS_RESOURCE_TYPE_CHAIN;
+    moveDialog.id = node.type === DATABUS_RESOURCE_TYPE_COMPONENT ? (node.dbId as number) : (node.chainId as string | number);
   }
   moveDialog.name = node.label;
   moveDialog.fromLabel = `当前归属：${dir ? dir.directoryName : '未归组'}`;
@@ -1047,10 +1057,10 @@ async function submitMove() {
   moveDialog.saving = true;
   try {
     const target = moveDialog.target;
-    const directoryId = target === 0 || target === '0' ? null : target;
+    const directoryId = target === 0 || target === DATABUS_DIRECTORY_ROOT_ID ? null : target;
     if (moveDialog.kind === 'install') {
       await moveInstallDirectory(moveDialog.id, directoryId);
-    } else if (moveDialog.kind === 'component') {
+    } else if (moveDialog.kind === DATABUS_RESOURCE_TYPE_COMPONENT) {
       await moveComponentToDirectory({ componentId: moveDialog.id, directoryId });
     } else {
       await moveChainToDirectory({ chainId: moveDialog.id, directoryId });
@@ -1082,7 +1092,7 @@ interface DragNode {
 function allowDrag(node: DragNode): boolean {
   const data = node.data as ResourceTreeNode;
   return (
-    data.type === 'chain' || data.type === 'component' || data.type === 'market-ref' || data.type === 'directory'
+    data.type === DATABUS_RESOURCE_TYPE_CHAIN || data.type === DATABUS_RESOURCE_TYPE_COMPONENT || data.type === DATABUS_RESOURCE_TYPE_MARKET_REF || data.type === DATABUS_RESOURCE_TYPE_DIRECTORY
   );
 }
 
@@ -1099,7 +1109,7 @@ function siblingParentOf(target: DragNode): { dirId: string | number | null } | 
   if (!parentData) {
     return null;
   }
-  if (parentData.type === 'directory') {
+  if (parentData.type === DATABUS_RESOURCE_TYPE_DIRECTORY) {
     return { dirId: parentData.directoryId ?? null };
   }
   if (parentData.type === 'ungrouped') {
@@ -1122,19 +1132,19 @@ function allowDrop(
   const dragData = dragging.data as ResourceTreeNode;
   const targetData = target.data as ResourceTreeNode;
   if (type === 'inner') {
-    if (dragData.type === 'chain' || dragData.type === 'component' || dragData.type === 'market-ref') {
+    if (dragData.type === DATABUS_RESOURCE_TYPE_CHAIN || dragData.type === DATABUS_RESOURCE_TYPE_COMPONENT || dragData.type === DATABUS_RESOURCE_TYPE_MARKET_REF) {
       if (targetData.type === 'ungrouped') return dragData.directoryId != null;
-      if (targetData.type !== 'directory') return false;
+      if (targetData.type !== DATABUS_RESOURCE_TYPE_DIRECTORY) return false;
       return String(dragData.directoryId ?? '') !== String(targetData.directoryId);
     }
-    if (dragData.type === 'directory') {
-      if (targetData.type !== 'directory') return false;
+    if (dragData.type === DATABUS_RESOURCE_TYPE_DIRECTORY) {
+      if (targetData.type !== DATABUS_RESOURCE_TYPE_DIRECTORY) return false;
       if (String(dragData.directoryId) === String(targetData.directoryId)) return false;
       return !subtreeIds(String(dragData.directoryId)).has(String(targetData.directoryId));
     }
     return false;
   }
-  if (dragData.type !== 'directory') return false;
+  if (dragData.type !== DATABUS_RESOURCE_TYPE_DIRECTORY) return false;
   const container = siblingParentOf(target);
   if (!container) return false;
   const newParentId = container.dirId ?? 0;
@@ -1156,17 +1166,17 @@ async function onNodeDrop(
   if (dropType === 'inner') {
     directoryId = targetData.type === 'ungrouped' ? null : targetData.directoryId;
   } else {
-    if (dragData.type !== 'directory') return;
+    if (dragData.type !== DATABUS_RESOURCE_TYPE_DIRECTORY) return;
     directoryId = siblingParentOf(target)?.dirId ?? null;
   }
   try {
-    if (dragData.type === 'chain') {
+    if (dragData.type === DATABUS_RESOURCE_TYPE_CHAIN) {
       await moveChainToDirectory({ chainId: dragData.chainId, directoryId });
       ElMessage.success('链路归属已更新');
-    } else if (dragData.type === 'component') {
+    } else if (dragData.type === DATABUS_RESOURCE_TYPE_COMPONENT) {
       await moveComponentToDirectory({ componentId: dragData.dbId as number, directoryId });
       ElMessage.success('组件归属已更新');
-    } else if (dragData.type === 'market-ref') {
+    } else if (dragData.type === DATABUS_RESOURCE_TYPE_MARKET_REF) {
       // 引用挂树：只改 install.directory_id（组织视角），不动源组件归属
       await moveInstallDirectory(dragData.installId as string | number, directoryId);
       ElMessage.success('引用归属已更新');
@@ -1206,7 +1216,7 @@ function iconOf(data: ResourceTreeNode): string {
       return 'lucide:inbox';
     case 'system-root':
       return 'lucide:package';
-    case 'directory':
+    case DATABUS_RESOURCE_TYPE_DIRECTORY:
     case 'system-group':
       return 'lucide:folder-open';
     default:
@@ -1300,7 +1310,7 @@ const MARK_TIP: Record<ResourceMark, string> = {
 
 /** 来源文案（与网格/台账同一套口径） */
 function sourceLabel(source?: ComponentSource): string {
-  if (source === 'SYSTEM') {
+  if (source === OWNER_TYPE.SYSTEM) {
     return '内置';
   }
   return source === 'OVERLAY' ? '治理覆盖' : '库存脚本件';
@@ -1335,13 +1345,13 @@ function tipOf(data: ResourceTreeNode): string {
   if (code) {
     const base = `${data.label}（${code}）`;
     // 组件叶 tooltip 恢复「来源 · 状态」（内置 · 运行正常 范式）
-    if (data.type === 'component' || data.type === 'system-leaf') {
+    if (data.type === DATABUS_RESOURCE_TYPE_COMPONENT || data.type === DATABUS_RESOURCE_TYPE_SYSTEM_LEAF) {
       return `${base}\n${sourceLabel(data.source)} · ${statusText(data)}`;
     }
     // 链路叶附带缺依赖等补充文案（tip 由叶子生成时写入）
     return data.tip ? `${base}\n${data.tip}` : base;
   }
-  if (data.type === 'market-ref') {
+  if (data.type === DATABUS_RESOURCE_TYPE_MARKET_REF) {
     // 源已不在台账的引用叶：componentCode 为空走不进 code 分支，兜底带出「可卸载」提示
     return data.tip ? `${data.label}\n${data.tip}` : data.label;
   }

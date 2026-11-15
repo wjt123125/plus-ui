@@ -76,14 +76,14 @@
               <Icon
                 icon="lucide:bell"
                 class="db-row__icon record-icon"
-                :class="row.status === 'FIRING' ? 'is-firing' : 'is-recovered'"
+                :class="row.status === ALERT_STATUS.FIRING ? 'is-firing' : 'is-recovered'"
               />
               <div class="db-row__meta">
                 <div class="db-row__line">
                   <span class="db-row__name">{{ row.ruleName || '-' }}</span>
                   <el-tag size="small" effect="plain">{{ ruleTypeLabel(row.alertType) }}</el-tag>
-                  <el-tag size="small" :type="row.status === 'FIRING' ? 'danger' : 'success'">
-                    {{ row.status === 'FIRING' ? '触发中' : '已恢复' }}
+                  <el-tag size="small" :type="row.status === ALERT_STATUS.FIRING ? 'danger' : 'success'">
+                    {{ row.status === ALERT_STATUS.FIRING ? '触发中' : '已恢复' }}
                   </el-tag>
                   <el-tooltip
                     v-if="row.notifyStatus"
@@ -140,6 +140,7 @@ import type {
 import { useLoading } from '@/hooks/async/useLoading';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
+import { ALERT_DISPATCH_STATUS, ALERT_NOTIFY_STATUS, ALERT_STATUS } from '@/constants/databus';
 
 /**
  * 告警记录 pane：只读历史告警列表（分页/筛选）+ 手动评估。
@@ -150,8 +151,8 @@ useLucideSubset();
 
 const STATUS_OPTIONS = [
   { value: '', label: '全部' },
-  { value: 'FIRING', label: '触发中' },
-  { value: 'RECOVERED', label: '已恢复' }
+  { value: ALERT_STATUS.FIRING, label: '触发中' },
+  { value: ALERT_STATUS.RECOVERED, label: '已恢复' }
 ];
 
 /* ------------------------------ 记录 ------------------------------ */
@@ -221,19 +222,19 @@ const ruleTypeLabel = (type?: string) =>
   ALERT_RULE_TYPE_OPTIONS.find((item) => item.value === type)?.label ?? type ?? '-';
 
 const notifyLabel = (status?: string | null) => {
-  if (status === 'SUCCESS') return '已发送';
-  if (status === 'PARTIAL') return '部分成功';
-  if (status === 'DISPATCHED') return '已投递';
-  if (status === 'FAILED') return '发送失败';
-  if (status === 'SKIPPED') return '未配置';
+  if (status === ALERT_NOTIFY_STATUS.SUCCESS) return '已发送';
+  if (status === ALERT_NOTIFY_STATUS.PARTIAL) return '部分成功';
+  if (status === ALERT_DISPATCH_STATUS.DISPATCHED) return '已投递';
+  if (status === ALERT_NOTIFY_STATUS.FAILED) return '发送失败';
+  if (status === ALERT_NOTIFY_STATUS.SKIPPED) return '未配置';
   return '-';
 };
 
 /** 通知结果标签色（行列表改用 el-tag，替代原表格里的裸文字着色） */
 const notifyTagType = (status?: string | null): 'success' | 'warning' | 'danger' | 'info' => {
-  if (status === 'SUCCESS' || status === 'DISPATCHED') return 'success';
-  if (status === 'PARTIAL') return 'warning';
-  if (status === 'FAILED') return 'danger';
+  if (status === ALERT_NOTIFY_STATUS.SUCCESS || status === ALERT_DISPATCH_STATUS.DISPATCHED) return 'success';
+  if (status === ALERT_NOTIFY_STATUS.PARTIAL) return 'warning';
+  if (status === ALERT_NOTIFY_STATUS.FAILED) return 'danger';
   return 'info';
 };
 

@@ -193,6 +193,7 @@ import ManualExecuteDialog from '@/views/databus/execution/ManualExecuteDialog.v
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import ExecutionRecordBody from './ExecutionRecordBody.vue';
 import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
+import { EXECUTION_STATUS } from '@/constants/databus';
 
 /* 行图标走离线 lucide 子集，否则内网环境图标空白（详见 useLucideSubset 注释） */
 useLucideSubset();
@@ -220,9 +221,9 @@ interface StatusOption {
 
 const STATUS_OPTIONS: StatusOption[] = [
   { value: '', label: '全部' },
-  { value: 'SUCCESS', label: '成功' },
-  { value: 'FAILED', label: '失败' },
-  { value: 'RUNNING', label: '进行中' }
+  { value: EXECUTION_STATUS.SUCCESS, label: '成功' },
+  { value: EXECUTION_STATUS.FAILED, label: '失败' },
+  { value: EXECUTION_STATUS.RUNNING, label: '进行中' }
 ];
 
 const dateShortcuts = [
@@ -409,28 +410,28 @@ const handleRerunResult = async (result: DatabusExecutionResult) => {
 };
 
 const statusTagType = (status: string): 'success' | 'danger' | 'warning' => {
-  if (status === 'SUCCESS') return 'success';
-  if (status === 'FAILED') return 'danger';
+  if (status === EXECUTION_STATUS.SUCCESS) return 'success';
+  if (status === EXECUTION_STATUS.FAILED) return 'danger';
   return 'warning';
 };
 
 const statusLabel = (status: string) => {
-  if (status === 'SUCCESS') return '成功';
-  if (status === 'FAILED') return '失败';
-  if (status === 'RUNNING') return '进行中';
+  if (status === EXECUTION_STATUS.SUCCESS) return '成功';
+  if (status === EXECUTION_STATUS.FAILED) return '失败';
+  if (status === EXECUTION_STATUS.RUNNING) return '进行中';
   return status;
 };
 
 /** 行首状态图标（子集见 useLucideSubset，勿写未注入的图标名） */
 const statusIcon = (status: string) => {
-  if (status === 'SUCCESS') return 'lucide:circle-check';
-  if (status === 'FAILED') return 'lucide:circle-x';
+  if (status === EXECUTION_STATUS.SUCCESS) return 'lucide:circle-check';
+  if (status === EXECUTION_STATUS.FAILED) return 'lucide:circle-x';
   return 'lucide:alarm-clock';
 };
 
 const statusIconClass = (status: string) => {
-  if (status === 'SUCCESS') return 'is-ok';
-  if (status === 'FAILED') return 'is-bad';
+  if (status === EXECUTION_STATUS.SUCCESS) return 'is-ok';
+  if (status === EXECUTION_STATUS.FAILED) return 'is-bad';
   return 'is-running';
 };
 

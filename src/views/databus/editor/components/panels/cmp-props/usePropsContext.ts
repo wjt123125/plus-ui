@@ -12,6 +12,7 @@ import {
   type ElNode
 } from '../../../composables/useElTreeModel';
 import { BOOLEAN_OP_ARITY } from './constants';
+import { DATABUS_CHAIN_DEF_TYPE } from '@/constants/databus-chain';
 
 const CMP_PROPS_CTX_KEY = Symbol('cmp-props-context');
 
@@ -126,7 +127,7 @@ export function createPropsContext(
     () => (elNode.value?.type ?? '') in BOOLEAN_OP_ARITY
   );
 
-  const isChainNode = computed(() => elNode.value?.type === 'CHAIN');
+  const isChainNode = computed(() => elNode.value?.type === DATABUS_CHAIN_DEF_TYPE);
 
   const titleDef = computed(() => {
     const n = elNode.value;

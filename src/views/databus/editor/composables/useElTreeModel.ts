@@ -14,6 +14,7 @@ import { inject, provide, ref, type InjectionKey, type Ref } from 'vue';
 import type { Edge, Node } from '@vue-flow/core';
 import type { CmpProperty } from '@/api/databus/el/types';
 import { getDef, type CmpDef } from '../cmp-defs';
+import { DATABUS_CHAIN_DEF_TYPE } from '@/constants/databus-chain';
 
 // ────────────────────────────────────────────────────────────────
 // 1. ElNode 模型（与 client ELNode 同构，字段命名沿用本项目）
@@ -201,7 +202,7 @@ function parseNode(cmp: CmpProperty, parentOperatorId: string | undefined): ElNo
   // CHAIN def 虽是算子（operator: true），语义上是一张不展开的子流程引用卡片，
   // 必须在算子分支前拦截，不走 condition/children 递归（即使带 children 也忽略，
   // 子链内部编排是独立的另一条链数据，不在本画布展开）。
-  if (cmp.type === 'CHAIN') {
+  if (cmp.type === DATABUS_CHAIN_DEF_TYPE) {
     node.cmpId = cmp.id ?? '';
     if (cmp.properties?.tag) node.tag = cmp.properties.tag;
     return node;
@@ -301,11 +302,11 @@ function serializeNode(node: ElNode): CmpProperty | null {
   // id=子链 chainCode；后端 generateNodeComponent 对 id 非空子项按 id 产出 chainCode，
   // LiteFlow 引擎自动在 chainMap 里查找同名子链。
   // tag/title 随 properties 往返（同一条子链可多处引用，靠 tag 区分场景）。
-  if (node.type === 'CHAIN') {
+  if (node.type === DATABUS_CHAIN_DEF_TYPE) {
     const title = node.title?.trim();
     const leaf: CmpProperty = {
       id: node.cmpId || node.tag || node.id,
-      type: 'CHAIN'
+      type: DATABUS_CHAIN_DEF_TYPE
     };
     if (node.tag || title) {
       leaf.properties = {
@@ -479,7 +480,7 @@ function projectNode(node: ElNode, ctx: ProjectContext, parentOperatorId: string
     case 'OR':
     case 'NOT':
       return projectBoolean(node, ctx);
-    case 'CHAIN':
+    case DATABUS_CHAIN_DEF_TYPE:
       return projectChain(node, ctx);
     default:
       // 未知算子退化为业务节点
@@ -1004,9 +1005,9 @@ function projectBoolean(node: ElNode, ctx: ProjectContext): Port {
 // ── CHAIN：引用节点（业务卡样式） ──
 function projectChain(node: ElNode, ctx: ProjectContext): Port {
   const id = node.id;
-  const def = getDef('CHAIN')!;
+  const def = getDef(DATABUS_CHAIN_DEF_TYPE)!;
   const data: CmpNodeData = {
-    defType: 'CHAIN',
+    defType: DATABUS_CHAIN_DEF_TYPE,
     cmpId: node.cmpId ?? node.tag ?? '',
     tag: node.tag ?? '',
     data: '',
@@ -1701,7 +1702,7 @@ export function useElTreeModel() {
    */
   function updateChainRef(nodeId: string, chainCode: string): boolean {
     const node = findNode(nodeId);
-    if (!node || node.type !== 'CHAIN') return false;
+    if (!node || node.type !== DATABUS_CHAIN_DEF_TYPE) return false;
     node.cmpId = chainCode;
     return true;
   }
@@ -1822,13 +1823,13 @@ export function useElTreeModel() {
     while (stack.length > 0) {
       const n = stack.pop();
       if (!n) continue;
-      if (n.type === 'CHAIN' && !(n.cmpId ?? '').trim()) {
+      if (n.type === DATABUS_CHAIN_DEF_TYPE && !(n.cmpId ?? '').trim()) {
         return {
           ok: false,
           reason: 'chain-empty',
           nodeId: n.id,
           name: '',
-          label: getDef('CHAIN')?.label ?? '子流程(CHAIN)'
+          label: getDef(DATABUS_CHAIN_DEF_TYPE)?.label ?? '子流程(CHAIN)'
         };
       }
       if (n.condition) stack.push(n.condition);

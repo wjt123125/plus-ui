@@ -73,6 +73,7 @@ import { ElMessage } from 'element-plus';
 import { computed, nextTick, ref, watch } from 'vue';
 import { saveScript } from '@/api/databus/component';
 import type { ScriptDiagnostic, ScriptSaveResult } from '@/api/databus/component/types';
+import { DATABUS_COMPONENT_SCRIPT_LANG_JAVA } from '@/constants/databus-component';
 import modal from '@/plugins/modal';
 import { checkPermi } from '@/utils/permission';
 import { useLucideSubset } from '../../../workbench/composables/useLucideSubset';
@@ -159,7 +160,7 @@ async function handleSaveScript() {
   try {
     const { data } = await saveScript({
       id: props.form.id,
-      scriptLang: 'java',
+      scriptLang: DATABUS_COMPONENT_SCRIPT_LANG_JAVA,
       scriptBody: scriptText.value
     });
     if (!data.success) {

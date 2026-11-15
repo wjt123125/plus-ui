@@ -17,16 +17,24 @@ import type {
   MarketItemStatus,
   MarketResourceType
 } from '@/api/databus/market/types';
+import {
+  CHAIN_STATUS,
+  COMPONENT_STATUS,
+  CONNECTOR_DEF_STATUS,
+  CONNECTOR_SOURCE,
+  EXECUTION_STATUS,
+  MARKET_RESOURCE_TYPE
+} from '@/constants/databus';
 import { useUserStore } from '@/store/modules/user';
 
 /* ---------------- 图标 ---------------- */
 
 /** 物料图标：链路固定，连接器兜底电插头，组件取自带图标 */
 export function itemIcon(it: DatabusMarketItemVo): string {
-  if (it.resourceType === 'CHAIN') {
+  if (it.resourceType === MARKET_RESOURCE_TYPE.CHAIN) {
     return 'lucide:spline';
   }
-  if (it.resourceType === 'CONNECTOR') {
+  if (it.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR) {
     return it.icon || 'lucide:plug';
   }
   return it.icon || 'lucide:box';
@@ -34,7 +42,7 @@ export function itemIcon(it: DatabusMarketItemVo): string {
 
 /** 已装台账行图标：链路固定，组件/连接器取物料自带图标，缺省用盒子 */
 export function rowIcon(row: DatabusMarketInstallVo): string {
-  return row.resourceType === 'CHAIN' ? 'lucide:spline' : row.icon || 'lucide:box';
+  return row.resourceType === MARKET_RESOURCE_TYPE.CHAIN ? 'lucide:spline' : row.icon || 'lucide:box';
 }
 
 /* ---------------- 标签翻译 ---------------- */
@@ -79,23 +87,23 @@ export function marketItemRowStatus(status: MarketItemStatus): RowStatusMeta {
  * 颜色沿用资源树与画布的既有语义：草稿灰、已发布绿、已下线黄。
  */
 export function installRowStatus(row: DatabusMarketInstallVo): RowStatusMeta {
-  if (row.resourceType === 'CHAIN') {
-    if (row.status === 'DRAFT') {
+  if (row.resourceType === MARKET_RESOURCE_TYPE.CHAIN) {
+    if (row.status === CHAIN_STATUS.DRAFT) {
       return { tone: 'info', label: '草稿', reason: '链路副本还是草稿，尚未发布' };
     }
-    if (row.status === 'DISABLED') {
+    if (row.status === CHAIN_STATUS.DISABLED) {
       return { tone: 'warning', label: '已下线', reason: '链路已下线，定义保留可重新发布' };
     }
-    if (row.health === 'FAILED') {
+    if (row.health === EXECUTION_STATUS.FAILED) {
       return { tone: 'danger', label: '最近执行失败', reason: '最近一次执行失败，打开执行记录查看错误详情' };
     }
-    if (row.health === 'RUNNING') {
+    if (row.health === EXECUTION_STATUS.RUNNING) {
       return { tone: 'warning', label: '执行中', reason: '最近一次执行仍在进行中' };
     }
     return { tone: 'success', label: '', reason: '链路已发布，最近执行正常' };
   }
-  if (row.resourceType === 'COMPONENT') {
-    const enabled = row.status ? row.status === 'ENABLED' : row.enabled !== false;
+  if (row.resourceType === MARKET_RESOURCE_TYPE.COMPONENT) {
+    const enabled = row.status ? row.status === COMPONENT_STATUS.ENABLED : row.enabled !== false;
     return enabled
       ? { tone: 'success', label: '', reason: '组件已启用' }
       : { tone: 'info', label: '已停用', reason: '组件已停用，链路引用处按停用处理' };
@@ -146,7 +154,7 @@ export function connectorHealthMeta(row?: ConnectorDefVo | null): ConnectorHealt
   if (!row) {
     return { label: '无台账行', type: 'info', reason: '运行台账里没有这个连接器，先上传并启用连接器包', usable: false };
   }
-  if (row.status !== 'ENABLED') {
+  if (row.status !== CONNECTOR_DEF_STATUS.ENABLED) {
     const st = connectorStatusMeta(row.status);
     return { label: st.label, type: 'info', reason: `连接器${st.label}，未在运行；启用后才能建连接`, usable: false };
   }
@@ -175,7 +183,7 @@ export function connectorSourceLabel(row: ConnectorDefVo): string {
 
 /** 是否开发目录装载的行：这类行的启停、包下载、包查看、提交上架后端一律拒，前端不给入口 */
 export function isDevDef(row: ConnectorDefVo): boolean {
-  return row.source === 'DEV';
+  return row.source === CONNECTOR_SOURCE.DEV;
 }
 
 /**
@@ -191,7 +199,11 @@ export function versionLabel(version?: string | null): string {
 
 /** 平铺分组标签与固定顺序（组件 → 链路 → 连接器） */
 export const TYPE_LABELS: Record<MarketResourceType, string> = { COMPONENT: '组件', CHAIN: '链路', CONNECTOR: '连接器' };
-export const TYPE_ORDER: MarketResourceType[] = ['COMPONENT', 'CHAIN', 'CONNECTOR'];
+export const TYPE_ORDER: MarketResourceType[] = [
+  MARKET_RESOURCE_TYPE.COMPONENT,
+  MARKET_RESOURCE_TYPE.CHAIN,
+  MARKET_RESOURCE_TYPE.CONNECTOR
+];
 
 /** 平铺视角的分组结果（空组已在生成时丢弃，不渲染标题） */
 export interface TypeGroup<T> {

@@ -1,4 +1,6 @@
 import type { DatabusComponentForm } from '@/api/databus/component/types';
+import { COMPONENT_STATUS } from '@/constants/databus';
+import { DATABUS_COMPONENT_DEPRECATED_NO } from '@/constants/databus-component';
 
 /** 弹窗表单模型：治理列 + 回显用的脚本工件三列（提交治理时剔除，工件走独立保存端点） */
 export type ComponentFormModel = DatabusComponentForm & {
@@ -42,8 +44,8 @@ export const defaultForm = (): ComponentFormModel => ({
   scriptLang: '',
   scriptBody: '',
   version: null,
-  status: 'ENABLED',
-  deprecated: '0',
+  status: COMPONENT_STATUS.ENABLED,
+  deprecated: DATABUS_COMPONENT_DEPRECATED_NO,
   deprecateNote: '',
   docUrl: '',
   remark: ''

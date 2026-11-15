@@ -28,6 +28,14 @@ import {
   stopAgentRun
 } from '@/api/databus/agent';
 import type { AgentCard, AgentCardReply, AgentConversationVo } from '@/api/databus/agent/types';
+import {
+  AGENT_SSE_CARD,
+  AGENT_SSE_DONE,
+  AGENT_SSE_ERROR,
+  AGENT_SSE_TEXT,
+  AGENT_SSE_THINKING
+} from '@/constants/databus-agent';
+import { AGENT_RUN_STATUS } from '@/constants/databus';
 import { usePersisted } from '../composables/usePersisted';
 import type { AiSession, AiSessionGroup } from './ai.types';
 import { buildRefsText, parseRefsText, type AgentRefItem } from './useAgentRefs';
@@ -61,14 +69,6 @@ interface AgentSessionState {
   /** 是否已拉过历史（切回来不重复请求） */
   loaded: boolean;
 }
-
-/** SnailAI 流事件类型（与后端 OpenApiChatStreamEvent 常量一致） */
-const EVENT_TEXT = 'text';
-const EVENT_THINKING = 'thinking';
-const EVENT_DONE = 'done';
-const EVENT_ERROR = 'error';
-/** 卡片事件：与模型文字同序，data 是 AgentCard 对象而不是字符串 */
-const EVENT_CARD = 'card';
 
 /** 旧的单例会话 key，迁移到多会话后仅在新 key 为空时读一次 */
 const LEGACY_CONVERSATION_KEY = 'databus.agent.conversationId';
@@ -251,18 +251,18 @@ function handleEvent(conversationId: string, type: string, data: string) {
   }
   const target = streamingMessage(state);
   switch (type) {
-    case EVENT_TEXT:
+    case AGENT_SSE_TEXT:
       if (target) {
         appendSegment(target, { kind: 'text', text: data });
       }
       break;
-    case EVENT_THINKING:
+    case AGENT_SSE_THINKING:
       // 空分片不建段，否则会留一个没有内容的「思考」壳
       if (target && data.trim()) {
         appendSegment(target, { kind: 'thinking', text: data });
       }
       break;
-    case EVENT_DONE: {
+    case AGENT_SSE_DONE: {
       const done = parseJson<{ conversationId?: string; fullText?: string }>(data);
       if (target) {
         // done 的 data 就是整轮最终正文（JSON 取 fullText，纯文本直接用 raw）。
@@ -285,7 +285,7 @@ function handleEvent(conversationId: string, type: string, data: string) {
       void refreshSessions();
       break;
     }
-    case EVENT_ERROR: {
+    case AGENT_SSE_ERROR: {
       const err = parseJson<{ message?: string }>(data);
       failStreaming(conversationId, err?.message || 'AI 服务异常，请稍后重试');
       break;
@@ -312,7 +312,7 @@ function openStream(conversationId: string, runId: string) {
       return;
     }
     const type = payload.type ?? '';
-    if (type === EVENT_CARD) {
+    if (type === AGENT_SSE_CARD) {
       handleCard(conversationId, payload.data as AgentCard);
       return;
     }
@@ -510,7 +510,7 @@ async function restore(conversationId?: string) {
       const answer = reportText(run.report);
       const segments: AgentSegment[] = answer ? [{ kind: 'text', text: answer }] : [];
       // 卡片不在内存里就靠这一步还原：已回执的标「已选」，只有最新一轮未回执的卡可点，其余置灰
-      const latest = index === runs.length - 1 && run.status !== 'RUNNING';
+      const latest = index === runs.length - 1 && run.status !== AGENT_RUN_STATUS.RUNNING;
       for (const raw of run.cards ?? []) {
         const card = parseJson<AgentCard>(raw);
         if (!card?.cardId) {

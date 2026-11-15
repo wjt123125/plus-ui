@@ -54,6 +54,7 @@
                 :picked="seg.picked"
                 :allow-full-access="allowFullAccess"
                 @pick="(option, scope) => onCardPick(seg.card.cardId, option, scope)"
+                @open="onCardOpen(seg.card)"
               />
               <MarkdownBlock v-else-if="seg.kind === 'text'" :text="seg.text" />
             </template>
@@ -201,8 +202,10 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { getAgentApprovalMode, listAgentHistory, rollbackRun, updateAgentApprovalMode } from '@/api/databus/agent';
-import type { AgentApprovalMode, AgentCardOption } from '@/api/databus/agent/types';
+import type { AgentApprovalMode, AgentCard, AgentCardOption } from '@/api/databus/agent/types';
 import { useLucideSubset } from '../composables/useLucideSubset';
+import { AGENT_APPROVAL_MODE, AGENT_RUN_STATUS } from '@/constants/databus';
+import { DATABUS_CARD_KIND_REF } from '@/constants/databus-common';
 import AgentCardBlock from './AgentCardBlock.vue';
 import MarkdownBlock from './MarkdownBlock.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
@@ -240,6 +243,20 @@ const { refs, removeRef, clearRefs } = useAgentRefs();
 /** 点引用卡：交给宿主决定开画布还是开详情 */
 function openRef(item: AgentRefItem) {
   emit('ref-open', item);
+}
+
+/** ref 卡只做跳转，不回执；缺资源信息就当普通链接忽略 */
+function onCardOpen(card: AgentCard) {
+  const resource = card.resource;
+  if (!resource) {
+    return;
+  }
+  emit('ref-open', {
+    type: resource.type,
+    id: resource.id,
+    code: resource.code,
+    name: resource.name || card.title
+  });
 }
 
 /** 把某一类段落拼成纯文本（用户气泡、系统行、空态判断都只要这一种；卡片不算文字） */
@@ -281,7 +298,7 @@ async function onCardPick(cardId: string, option: AgentCardOption, scope?: CardP
     return;
   }
   if (scope === 'session-auto' || scope === 'session-full') {
-    const mode: AgentApprovalMode = scope === 'session-auto' ? 'AUTO' : 'FULL';
+    const mode: AgentApprovalMode = scope === 'session-auto' ? AGENT_APPROVAL_MODE.AUTO : AGENT_APPROVAL_MODE.FULL;
     await changeApprovalMode(mode);
     if (approvalMode.value !== mode) {
       return;
@@ -299,8 +316,8 @@ const showFollowUps = computed(() => {
   if (last?.role !== 'assistant' || last.status === 'streaming') {
     return false;
   }
-  // 还有待点的卡时先让用户点卡，别把注意力引到输入框
-  return !last.segments.some((s) => s.kind === 'card' && s.status === 'pending');
+  // 还有待点的卡时先让用户点卡，别把注意力引到输入框；ref 卡只是入口，不算待办
+  return !last.segments.some((s) => s.kind === 'card' && s.status === 'pending' && s.card.kind !== DATABUS_CARD_KIND_REF);
 });
 
 /** 点建议直接发送，和 Trae 一致；流式中忽略 */
@@ -369,7 +386,7 @@ async function backToBeforeConversation() {
   rollbackRunning.value = true;
   try {
     const { data: runs } = await listAgentHistory(conversationId.value);
-    const last = (runs ?? []).toReversed().find((run) => run.status !== 'RUNNING');
+    const last = (runs ?? []).toReversed().find((run) => run.status !== AGENT_RUN_STATUS.RUNNING);
     if (!last) {
       appendSystem('这次对话还没有可回滚的操作。', 'agent:rollback');
       return;
@@ -405,21 +422,21 @@ async function backToBeforeConversation() {
  * 「完全访问」是否可选由部署开关决定（allowFullAccess），关闭时该档置灰；
  * 「自定义」本阶段未开放，固定置灰。模式落库在会话上，切换后立即生效。
  */
-const approvalMode = ref<AgentApprovalMode>('MANUAL');
+const approvalMode = ref<AgentApprovalMode>(AGENT_APPROVAL_MODE.MANUAL);
 const allowFullAccess = ref(false);
 
 const approvalModeOptions = computed<
   { value: AgentApprovalMode; label: string; disabled: boolean; hint: string }[]
 >(() => [
-  { value: 'MANUAL', label: '手动审批', disabled: false, hint: '每次试跑前先征求确认' },
+  { value: AGENT_APPROVAL_MODE.MANUAL, label: '手动审批', disabled: false, hint: '每次试跑前先征求确认' },
   {
-    value: 'AUTO',
+    value: AGENT_APPROVAL_MODE.AUTO,
     label: '自动审批',
     disabled: false,
     hint: '纯只读的链路直接跑，含写或外部调用仍要确认'
   },
   {
-    value: 'FULL',
+    value: AGENT_APPROVAL_MODE.FULL,
     label: '完全访问',
     disabled: !allowFullAccess.value,
     hint: allowFullAccess.value ? '所有试跑不再询问' : '当前部署未开放完全访问'
@@ -434,16 +451,16 @@ const approvalModeLabel = computed(
 /** 读会话当前模式；无会话或读取失败都按「手动审批」展示，不打断对话 */
 async function loadApprovalMode(id: string) {
   if (!id) {
-    approvalMode.value = 'MANUAL';
+    approvalMode.value = AGENT_APPROVAL_MODE.MANUAL;
     allowFullAccess.value = false;
     return;
   }
   try {
     const { data } = await getAgentApprovalMode(id);
-    approvalMode.value = data?.mode ?? 'MANUAL';
+    approvalMode.value = data?.mode ?? AGENT_APPROVAL_MODE.MANUAL;
     allowFullAccess.value = Boolean(data?.allowFullAccess);
   } catch {
-    approvalMode.value = 'MANUAL';
+    approvalMode.value = AGENT_APPROVAL_MODE.MANUAL;
   }
 }
 

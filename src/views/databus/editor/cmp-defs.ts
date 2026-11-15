@@ -18,6 +18,7 @@ import type {
   ComponentOption,
   NodeTypeKind
 } from '@/api/databus/component/types';
+import { DATABUS_CHAIN_DEF_TYPE } from '@/constants/databus-chain';
 
 /** HTML5 拖拽 MIME：面板 dragstart 写入、画布 drop 时读取桩类型 */
 export const DND_MIME = 'application/x-databus-cmp';
@@ -221,7 +222,7 @@ const STRUCTURE_DEFS: CmpDef[] = [
 
   // ── 子流程 ──
   {
-    type: 'CHAIN',
+    type: DATABUS_CHAIN_DEF_TYPE,
     label: '子流程(CHAIN)',
     short: '子流程',
     desc: '子流程调用：引用其他链路',

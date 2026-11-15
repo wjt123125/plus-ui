@@ -98,12 +98,12 @@
             <div class="mkt-card__aside">
               <!-- 连接器（§15.3）：市场只做消费——安装＝写一条个人安装记录，卸载＝删这条记录，都不改 def 全局启停。
                    启用/停用/废弃是治理者动作，统一收口到「物料管理 → 治理」，本页只保留运行态提示 -->
-              <template v-if="activeType === 'CONNECTOR'">
+              <template v-if="activeType === MARKET_RESOURCE_TYPE.CONNECTOR">
                 <!-- 已装：市场动作只有「卸载」（删个人安装记录）；运行态异常另挂提示标签（原因 hover），
                      不把治理状态做成按钮 -->
                 <template v-if="it.installed">
                   <el-tag
-                    v-if="connectorDefStatus(it) === 'DEPRECATED'"
+                    v-if="connectorDefStatus(it) === CONNECTOR_DEF_STATUS.DEPRECATED"
                     size="small"
                     type="info"
                     effect="plain"
@@ -131,7 +131,7 @@
                 </template>
                 <!-- 未装：只有一个消费动作「安装」（上传者、治理者、普通用户都先落个人安装记录）；
                      已废弃的不给安装入口（废弃后不可运行） -->
-                <el-tag v-else-if="connectorDefStatus(it) === 'DEPRECATED'" size="small" type="info" effect="plain">已废弃</el-tag>
+                <el-tag v-else-if="connectorDefStatus(it) === CONNECTOR_DEF_STATUS.DEPRECATED" size="small" type="info" effect="plain">已废弃</el-tag>
                 <el-button
                   v-else
                   class="mkt-card__act"
@@ -194,6 +194,7 @@ import { ElMessage } from 'element-plus';
 import modal from '@/plugins/modal';
 import { useUserStore } from '@/store/modules/user';
 import type { DatabusMarketItemVo, MarketResourceType } from '@/api/databus/market/types';
+import { CONNECTOR_DEF_STATUS, MARKET_RESOURCE_TYPE } from '@/constants/databus';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import type { MarketScope } from '../workbench.types';
 import { useMarketData, marketNavIntent, showChainInstallResult } from './useMarketData';
@@ -203,9 +204,9 @@ import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
 
 /** 物料类型段选项 */
 const TYPE_OPTIONS = [
-  { label: '组件', value: 'COMPONENT' },
-  { label: '链路', value: 'CHAIN' },
-  { label: '连接器', value: 'CONNECTOR' }
+  { label: '组件', value: MARKET_RESOURCE_TYPE.COMPONENT },
+  { label: '链路', value: MARKET_RESOURCE_TYPE.CHAIN },
+  { label: '连接器', value: MARKET_RESOURCE_TYPE.CONNECTOR }
 ];
 
 defineOptions({ name: 'MarketPane' });
@@ -267,7 +268,7 @@ const installLoading = ref(false);
 
 /* 连接器分段：进入时拉 defs（卡片运行态提示与 DEPRECATED 标签匹配，不含治理入口） */
 watch(activeType, (t) => {
-  if (t === 'CONNECTOR') {
+  if (t === MARKET_RESOURCE_TYPE.CONNECTOR) {
     void loadConnectorDefs();
   }
 });
@@ -338,7 +339,7 @@ async function onInstallConfirm(directoryId: string | number | null) {
   try {
     const vo = await market.install(it.id, directoryId);
     // 链路安装展示级联复制/复用清单（decisions §十四-2）；组件保持一句话提示
-    if (it.resourceType === 'CHAIN') {
+    if (it.resourceType === MARKET_RESOURCE_TYPE.CHAIN) {
       showChainInstallResult(vo);
     } else {
       ElMessage.success(`已安装「${it.name}」，组件已共享注册到物料面板`);
@@ -407,7 +408,7 @@ async function onInstallConnector(it: DatabusMarketItemVo) {
  * 其余（未装、自己上架、连接器、无本地资源）仍进物料详情。
  */
 function onCardClick(it: DatabusMarketItemVo) {
-  if (it.installed && it.localResourceId != null && (it.resourceType === 'COMPONENT' || it.resourceType === 'CHAIN')) {
+  if (it.installed && it.localResourceId != null && (it.resourceType === MARKET_RESOURCE_TYPE.COMPONENT || it.resourceType === MARKET_RESOURCE_TYPE.CHAIN)) {
     onUse(it);
     return;
   }
@@ -416,7 +417,7 @@ function onCardClick(it: DatabusMarketItemVo) {
 
 function onUse(it: DatabusMarketItemVo) {
   // emit 只收 COMPONENT/CHAIN（连接器无本地资源可打开，卡片动作走 enable/disable）
-  if (it.localResourceId == null || (it.resourceType !== 'COMPONENT' && it.resourceType !== 'CHAIN')) {
+  if (it.localResourceId == null || (it.resourceType !== MARKET_RESOURCE_TYPE.COMPONENT && it.resourceType !== MARKET_RESOURCE_TYPE.CHAIN)) {
     return;
   }
   emit('open-local', it.localResourceId, it.resourceType, it.name);
@@ -432,9 +433,9 @@ async function onUninstallCard(it: DatabusMarketItemVo) {
     return;
   }
   let tip = `确认卸载「${it.name}」？`;
-  if (activeType.value === 'CONNECTOR') {
+  if (activeType.value === MARKET_RESOURCE_TYPE.CONNECTOR) {
     tip = `确认卸载「${it.name}」？只删除你的安装记录，连接器本体与全局启停不受影响。`;
-  } else if (activeType.value === 'CHAIN') {
+  } else if (activeType.value === MARKET_RESOURCE_TYPE.CHAIN) {
     tip = `确认卸载「${it.name}」？将删除你的本地副本（随它入目录、未引用且装完未碰的子链副本一并回收）；若该副本仍被你的其他链路引用，会被拒绝删除，请先移除引用。`;
   }
   try {

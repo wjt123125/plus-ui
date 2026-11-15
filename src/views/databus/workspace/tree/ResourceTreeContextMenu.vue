@@ -8,7 +8,7 @@
       @contextmenu.prevent
     >
       <!-- 链路叶子：打开画布/编辑/复制 · 发布或下线/执行 · 移动归属/收藏 · 复制编码 · 删除 -->
-      <template v-if="menu.node.type === 'chain'">
+      <template v-if="menu.node.type === DATABUS_RESOURCE_TYPE_CHAIN">
         <li class="res-tree-ctx__item is-primary" @click="onCommand('open')">
           <SvgIcon icon-class="lucide:spline" /><span>打开画布</span>
         </li>
@@ -23,7 +23,7 @@
         </li>
         <li class="res-tree-ctx__divider" />
         <li
-          v-if="menu.node.status !== STATUS_PUBLISHED"
+          v-if="menu.node.status !== CHAIN_STATUS.ENABLED"
           v-hasPermi="['databus:editor:publish']"
           class="res-tree-ctx__item is-success"
           @click="onCommand('publish-chain')"
@@ -39,7 +39,7 @@
           <SvgIcon icon-class="lucide:power" /><span>下线</span>
         </li>
         <li
-          v-if="menu.node.status === STATUS_PUBLISHED"
+          v-if="menu.node.status === CHAIN_STATUS.ENABLED"
           v-hasPermi="['databus:execution:execute']"
           class="res-tree-ctx__item is-success"
           @click="onCommand('execute-chain')"
@@ -73,7 +73,7 @@
       </template>
 
       <!-- 自建组件叶子：查看/编辑/代码变更 · 移动归属/收藏 · 启停 · 复制编码 · 删除 -->
-      <template v-else-if="menu.node.type === 'component'">
+      <template v-else-if="menu.node.type === DATABUS_RESOURCE_TYPE_COMPONENT">
         <li class="res-tree-ctx__item is-primary" @click="onCommand('view-component')">
           <SvgIcon icon-class="lucide:file-text" /><span>查看</span>
         </li>
@@ -140,7 +140,7 @@
       </template>
 
       <!-- 市场引用叶（SHARED 安装组件）：打开 / 移动归属 / 收藏 / 卸载（不动源组件本体） -->
-      <template v-else-if="menu.node.type === 'market-ref'">
+      <template v-else-if="menu.node.type === DATABUS_RESOURCE_TYPE_MARKET_REF">
         <li class="res-tree-ctx__item is-primary" @click="onCommand('open')">
           <SvgIcon icon-class="lucide:external-link" /><span>打开</span>
         </li>
@@ -168,7 +168,7 @@
       </template>
 
       <!-- 目录节点：新建链路（挂本目录）· 新建组件（挂本目录）· 新建子目录 · 重命名 · 删除 -->
-      <template v-else-if="menu.node.type === 'directory'">
+      <template v-else-if="menu.node.type === DATABUS_RESOURCE_TYPE_DIRECTORY">
         <li v-hasPermi="['databus:editor:add']" class="res-tree-ctx__item is-success" @click="onCommand('add-chain')">
           <SvgIcon icon-class="lucide:file-plus" /><span>新建链路</span>
         </li>
@@ -215,12 +215,16 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue';
+import { CHAIN_STATUS } from '@/constants/databus';
+import {
+  DATABUS_RESOURCE_TYPE_CHAIN,
+  DATABUS_RESOURCE_TYPE_COMPONENT,
+  DATABUS_RESOURCE_TYPE_DIRECTORY,
+  DATABUS_RESOURCE_TYPE_MARKET_REF
+} from '@/constants/databus-common';
 import type { ResourceMenuCommand, ResourceMenuState } from '../workbench.types';
 
 defineOptions({ name: 'ResourceTreeContextMenu' });
-
-/** 已发布状态（发布/下线/执行菜单项按此显隐，与 DatabusChainVo.status 对齐） */
-const STATUS_PUBLISHED = 'ENABLED';
 
 const props = defineProps<{ menu: ResourceMenuState }>();
 

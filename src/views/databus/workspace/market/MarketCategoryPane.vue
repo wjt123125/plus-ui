@@ -190,6 +190,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ClickOutside as vClickOutside } from 'element-plus';
 import { addMarketCategory, delMarketCategory, listMarketCategories, mergeMarketCategory, updateMarketCategory } from '@/api/databus/market';
 import type { DatabusMarketCategoryVo, MarketCategoryForm } from '@/api/databus/market/types';
+import { MARKET_RESOURCE_TYPE } from '@/constants/databus';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import MarketGroupHeader from './MarketGroupHeader.vue';
 import TagSelect from './TagSelect.vue';
@@ -200,9 +201,9 @@ useLucideSubset();
 
 /** 分组顺序与市场页类型分段一致 */
 const GROUP_ORDER: { type: string; label: string }[] = [
-  { type: 'COMPONENT', label: '组件' },
-  { type: 'CHAIN', label: '链路' },
-  { type: 'CONNECTOR', label: '连接器' },
+  { type: MARKET_RESOURCE_TYPE.COMPONENT, label: '组件' },
+  { type: MARKET_RESOURCE_TYPE.CHAIN, label: '链路' },
+  { type: MARKET_RESOURCE_TYPE.CONNECTOR, label: '连接器' },
   { type: '', label: '通用' }
 ];
 
@@ -221,7 +222,7 @@ const groups = computed(() =>
     // 组内按 sort 升序（同 sort 保持接口顺序）：排序字段在弹窗里改，列表里得看得见效果
     items: categories.value
       .filter((c) => (c.resourceType ?? '') === g.type)
-      .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))
+      .toSorted((a, b) => (a.sort ?? 0) - (b.sort ?? 0))
   })).filter((g) => g.items.length)
 );
 

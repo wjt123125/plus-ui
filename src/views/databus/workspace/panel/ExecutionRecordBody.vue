@@ -120,8 +120,8 @@
           </el-table-column>
           <el-table-column label="状态" width="80" align="center">
             <template #default="{ row }">
-              <el-tag :type="row.status === 'SUCCESS' ? 'success' : 'danger'" size="small">
-                {{ row.status === 'SUCCESS' ? '成功' : '失败' }}
+              <el-tag :type="row.status === EXECUTION_STATUS.SUCCESS ? 'success' : 'danger'" size="small">
+                {{ row.status === EXECUTION_STATUS.SUCCESS ? '成功' : '失败' }}
               </el-tag>
             </template>
           </el-table-column>
@@ -145,6 +145,7 @@ import { ElMessage } from 'element-plus';
 import { getExecution, rerunExecution } from '@/api/databus/execution';
 import type { DatabusExecutionResult, ExecutionDetailVo } from '@/api/databus/execution/types';
 import JsonCodeEditor from '@/views/databus/editor/components/common/JsonCodeEditor.vue';
+import { EXECUTION_STATUS } from '@/constants/databus';
 
 const props = defineProps<{
   /** 要展示的记录主键（雪花 id 超 2^53，故与 VO 同宽）；变化即重载 */
@@ -196,15 +197,15 @@ const handleRerun = async () => {
 };
 
 const statusTagType = (status: string): 'success' | 'danger' | 'warning' | 'info' => {
-  if (status === 'SUCCESS') return 'success';
-  if (status === 'FAILED') return 'danger';
+  if (status === EXECUTION_STATUS.SUCCESS) return 'success';
+  if (status === EXECUTION_STATUS.FAILED) return 'danger';
   return 'warning';
 };
 
 const statusLabel = (status: string) => {
-  if (status === 'SUCCESS') return '成功';
-  if (status === 'FAILED') return '失败';
-  if (status === 'RUNNING') return '进行中';
+  if (status === EXECUTION_STATUS.SUCCESS) return '成功';
+  if (status === EXECUTION_STATUS.FAILED) return '失败';
+  if (status === EXECUTION_STATUS.RUNNING) return '进行中';
   return status;
 };
 

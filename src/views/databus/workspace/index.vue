@@ -75,13 +75,15 @@
           @open-tool="onLauncherCommand"
           @dirty-change="wb.setDirty"
           @open-chain="wb.openCanvas"
-          @open-component="(code, name) => wb.openDetail({ code, name })"
+          @open-component="handleOpenComponentRef"
           @saved="handleSaved"
           @rolled="handleRolled"
           @open-changes="handleOpenChanges"
           @edit="handleEdit"
           @delete="handleDelete"
           @changes="handleChanges"
+          @review-adopted="handleReviewAdopted"
+          @review-rejected="handleReviewRejected"
           @market-open="onMarketOpen"
           @market-installed="onMarketInstalled"
           @market-toggle="onMarketToggle"
@@ -205,6 +207,15 @@ import { useAgentRefs, type AgentRefItem } from '@/views/databus/workbench/ai/us
 import { useAgentChat } from '@/views/databus/workbench/ai/useAgentChat';
 import type { AiSession } from '@/views/databus/workbench/ai/ai.types';
 import { useAgentPush } from '@/views/databus/workbench/ai/useAgentPush';
+import { AGENT_EVENT, COMPONENT_STATUS, MARKET_RESOURCE_TYPE } from '@/constants/databus';
+import {
+  DATABUS_RESOURCE_TYPE_CHAIN,
+  DATABUS_RESOURCE_TYPE_COMPONENT,
+  DATABUS_RESOURCE_TYPE_CONNECTION,
+  DATABUS_RESOURCE_TYPE_DIRECTORY,
+  DATABUS_RESOURCE_TYPE_MARKET_REF,
+  DATABUS_RESOURCE_TYPE_SYSTEM_LEAF
+} from '@/constants/databus-common';
 import type { CmpProperty } from '@/api/databus/el/types';
 import ChainForm from '../chain/ChainForm.vue';
 import type { ChainFormSuccessPayload } from '../chain/ChainFormBody.vue';
@@ -461,14 +472,19 @@ function rowByCode(code: string): ComponentRegistryRow | undefined {
 /** 拉取双源合流 + 脚本运行健康；任一源失败不阻断其他源渲染 */
 const getList = async () => {
   await withLoading(async () => {
-    const [optRes, listRes, runtimeRes] = await Promise.allSettled([
+    const [optRes, listRes, draftRes, runtimeRes] = await Promise.allSettled([
       listComponentOptions(),
       listComponent({ pageNum: 1, pageSize: 999 }),
+      // 草稿单独拉一次：列表接口默认排除 DRAFT，但发起人得能找回自己的草稿
+      listComponent({ pageNum: 1, pageSize: 999, status: COMPONENT_STATUS.DRAFT }),
       listScriptRuntime()
     ]);
     const options: ComponentOption[] =
       optRes.status === 'fulfilled' ? optRes.value.data?.components ?? [] : [];
-    const dbRows = listRes.status === 'fulfilled' ? listRes.value.data?.rows ?? [] : [];
+    const dbRows = [
+      ...(listRes.status === 'fulfilled' ? listRes.value.data?.rows ?? [] : []),
+      ...(draftRes.status === 'fulfilled' ? draftRes.value.data?.rows ?? [] : [])
+    ];
     runtimeHealth.value = runtimeRes.status === 'fulfilled' ? runtimeRes.value.data ?? [] : [];
     // 展示元数据从 /options 自身构建（同一次响应，无第二数据源）
     const optionMetaMap: ReadonlyMap<string, DefMeta> = new Map(
@@ -489,26 +505,48 @@ const getList = async () => {
 /* ---------------- 树 / 网格 → 工作面板 ---------------- */
 
 function openDetail(row: ComponentRegistryRow) {
+  // 草稿（AI 落下的 DRAFT 行）不进详情：一律进审阅 tab，由人点采纳或拒绝
+  if (row.db?.id != null && row.db.status === COMPONENT_STATUS.DRAFT) {
+    wb.openComponentReview(row.db.id, row.name);
+    touchRecent({ type: DATABUS_RESOURCE_TYPE_COMPONENT, refId: row.code, title: row.name, icon: row.icon });
+    return;
+  }
   wb.openDetail(row);
-  touchRecent({ type: 'component', refId: row.code, title: row.name, icon: row.icon });
+  touchRecent({ type: DATABUS_RESOURCE_TYPE_COMPONENT, refId: row.code, title: row.name, icon: row.icon });
+}
+
+/** 面板内组件引用（画布节点 / AI 回执）：按 code 解析台账行后统一走 openDetail（草稿分流到审阅） */
+function handleOpenComponentRef(code: string, name: string) {
+  const row = rowByCode(code);
+  if (row) {
+    openDetail(row);
+    return;
+  }
+  wb.openDetail({ code, name });
 }
 
 /** 新建组件：收敛到向导 tab component 段（树目录右键携带 group/domain/归属目录 preset 预填） */
 function handleAdd(preset?: FormPreset) {
-  wb.openCreate('component', preset);
+  wb.openCreate(DATABUS_RESOURCE_TYPE_COMPONENT, preset);
 }
 
 function handleEdit(row: ComponentRegistryRow) {
   if (row.db?.id == null) {
     return;
   }
+  // 草稿没有可编辑的正式配置：编辑入口同「查看」收敛到审阅 tab（源码可改由人改完采纳）
+  if (row.db.status === COMPONENT_STATUS.DRAFT) {
+    wb.openComponentReview(row.db.id, row.name);
+    touchRecent({ type: DATABUS_RESOURCE_TYPE_COMPONENT, refId: row.code, title: row.name, icon: row.icon });
+    return;
+  }
   wb.openForm(row.db.id, row);
-  touchRecent({ type: 'component', refId: row.code, title: row.name, icon: row.icon });
+  touchRecent({ type: DATABUS_RESOURCE_TYPE_COMPONENT, refId: row.code, title: row.name, icon: row.icon });
 }
 
 function handleChanges(row: ComponentRegistryRow) {
   if (wb.openChanges(row)) {
-    touchRecent({ type: 'component', refId: row.code, title: row.name, icon: row.icon });
+    touchRecent({ type: DATABUS_RESOURCE_TYPE_COMPONENT, refId: row.code, title: row.name, icon: row.icon });
   }
 }
 
@@ -533,7 +571,7 @@ async function handleSaved(tab: WorkspaceTab, payload: ComponentSaved) {
     wb.openForm(payload.id, { code: payload.code, name: payload.name });
   }
   touchRecent({
-    type: 'component',
+    type: DATABUS_RESOURCE_TYPE_COMPONENT,
     refId: payload.code,
     title: payload.name,
     icon: saved?.icon
@@ -553,6 +591,31 @@ async function handleRolled(tab: WorkspaceTab, result: ScriptSaveResult) {
   }
 }
 
+/** 草稿采纳成功：关审阅 tab、刷台账/树，再开该组件详情 tab 看生效结果（Pane 已提示成功） */
+async function handleReviewAdopted(
+  tab: WorkspaceTab,
+  payload: { id: number | string; componentCode: string; componentName: string; version?: number }
+) {
+  wb.close(tab.key);
+  delete refreshTokens[tab.key];
+  await getList();
+  const row = rowByCode(payload.componentCode);
+  if (row) {
+    openDetail(row);
+  } else {
+    wb.openDetail({ code: payload.componentCode, name: payload.componentName });
+    touchRecent({ type: DATABUS_RESOURCE_TYPE_COMPONENT, refId: payload.componentCode, title: payload.componentName });
+  }
+}
+
+/** 草稿拒绝成功：草稿行已物理删除，关 tab、清最近访问并刷台账/树（Pane 已提示成功） */
+async function handleReviewRejected(tab: WorkspaceTab, payload: { id: number; componentCode: string }) {
+  wb.close(tab.key);
+  delete refreshTokens[tab.key];
+  removeRecent(DATABUS_RESOURCE_TYPE_COMPONENT, payload.componentCode);
+  await getList();
+}
+
 async function handleDelete(row: ComponentRegistryRow) {
   if (row.db?.id == null) {
     return;
@@ -563,7 +626,7 @@ async function handleDelete(row: ComponentRegistryRow) {
   const staleKeys = tabs.value.filter((t) => t.code === row.code).map((t) => t.key);
   wb.closeByCode(row.code);
   staleKeys.forEach((key) => delete refreshTokens[key]);
-  removeRecent('component', row.code);
+  removeRecent(DATABUS_RESOURCE_TYPE_COMPONENT, row.code);
   await getList();
 }
 
@@ -585,7 +648,7 @@ async function toggleEnabled(row: ComponentRegistryRow, val: boolean) {
   }
   togglingCode.value = row.code;
   try {
-    await toggleComponent(row.db.id, val ? 'ENABLED' : 'DISABLED');
+    await toggleComponent(row.db.id, val ? COMPONENT_STATUS.ENABLED : COMPONENT_STATUS.DISABLED);
     modal.msgSuccess(val ? '已启用' : '已停用');
     await getList();
   } finally {
@@ -606,7 +669,7 @@ function onMarketOpen(
   resourceType: 'COMPONENT' | 'CHAIN',
   title: string
 ) {
-  if (resourceType === 'CHAIN') {
+  if (resourceType === MARKET_RESOURCE_TYPE.CHAIN) {
     wb.openCanvas(localResourceId, title);
     return;
   }
@@ -696,7 +759,7 @@ function onMarketOpenSource(
   code: string | null,
   title: string
 ) {
-  if (resourceType === 'CHAIN') {
+  if (resourceType === MARKET_RESOURCE_TYPE.CHAIN) {
     wb.openCanvas(sourceId, title);
     return;
   }
@@ -749,7 +812,7 @@ function onMarketOpenSourceCanvas(chainId: string | number, title: string) {
 /** 连接列表点卡片：聚焦连接对象 tab；点「新建」收敛到向导 connection 段（2026-10-21 入口收敛） */
 function onOpenConnection(id: number | 'new', title: string) {
   if (id === 'new') {
-    wb.openCreate('connection');
+    wb.openCreate(DATABUS_RESOURCE_TYPE_CONNECTION);
     return;
   }
   wb.openConnectionForm(id, title);
@@ -780,20 +843,20 @@ function onConnectionSaved(tab: WorkspaceTab, payload: ConnectionSaved) {
  */
 async function onCreateSaved(payload: CreateSavedPayload) {
   switch (payload.filetype) {
-    case 'chain': {
+    case DATABUS_RESOURCE_TYPE_CHAIN: {
       await reloadTree();
       if (payload.chain && payload.chain.id != null) {
         wb.openCanvas(payload.chain.id, payload.chain.chainName);
       }
       break;
     }
-    case 'component':
+    case DATABUS_RESOURCE_TYPE_COMPONENT:
       await Promise.all([getList(), reloadTree()]);
       break;
-    case 'directory':
+    case DATABUS_RESOURCE_TYPE_DIRECTORY:
       await reloadTree();
       break;
-    case 'connection': {
+    case DATABUS_RESOURCE_TYPE_CONNECTION: {
       const listTab = tabs.value.find((t) => t.kind === 'connection-list');
       if (listTab) {
         refreshTokens[listTab.key] = (refreshTokens[listTab.key] ?? 0) + 1;
@@ -882,16 +945,28 @@ function onHistorySearch(keyword: string) {
  * 组件只带 code 时按台账反查，查不到（如未登记的内置件）只提示、不跳转。
  */
 function onAgentRefOpen(item: AgentRefItem) {
-  if (item.type === 'chain') {
+  if (item.type === DATABUS_RESOURCE_TYPE_CHAIN) {
     if (item.id == null) {
       ElMessage.warning(`链路「${item.name}」缺少 id，暂无法打开`);
       return;
     }
     wb.openCanvas(item.id, item.name);
-    touchRecent({ type: 'chain', refId: item.id, title: item.name });
+    touchRecent({ type: DATABUS_RESOURCE_TYPE_CHAIN, refId: item.id, title: item.name });
     return;
   }
-  const row = item.code ? rowByCode(item.code) : undefined;
+  void openComponentRef(item);
+}
+
+/**
+ * 组件引用卡：草稿行可能刚由 AI 落库、树还没刷到，先补拉一次再反查；
+ * 草稿行走 openDetail 的 DRAFT 分支，直接落到审阅 tab。
+ */
+async function openComponentRef(item: AgentRefItem) {
+  let row = item.code ? rowByCode(item.code) : undefined;
+  if (!row && item.code) {
+    await getList().catch(() => undefined);
+    row = rowByCode(item.code);
+  }
   if (!row) {
     ElMessage.warning(`未找到组件「${item.name}」，暂无法打开`);
     return;
@@ -905,7 +980,7 @@ watch(rows, (list) => {
     return;
   }
   const alive = new Set(list.map((r) => r.code));
-  pruneRecent((item) => !(item.type === 'component' && !alive.has(String(item.refId))));
+  pruneRecent((item) => !(item.type === DATABUS_RESOURCE_TYPE_COMPONENT && !alive.has(String(item.refId))));
 });
 
 /* ---------------- 统一资源树命令承接 ---------------- */
@@ -934,6 +1009,10 @@ interface AgentCanvasEvent {
   operation?: 'CREATE' | 'UPDATE';
   cmpProperty?: CmpProperty | null;
   revealNodeId?: string | null;
+  /** component:draft:saved 事件：刚落库的组件草稿 */
+  componentId?: number | string;
+  componentCode?: string;
+  componentName?: string;
 }
 
 const {
@@ -962,7 +1041,7 @@ function notifyCanvasSkipped(chainName?: string, runId?: string, sourceConversat
   const fromOther = !!sourceConversationId && sourceConversationId !== conversationId.value;
   appendSystem(
     `${fromOther ? '（来自另一个会话）' : ''}已丢弃 AI 对「${chainName ?? '当前链路'}」的画布更新：画布上有未保存的改动。请先保存或放弃本地修改，再让 AI 重试。`,
-    'databus:agent:canvas-skipped'
+    AGENT_EVENT.CHAIN_CANVAS_SKIPPED
   );
   if (runId) {
     reportAgentCanvasSkip(runId, chainName).catch(() => {
@@ -988,12 +1067,21 @@ function redrawAgentCanvas(evt: AgentCanvasEvent) {
 useAgentPush((payload) => {
   const evt = payload.data as AgentCanvasEvent | undefined;
   const code = evt?.eventCode;
-  // draft：只刷新链树（新链路/改名/草稿态）
-  if (code === 'databus:agent:draft') {
+  // chain:draft:saved：只刷新链树（新链路/改名/草稿态）
+  if (code === AGENT_EVENT.CHAIN_DRAFT_SAVED) {
     void reloadTree();
     return;
   }
-  if (code !== 'databus:agent:canvas' || evt?.chainId == null) {
+  // component:draft:saved：AI 落了组件草稿 → 草稿要能进树，同时把审阅 tab 顶出来，
+  // 「采纳前不生效」这件事必须让人当场看见，而不是只写在回复里
+  if (code === AGENT_EVENT.COMPONENT_DRAFT_SAVED) {
+    void getList();
+    if (evt?.componentId != null) {
+      wb.openComponentReview(evt.componentId, evt.componentName || evt.componentCode || '脚本草稿');
+    }
+    return;
+  }
+  if (code !== AGENT_EVENT.CHAIN_CANVAS_UPDATED || evt?.chainId == null) {
     return;
   }
 
@@ -1066,7 +1154,7 @@ function openResourceNode(node: ResourceTreeNode) {
   const chainId = nodeChainId(node);
   if (chainId != null) {
     wb.openCanvas(chainId, node.label);
-    touchRecent({ type: 'chain', refId: chainId, title: node.label });
+    touchRecent({ type: DATABUS_RESOURCE_TYPE_CHAIN, refId: chainId, title: node.label });
     return;
   }
   const row = rowOfNode(node);
@@ -1090,20 +1178,20 @@ function addNodeToAgent(node: ResourceTreeNode) {
 
 /** 树节点 → 引用卡条目；没有可引用主键/编码时返回 null */
 function toAgentRef(node: ResourceTreeNode): AgentRefItem | null {
-  if (node.type === 'chain') {
+  if (node.type === DATABUS_RESOURCE_TYPE_CHAIN) {
     const chainId = nodeChainId(node);
     return chainId == null
       ? null
-      : { type: 'chain', id: chainId, code: node.chainCode, name: node.label };
+      : { type: DATABUS_RESOURCE_TYPE_CHAIN, id: chainId, code: node.chainCode, name: node.label };
   }
-  if (node.type !== 'component' && node.type !== 'system-leaf' && node.type !== 'market-ref') {
+  if (node.type !== DATABUS_RESOURCE_TYPE_COMPONENT && node.type !== DATABUS_RESOURCE_TYPE_SYSTEM_LEAF && node.type !== DATABUS_RESOURCE_TYPE_MARKET_REF) {
     return null;
   }
   if (!node.componentCode) {
     return null;
   }
   return {
-    type: 'component',
+    type: DATABUS_RESOURCE_TYPE_COMPONENT,
     id: node.dbId ?? undefined,
     code: node.componentCode,
     name: node.label,
@@ -1219,7 +1307,7 @@ async function handleUninstallMarket(node: ResourceTreeNode) {
 function copyShareLink(node: ResourceTreeNode) {
   const origin = window.location.origin;
   let href: string | null = null;
-  if (node.type === 'chain') {
+  if (node.type === DATABUS_RESOURCE_TYPE_CHAIN) {
     const chainId = nodeChainId(node);
     if (chainId != null) {
       href = `${origin}/databus/standalone/editor/canvas/${chainId}`;
@@ -1239,12 +1327,12 @@ function copyShareLink(node: ResourceTreeNode) {
 
 /** 树头部/目录右键「新建链路」：收敛到向导 chain 段（preset 预填归属目录，null=未归组） */
 function onAddChain(directoryId: string | number | null) {
-  wb.openCreate('chain', { directoryId: directoryId ?? null });
+  wb.openCreate(DATABUS_RESOURCE_TYPE_CHAIN, { directoryId: directoryId ?? null });
 }
 
 /** 树「新建目录」承接：头部钮=根级无 preset；目录右键=建子目录，preset 预填父目录（开向导 directory 段） */
 function onAddDirectory(preset?: FormPreset) {
-  wb.openCreate('directory', preset);
+  wb.openCreate(DATABUS_RESOURCE_TYPE_DIRECTORY, preset);
 }
 
 /**
@@ -1318,11 +1406,11 @@ async function guidePublishAfterChain(result?: ChainPublishResultVo): Promise<vo
             {
               style:
                 'flex-shrink:0;width:44px;text-align:center;padding:1px 0;border-radius:4px;font-size:11px;' +
-                (g.resourceType === 'CHAIN'
+                (g.resourceType === MARKET_RESOURCE_TYPE.CHAIN
                   ? 'color:var(--el-color-primary);background:var(--el-color-primary-light-9);'
                   : 'color:var(--el-color-success);background:var(--el-color-success-light-9);')
             },
-            g.resourceType === 'CHAIN' ? '链路' : '组件'
+            g.resourceType === MARKET_RESOURCE_TYPE.CHAIN ? '链路' : '组件'
           ),
           h(
             'span',
@@ -1391,7 +1479,7 @@ async function handleDeleteChain(node: ResourceTreeNode) {
   if (opened) {
     wb.close(key);
   }
-  removeRecent('chain', chainId);
+  removeRecent(DATABUS_RESOURCE_TYPE_CHAIN, chainId);
   void reloadTree();
 }
 
@@ -1448,7 +1536,7 @@ function onKeydown(event: KeyboardEvent) {
 
 onMounted(() => {
   // 工作区是剥壳独立路由（不挂 Layout），Layout 里的全局推送初始化不会执行：
-  // 不在这里补一次 SSE，AI 的 databus:agent:canvas / draft 业务事件就永远收不到（只有对话流可用）。
+  // 不在这里补一次 SSE，AI 的 databus:agent:chain:canvas:updated / chain:draft:saved 业务事件就永远收不到（只有对话流可用）。
   // initPush 内部先 closePush，重复调用安全。
   initPush();
   // 字典与 ph 图标全集都在树首次渲染前触发；getList 拉台账双源合流

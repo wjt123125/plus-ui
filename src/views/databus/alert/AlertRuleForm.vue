@@ -32,13 +32,13 @@
         <div class="alert-rule-form__title-wrap">
           <span class="alert-rule-form__rule">
             <el-tooltip
-              :content="form.enabled === 'Y' ? '已启用' : '已停用'"
+              :content="form.enabled === FLAG.YES ? '已启用' : '已停用'"
               placement="top"
               :show-after="200"
             >
               <span
                 class="alert-rule-form__status-dot"
-                :class="form.enabled === 'Y' ? 'is-enabled' : 'is-disabled'"
+                :class="form.enabled === FLAG.YES ? 'is-enabled' : 'is-disabled'"
                 aria-hidden="true"
               />
             </el-tooltip>
@@ -46,7 +46,7 @@
           </span>
         </div>
         <div class="alert-rule-form__enabled" @click.stop>
-          <el-switch v-model="form.enabled" active-value="Y" inactive-value="N" size="default" />
+          <el-switch v-model="form.enabled" :active-value="FLAG.YES" :inactive-value="FLAG.NO" size="default" />
         </div>
       </div>
     </template>
@@ -150,12 +150,12 @@
             <div class="alert-rule-form__hint">触发与恢复都会通知；可多渠道同时发送</div>
           </el-form-item>
 
-          <el-form-item v-if="notifyTypes.includes('EMAIL')" label="收件邮箱" prop="notifyType">
+          <el-form-item v-if="notifyTypes.includes(ALERT_NOTIFY_TYPE.EMAIL)" label="收件邮箱" prop="notifyType">
             <el-input v-model="emailConfig.emails" maxlength="500" placeholder="多个用逗号分隔，如 a@x.com,b@y.com" />
             <div class="alert-rule-form__hint">未启用邮件服务时只记录不发送</div>
           </el-form-item>
 
-          <template v-if="notifyTypes.includes('WEBHOOK')">
+          <template v-if="notifyTypes.includes(ALERT_NOTIFY_TYPE.WEBHOOK)">
             <el-form-item label="回调地址" prop="notifyType">
               <el-input v-model="webhookConfig.url" maxlength="500" placeholder="https://example.com/alert" />
               <div class="alert-rule-form__hint">告警事件以 JSON POST 到该地址（连接 5s / 读取 10s 超时）</div>
@@ -172,7 +172,7 @@
             </el-form-item>
           </template>
 
-          <el-form-item v-if="notifyTypes.includes('CHAIN')" label="通知链路" prop="notifyType">
+          <el-form-item v-if="notifyTypes.includes(ALERT_NOTIFY_TYPE.CHAIN)" label="通知链路" prop="notifyType">
             <el-select
               v-model="chainConfig.chainCode"
               filterable
@@ -195,7 +195,7 @@
           </el-form-item>
 
           <!-- 链路声明入参：按 input_params 动态生成（列表数据即带 inputParams，无需二次拉详情） -->
-          <template v-if="notifyTypes.includes('CHAIN')">
+          <template v-if="notifyTypes.includes(ALERT_NOTIFY_TYPE.CHAIN)">
             <el-form-item v-for="def in rootParamDefs" :key="def.key" prop="notifyType">
               <template #label>
                 {{ def.key }}<span v-if="def.required" class="alert-rule-form__req-star" aria-hidden="true">*</span>
@@ -220,7 +220,7 @@
             </el-form-item>
           </template>
 
-          <el-form-item v-if="notifyTypes.includes('CHAIN')" label="附加参数（可选）" prop="notifyType">
+          <el-form-item v-if="notifyTypes.includes(ALERT_NOTIFY_TYPE.CHAIN)" label="附加参数（可选）" prop="notifyType">
             <div class="alert-rule-form__extra">
               <div v-for="(row, i) in extraParams" :key="i" class="alert-rule-form__extra-row">
                 <el-input v-model="row.key" placeholder="参数名" class="alert-rule-form__extra-key" />
@@ -291,6 +291,7 @@ import type { AlertNotifyConfig, DatabusAlertRuleBo } from '@/api/databus/alert/
 import type { ChainInputType } from '@/api/databus/chain/types';
 import { useChainOptions } from '@/views/databus/editor/composables/useChainOptions';
 import JsonCodeEditor from '@/views/databus/editor/components/common/JsonCodeEditor.vue';
+import { ALERT_NOTIFY_TYPE, FLAG } from '@/constants/databus';
 import modal from '@/plugins/modal';
 
 /**
@@ -312,9 +313,9 @@ const buildInitFormData = (): DatabusAlertRuleBo => ({
   windowMinutes: 5,
   thresholdCount: 3,
   thresholdRate: null,
-  notifyType: 'EMAIL',
+  notifyType: ALERT_NOTIFY_TYPE.EMAIL,
   notifyConfig: '',
-  enabled: 'Y',
+  enabled: FLAG.YES,
   remark: ''
 });
 
@@ -337,7 +338,7 @@ const TAB_OF_FIELD: Record<string, 'basic' | 'notify' | 'advanced'> = {
 
 /* ------------------------------ 通知渠道子表单状态 ------------------------------ */
 
-const notifyTypes = ref<string[]>(['EMAIL']);
+const notifyTypes = ref<string[]>([ALERT_NOTIFY_TYPE.EMAIL]);
 const emailConfig = reactive({ emails: '' });
 const webhookConfig = reactive({ url: '', secret: '' });
 const chainConfig = reactive({ chainCode: '' });
@@ -553,13 +554,13 @@ function applyJsonToForm() {
 function buildNotifyPayload() {
   form.value.notifyType = notifyTypes.value.join(',');
   const config: AlertNotifyConfig = {};
-  if (notifyTypes.value.includes('EMAIL')) {
+  if (notifyTypes.value.includes(ALERT_NOTIFY_TYPE.EMAIL)) {
     config.EMAIL = { emails: emailConfig.emails.trim() };
   }
-  if (notifyTypes.value.includes('WEBHOOK')) {
+  if (notifyTypes.value.includes(ALERT_NOTIFY_TYPE.WEBHOOK)) {
     config.WEBHOOK = { url: webhookConfig.url.trim(), secret: webhookConfig.secret.trim() || undefined };
   }
-  if (notifyTypes.value.includes('CHAIN')) {
+  if (notifyTypes.value.includes(ALERT_NOTIFY_TYPE.CHAIN)) {
     const params = buildParamsObject();
     config.CHAIN = {
       chainCode: chainConfig.chainCode.trim(),
@@ -592,15 +593,15 @@ const validateNotifyChannels = (_rule: unknown, _value: unknown, callback: (erro
     callback(new Error('至少选择一个通知渠道'));
     return;
   }
-  if (notifyTypes.value.includes('EMAIL') && !emailConfig.emails.trim()) {
+  if (notifyTypes.value.includes(ALERT_NOTIFY_TYPE.EMAIL) && !emailConfig.emails.trim()) {
     callback(new Error('邮件渠道需填写收件邮箱'));
     return;
   }
-  if (notifyTypes.value.includes('WEBHOOK') && !webhookConfig.url.trim()) {
+  if (notifyTypes.value.includes(ALERT_NOTIFY_TYPE.WEBHOOK) && !webhookConfig.url.trim()) {
     callback(new Error('Webhook 渠道需填写回调地址'));
     return;
   }
-  if (notifyTypes.value.includes('CHAIN')) {
+  if (notifyTypes.value.includes(ALERT_NOTIFY_TYPE.CHAIN)) {
     if (!chainConfig.chainCode.trim()) {
       callback(new Error('通知链路渠道需选择链路'));
       return;
@@ -703,7 +704,7 @@ function handleChannelsChange() {
 
 async function openDialog(id?: number | string) {
   form.value = buildInitFormData();
-  syncChannelState('EMAIL', '');
+  syncChannelState(ALERT_NOTIFY_TYPE.EMAIL, '');
   activeTab.value = 'basic';
   const isEdit = id !== undefined && id !== null && id !== '';
   visible.value = true;

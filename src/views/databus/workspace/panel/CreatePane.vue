@@ -17,7 +17,7 @@
     <main class="create__body">
       <template v-if="visibleSegs.length">
         <ChainFormBody
-          v-if="currentFiletype === 'chain'"
+          v-if="currentFiletype === DATABUS_RESOURCE_TYPE_CHAIN"
           ref="chainBodyRef"
           :chain-id="null"
           :preset="preset"
@@ -26,7 +26,7 @@
           @dirty-change="onDirtyChange"
         />
         <FormPane
-          v-else-if="currentFiletype === 'component'"
+          v-else-if="currentFiletype === DATABUS_RESOURCE_TYPE_COMPONENT"
           ref="formPaneRef"
           :preset="preset"
           :tag-suggestions="tagSuggestions"
@@ -35,7 +35,7 @@
           @dirty-change="onDirtyChange"
         />
         <DirectoryFormBody
-          v-else-if="currentFiletype === 'directory'"
+          v-else-if="currentFiletype === DATABUS_RESOURCE_TYPE_DIRECTORY"
           ref="directoryBodyRef"
           :directory-id="null"
           :preset="preset"
@@ -71,6 +71,12 @@ import ConnectionFormBody from './ConnectionFormBody.vue';
 import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
 import modal from '@/plugins/modal';
 import { checkPermi } from '@/utils/permission';
+import {
+  DATABUS_RESOURCE_TYPE_CHAIN,
+  DATABUS_RESOURCE_TYPE_COMPONENT,
+  DATABUS_RESOURCE_TYPE_CONNECTION,
+  DATABUS_RESOURCE_TYPE_DIRECTORY
+} from '@/constants/databus-common';
 import type { ComponentSaved, ConnectionSaved, CreateFileType, CreateSavedPayload, FormPreset } from '../workbench.types';
 
 const props = defineProps<{
@@ -91,17 +97,17 @@ const emit = defineEmits<{
 
 /** 分段定义：label + 段级新增权限（无权限段不渲染；权限收回后会话恢复时兜底空态） */
 const SEGS: ReadonlyArray<{ value: CreateFileType; label: string; permi: string[] }> = [
-  { value: 'chain', label: '链路', permi: ['databus:editor:add'] },
-  { value: 'component', label: '组件', permi: ['databus:component:add'] },
-  { value: 'directory', label: '目录', permi: ['databus:directory:add'] },
-  { value: 'connection', label: '连接器', permi: ['databus:connection:add'] }
+  { value: DATABUS_RESOURCE_TYPE_CHAIN, label: '链路', permi: ['databus:editor:add'] },
+  { value: DATABUS_RESOURCE_TYPE_COMPONENT, label: '组件', permi: ['databus:component:add'] },
+  { value: DATABUS_RESOURCE_TYPE_DIRECTORY, label: '目录', permi: ['databus:directory:add'] },
+  { value: DATABUS_RESOURCE_TYPE_CONNECTION, label: '连接器', permi: ['databus:connection:add'] }
 ];
 
 const visibleSegs = computed(() => SEGS.filter((seg) => checkPermi(seg.permi)));
 
 /** 内部分段（v-if 源）：初始取 props 值，无权限时降级到首个可见段 */
 const currentFiletype = ref<CreateFileType>(
-  visibleSegs.value.some((seg) => seg.value === props.filetype) ? props.filetype : (visibleSegs.value[0]?.value ?? 'chain')
+  visibleSegs.value.some((seg) => seg.value === props.filetype) ? props.filetype : (visibleSegs.value[0]?.value ?? DATABUS_RESOURCE_TYPE_CHAIN)
 );
 
 /** 当前段脏态镜像（切段弃稿确认用；段重建后以新段上报为准） */
@@ -163,22 +169,22 @@ function onDirtyChange(dirty: boolean) {
 /* ---------------- 保存流：转发宿主派发后续动作 + 当前段 reload 复位（各表单体新增态均重放 preset 预填） ---------------- */
 
 function onChainSaved(payload?: ChainFormSuccessPayload) {
-  emit('saved', { filetype: 'chain', chain: payload });
+  emit('saved', { filetype: DATABUS_RESOURCE_TYPE_CHAIN, chain: payload });
   void chainBodyRef.value?.reload();
 }
 
 function onComponentSaved(payload: ComponentSaved) {
-  emit('saved', { filetype: 'component', component: payload });
+  emit('saved', { filetype: DATABUS_RESOURCE_TYPE_COMPONENT, component: payload });
   void formPaneRef.value?.reload();
 }
 
 function onDirectorySaved(isNew: boolean) {
-  emit('saved', { filetype: 'directory', directory: isNew });
+  emit('saved', { filetype: DATABUS_RESOURCE_TYPE_DIRECTORY, directory: isNew });
   void directoryBodyRef.value?.reload();
 }
 
 function onConnectionSaved(payload: ConnectionSaved) {
-  emit('saved', { filetype: 'connection', connection: payload });
+  emit('saved', { filetype: DATABUS_RESOURCE_TYPE_CONNECTION, connection: payload });
   void connectionBodyRef.value?.reload();
 }
 </script>

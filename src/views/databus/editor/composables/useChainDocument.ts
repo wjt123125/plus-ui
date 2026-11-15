@@ -6,6 +6,7 @@ import { getChain, updateChain } from '@/api/databus/chain';
 import type { ChainInputParam } from '@/api/databus/chain/types';
 import type { CmpProperty } from '@/api/databus/el/types';
 import type { Edge, Node } from '@vue-flow/core';
+import { LOG_LEVEL } from '@/constants/databus';
 import type { CmpNodeData, ElTreeModel } from './useElTreeModel';
 
 /**
@@ -54,7 +55,7 @@ export function useChainDocument(store: ChainDocumentStore) {
   const chainId = ref('');
   /** 当前编辑链路的业务元数据（标题展示 + 保存时原样回传，避免丢档位/备注） */
   const chainName = ref('');
-  const logLevel = ref('BASIC');
+  const logLevel = ref<string>(LOG_LEVEL.BASIC);
   const remark = ref('');
   const chainSaving = ref(false);
   /** 当前链路创建人 id（P1 看得见：非本人链路画布置只读——审核者从审核详情打开他人链路仅查看；系统行 create_by 为空不拦） */
@@ -84,7 +85,7 @@ export function useChainDocument(store: ChainDocumentStore) {
     chainId.value = data.chainCode;
     chainName.value = data.chainName;
     chainOwner.value = data.createBy ?? null;
-    logLevel.value = data.logLevel ?? 'BASIC';
+    logLevel.value = data.logLevel ?? LOG_LEVEL.BASIC;
     remark.value = data.remark ?? '';
     inputParams.value = data.inputParams ? JSON.parse(JSON.stringify(data.inputParams)) : [];
 

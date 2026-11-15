@@ -6,6 +6,13 @@
 import type { ExprRole, NodeTypeKind, PropSchema, WidgetKind } from '@/api/databus/component/types';
 import { FALLBACK_GROUPS } from '../../editor/cmp-defs';
 import { useComponentTaxonomy } from '../../editor/composables/useComponentTaxonomy';
+import {
+  DATABUS_COMPONENT_CATEGORY_AI,
+  DATABUS_COMPONENT_CATEGORY_DATA,
+  DATABUS_COMPONENT_CATEGORY_FLOW_CONTROL,
+  DATABUS_COMPONENT_CATEGORY_PLATFORM,
+  DATABUS_COMPONENT_CATEGORY_PROTOCOL
+} from '@/constants/databus-component';
 
 /** 编译期兜底七组 key → 中文（字典未到位、或字典无此行时用） */
 const FALLBACK_GROUP_LABELS = new Map(FALLBACK_GROUPS.map((g) => [g.key, g.label]));
@@ -86,11 +93,11 @@ export function editorLabel(editor?: string | null): string {
 
 /** databus_component.category 旧五分类选项（表列正本，与 /options 的 group 不同） */
 export const CATEGORY_OPTIONS = [
-  { value: 'PROTOCOL', label: '协议类（HTTP 等）' },
-  { value: 'DATA', label: '数据处理' },
-  { value: 'FLOW_CONTROL', label: '流程控制' },
-  { value: 'AI', label: '人工智能' },
-  { value: 'PLATFORM', label: '平台对接（BPM 等）' }
+  { value: DATABUS_COMPONENT_CATEGORY_PROTOCOL, label: '协议类（HTTP 等）' },
+  { value: DATABUS_COMPONENT_CATEGORY_DATA, label: '数据处理' },
+  { value: DATABUS_COMPONENT_CATEGORY_FLOW_CONTROL, label: '流程控制' },
+  { value: DATABUS_COMPONENT_CATEGORY_AI, label: '人工智能' },
+  { value: DATABUS_COMPONENT_CATEGORY_PLATFORM, label: '平台对接（BPM 等）' }
 ] as const;
 
 /** 节点类型下拉 */

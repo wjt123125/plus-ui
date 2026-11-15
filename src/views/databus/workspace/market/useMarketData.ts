@@ -28,6 +28,7 @@ import type {
   MarketReviewDetailVo,
   MarketReviewForm
 } from '@/api/databus/market/types';
+import { MARKET_CASCADE, MARKET_RESOURCE_TYPE } from '@/constants/databus';
 import { useLoading } from '@/hooks/async/useLoading';
 import modal from '@/plugins/modal';
 
@@ -71,11 +72,11 @@ export function showChainInstallResult(vo: DatabusMarketInstallVo | null | undef
             {
               style:
                 'flex-shrink:0;padding:1px 6px;border-radius:4px;font-size:11px;' +
-                (c.status === 'NEW'
+                (c.status === MARKET_CASCADE.NEW
                   ? 'color:var(--el-color-success);background:var(--el-color-success-light-9);'
                   : 'color:var(--el-color-warning);background:var(--el-color-warning-light-9);')
             },
-            c.status === 'NEW' ? '新增' : '复用既有'
+            c.status === MARKET_CASCADE.NEW ? '新增' : '复用既有'
           ),
           h('span', { style: 'flex-shrink:0;color:var(--el-text-color-primary);' }, c.sourceName || c.sourceCode),
           h(
@@ -103,7 +104,7 @@ export function useMarketData() {
   const { loading, withLoading } = useLoading(false);
 
   /** 当前分段（组件 / 链路 / 连接器） */
-  const activeType = ref<MarketResourceType>('COMPONENT');
+  const activeType = ref<MarketResourceType>(MARKET_RESOURCE_TYPE.COMPONENT);
   /** 搜索关键字（名称 / 编码 / 标签） */
   const keyword = ref('');
   /** 当前分类 chip */
@@ -274,14 +275,22 @@ export function useMarketData() {
   const installedCounts = computed(() => {
     const count = (type: MarketResourceType) =>
       installed.value.filter((i) => i.resourceType === type).length;
-    return { COMPONENT: count('COMPONENT'), CHAIN: count('CHAIN'), CONNECTOR: count('CONNECTOR') };
+    return {
+      COMPONENT: count(MARKET_RESOURCE_TYPE.COMPONENT),
+      CHAIN: count(MARKET_RESOURCE_TYPE.CHAIN),
+      CONNECTOR: count(MARKET_RESOURCE_TYPE.CONNECTOR)
+    };
   });
 
   /** 市场 chips「我上架的」计数：按类型统计我的上架条数 */
   const mineCounts = computed(() => {
     const count = (type: MarketResourceType) =>
       mine.value.filter((i) => i.resourceType === type).length;
-    return { COMPONENT: count('COMPONENT'), CHAIN: count('CHAIN'), CONNECTOR: count('CONNECTOR') };
+    return {
+      COMPONENT: count(MARKET_RESOURCE_TYPE.COMPONENT),
+      CHAIN: count(MARKET_RESOURCE_TYPE.CHAIN),
+      CONNECTOR: count(MARKET_RESOURCE_TYPE.CONNECTOR)
+    };
   });
 
   function chipLabel(chip: MarketChip): string {

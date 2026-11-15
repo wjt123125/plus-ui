@@ -76,7 +76,7 @@
                 class="db-row__icon"
                 :class="{
                   'db-brand-icon': isBrandIconName(rowIcon(row)),
-                  'db-row__icon--lg': row.resourceType === 'CONNECTOR'
+                  'db-row__icon--lg': row.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR
                 }"
                 :icon-class="rowIcon(row)"
                 :style="{ color: row.color || 'var(--el-color-primary)' }"
@@ -91,7 +91,7 @@
                   <span class="db-row__name">{{ row.name }}</span>
                 </div>
                 <div class="db-row__summary">
-                  <template v-if="row.resourceType === 'CONNECTOR' && installedConnectorCode(row)">
+                  <template v-if="row.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR && installedConnectorCode(row)">
                     {{ installedConnectorCode(row) }}
                   </template>
                   <template v-else>{{ row.summary || row.codeDisplay }}</template>
@@ -103,7 +103,7 @@
               <div class="db-row__ops" @click.stop>
                 <!-- 启停仅对组件有意义（链路生命周期由发布/下线管），故链路只留卸载 -->
                 <el-switch
-                  v-if="row.resourceType === 'COMPONENT'"
+                  v-if="row.resourceType === MARKET_RESOURCE_TYPE.COMPONENT"
                   v-hasRoles="['databus_gov']"
                   :model-value="row.enabled !== false"
                   size="small"
@@ -147,7 +147,7 @@
                 class="db-row__icon"
                 :class="{
                   'db-brand-icon': isBrandIconName(itemIcon(row)),
-                  'db-row__icon--lg': row.resourceType === 'CONNECTOR'
+                  'db-row__icon--lg': row.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR
                 }"
                 :icon-class="itemIcon(row)"
                 :style="{ color: row.color || 'var(--el-color-primary)' }"
@@ -158,11 +158,11 @@
                   <span class="db-row__name">{{ row.name }}</span>
                 </div>
                 <div class="db-row__summary">{{ row.summary || row.codeDisplay }}</div>
-                <div v-if="row.status === 'REJECTED' && row.remark" class="db-row__remark">驳回理由：{{ row.remark }}</div>
+                <div v-if="row.status === MARKET_STATUS.REJECTED && row.remark" class="db-row__remark">驳回理由：{{ row.remark }}</div>
                 <div v-if="row.modifyNote" class="db-row__remark">修改说明：{{ row.modifyNote }}</div>
               </div>
               <div class="db-row__ops" @click.stop>
-                <el-button v-if="row.status === 'ONLINE'" size="small" @click="onUnpublish(row)">
+                <el-button v-if="row.status === MARKET_STATUS.ONLINE" size="small" @click="onUnpublish(row)">
                   <SvgIcon icon-class="lucide:arrow-down-to-line" /><span>下架</span>
                 </el-button>
                 <el-button size="small" type="danger" plain @click="onDeleteItem(row)">
@@ -202,7 +202,7 @@
                 class="db-row__icon"
                 :class="{
                   'db-brand-icon': isBrandIconName(itemIcon(row)),
-                  'db-row__icon--lg': row.resourceType === 'CONNECTOR'
+                  'db-row__icon--lg': row.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR
                 }"
                 :icon-class="itemIcon(row)"
                 :style="{ color: row.color || 'var(--el-color-primary)' }"
@@ -242,10 +242,10 @@
           <MarketGroupHeader
             label="连接器"
             :count="connectorRows.length"
-            :collapsed="isGroupCollapsed('CONNECTOR')"
-            @toggle="toggleGroup('CONNECTOR')"
+            :collapsed="isGroupCollapsed(MARKET_RESOURCE_TYPE.CONNECTOR)"
+            @toggle="toggleGroup(MARKET_RESOURCE_TYPE.CONNECTOR)"
           />
-          <ul v-if="connectorRows.length && !isGroupCollapsed('CONNECTOR')" class="db-list db-list--framed">
+          <ul v-if="connectorRows.length && !isGroupCollapsed(MARKET_RESOURCE_TYPE.CONNECTOR)" class="db-list db-list--framed">
             <!-- 整行可点＝打开连接器包查看 tab（清单＋反编译预览，唯一入口）；
                  ops 区只留治理动作 ⟨启停⟩[废弃][卸载]，@click.stop 阻断冒泡到行 -->
             <li
@@ -275,7 +275,7 @@
                 <div class="db-row__summary">
                   #{{ row.type }}{{ row.version ? ` · ${versionLabel(row.version)} · b${row.buildNo ?? 0}` : ''
                   }}{{ isDevDef(row) ? '' : ` · ${connectorSourceLabel(row)}` }}
-                  <button v-if="row.ownerCode" type="button" class="db-row__author" @click.stop="onAuthor(row.ownerCode!, 'CONNECTOR')">
+                  <button v-if="row.ownerCode" type="button" class="db-row__author" @click.stop="onAuthor(row.ownerCode!, MARKET_RESOURCE_TYPE.CONNECTOR)">
                     @{{ row.ownerCode }}
                   </button>
                 </div>
@@ -306,6 +306,7 @@ import modal from '@/plugins/modal';
 import { useUserStore } from '@/store/modules/user';
 import { checkRole } from '@/utils/permission';
 import type { DatabusMarketInstallVo, DatabusMarketItemVo, MarketResourceType } from '@/api/databus/market/types';
+import { CONNECTOR_DEF_STATUS, MARKET_MODE, MARKET_RESOURCE_TYPE, MARKET_STATUS } from '@/constants/databus';
 import type { ConnectorDefVo } from '@/api/databus/connector/types';
 import {
   deprecateConnector,
@@ -419,7 +420,7 @@ async function loadScope(target: MarketScope): Promise<void> {
     // 已装管理只认安装台账：连接器也一样，没安装记录就不会出现在这里
     await market.loadInstalled();
     // 已装连接器行要补版本（展示码由台账接口回填），有连接器才补拉 defs
-    if (installed.value.some((row) => row.resourceType === 'CONNECTOR')) {
+    if (installed.value.some((row) => row.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR)) {
       await loadConnectorDefs();
     }
   } else if (target === 'mine') {
@@ -563,12 +564,12 @@ const pendingGroups = computed(() => groupByType(pending.value, manageKeyword.va
 const connectorRows = computed(() => {
   const kw = manageKeyword.value.trim().toLowerCase();
   return connectorDefs.value
-    .filter((d) => d.status !== 'PENDING')
+    .filter((d) => d.status !== CONNECTOR_DEF_STATUS.PENDING)
     .filter((d) => (!kw ? true : [d.label, d.type].some((s) => (s ?? '').toLowerCase().includes(kw))));
 });
 
 /** 治理行是否还有可治理的已生效 def（空态文案用：区分「没有包」与「有关键字筛掉」） */
-const governableDefCount = computed(() => connectorDefs.value.filter((d) => d.status !== 'PENDING').length);
+const governableDefCount = computed(() => connectorDefs.value.filter((d) => d.status !== CONNECTOR_DEF_STATUS.PENDING).length);
 
 /** 已装台账分组（组件/链路/连接器）：install 台账按固定顺序拆组 + 关键字过滤（名称/简介/展示码），空组丢弃。
  *  连接器和另外两类同口径——有没有这一行，只看有没有自己的安装记录；
@@ -588,7 +589,7 @@ const installedEmpty = computed(() => !installedGroups.value.length);
 
 /** 已装连接器行对应的 def 行（安装台账的 localResourceId＝def 行 id；拿不到返回 null） */
 function installedConnectorDef(row: DatabusMarketInstallVo): ConnectorDefVo | null {
-  if (row.resourceType !== 'CONNECTOR' || row.localResourceId == null) {
+  if (row.resourceType !== MARKET_RESOURCE_TYPE.CONNECTOR || row.localResourceId == null) {
     return null;
   }
   return connectorDefs.value.find((d) => d.id != null && String(d.id) === String(row.localResourceId)) ?? null;
@@ -609,7 +610,7 @@ function installedConnectorCode(row: DatabusMarketInstallVo): string {
 /** 已装台账行是否可点：组件/链路有本地副本就开本地资源；其余（尤其连接器）有市场物料行就开物料详情。
  *  两种都拿不到时整行不可点（无 hover、无 chevron），行为与另外两个视角一致 */
 function canOpenInstalled(row: DatabusMarketInstallVo): boolean {
-  const hasLocal = row.localResourceId != null && (row.resourceType === 'COMPONENT' || row.resourceType === 'CHAIN');
+  const hasLocal = row.localResourceId != null && (row.resourceType === MARKET_RESOURCE_TYPE.COMPONENT || row.resourceType === MARKET_RESOURCE_TYPE.CHAIN);
   return hasLocal || row.marketItemId != null;
 }
 
@@ -618,7 +619,7 @@ function onOpenInstalled(row: DatabusMarketInstallVo) {
   if (!canOpenInstalled(row)) {
     return;
   }
-  if (row.localResourceId != null && (row.resourceType === 'COMPONENT' || row.resourceType === 'CHAIN')) {
+  if (row.localResourceId != null && (row.resourceType === MARKET_RESOURCE_TYPE.COMPONENT || row.resourceType === MARKET_RESOURCE_TYPE.CHAIN)) {
     emit('open-local', row.localResourceId, row.resourceType as 'COMPONENT' | 'CHAIN', row.name ?? '');
     return;
   }
@@ -638,7 +639,10 @@ function isSelfPending(row: DatabusMarketItemVo): boolean {
  * 故意图带上 resourceType，市场 pane 一次 set 一次 refresh）。
  */
 function onAuthor(code: string, type?: string) {
-  const resourceType: MarketResourceType = type === 'CHAIN' || type === 'CONNECTOR' ? type : 'COMPONENT';
+  const resourceType: MarketResourceType =
+    type === MARKET_RESOURCE_TYPE.CHAIN || type === MARKET_RESOURCE_TYPE.CONNECTOR
+      ? type
+      : MARKET_RESOURCE_TYPE.COMPONENT;
   marketNavIntent.value = { kind: 'owner', ownerCode: code, resourceType };
   emit('back-to-market');
 }
@@ -658,14 +662,14 @@ async function onUninstall(row: DatabusMarketInstallVo) {
   }
   // 共用本体（组件 SHARED / 连接器）：卸载仅移除自己的安装记录，不动本体；
   // 只有链路与组件 FORK 副本才是删本地资源
-  if (row.resourceType === 'CONNECTOR') {
+  if (row.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR) {
     try {
       await modal.confirm(`确认卸载「${row.name}」？只移除你的安装记录，连接器本体与启停状态不受影响。`);
     } catch {
       return;
     }
   } else {
-    const shared = row.resourceType === 'COMPONENT' && row.mode === 'SHARED';
+    const shared = row.resourceType === MARKET_RESOURCE_TYPE.COMPONENT && row.mode === MARKET_MODE.SHARED;
     try {
       await modal.confirm(
         shared
@@ -704,14 +708,14 @@ function governMenuItems(row: ConnectorDefVo) {
       items.push({ command: 'reload', label: '重载', icon: 'lucide:refresh-cw', tone: 'primary' });
     }
   } else {
-    if (row.status === 'ENABLED' && hasPermi('databus:connector:edit')) {
+    if (row.status === CONNECTOR_DEF_STATUS.ENABLED && hasPermi('databus:connector:edit')) {
       items.push({ command: 'disable', label: '停用', icon: 'lucide:pause', tone: 'warning' });
     }
-    if (row.status === 'DISABLED' && hasPermi('databus:connector:edit')) {
+    if (row.status === CONNECTOR_DEF_STATUS.DISABLED && hasPermi('databus:connector:edit')) {
       items.push({ command: 'enable', label: '启用', icon: 'lucide:play', tone: 'success' });
     }
     // 废弃是终态（不可逆）：只从可执行态进入，PENDING 已不在治理列表
-    if ((row.status === 'ENABLED' || row.status === 'DISABLED') && hasPermi('databus:connector:edit')) {
+    if ((row.status === CONNECTOR_DEF_STATUS.ENABLED || row.status === CONNECTOR_DEF_STATUS.DISABLED) && hasPermi('databus:connector:edit')) {
       items.push({ command: 'deprecate', label: '废弃', icon: 'lucide:archive', tone: 'warning' });
     }
   }

@@ -36,7 +36,7 @@
           </el-form-item>
 
           <!-- 连接器：上传即上架。包不在别处上传——提交时落包、建 def、建市场物料一起进待审 -->
-          <el-form-item v-if="form.resourceType === 'CONNECTOR'" label="连接器包" prop="sourceId">
+          <el-form-item v-if="form.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR" label="连接器包" prop="sourceId">
             <div class="mpub__pkg">
               <input ref="packageInputRef" type="file" accept=".zip" class="mpub__hidden-input" @change="onPackageChange" />
               <el-button :loading="submitting" @click="pickPackage">
@@ -116,6 +116,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 import type { DatabusMarketCategoryVo, DatabusMarketItemVo, MarketPublishForm, MarketResourceType } from '@/api/databus/market/types';
+import { MARKET_RESOURCE_TYPE } from '@/constants/databus';
 import { listMarketItems, publishConnector } from '@/api/databus/market';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import { useMarketData } from './useMarketData';
@@ -147,9 +148,9 @@ const { categories } = market;
 
 /** 类型分段选项（对齐市场页「组件 / 链路 / 连接器」） */
 const TYPE_OPTIONS: { value: MarketResourceType; label: string }[] = [
-  { value: 'COMPONENT', label: '组件' },
-  { value: 'CHAIN', label: '链路' },
-  { value: 'CONNECTOR', label: '连接器' }
+  { value: MARKET_RESOURCE_TYPE.COMPONENT, label: '组件' },
+  { value: MARKET_RESOURCE_TYPE.CHAIN, label: '链路' },
+  { value: MARKET_RESOURCE_TYPE.CONNECTOR, label: '连接器' }
 ];
 
 const selectorRef = ref<InstanceType<typeof ResourceSelector>>();
@@ -158,7 +159,7 @@ const packageInputRef = ref<HTMLInputElement>();
 /** 连接器包：唯一上传入口，提交时随上架元数据一起进待审 */
 const packageFile = ref<File>();
 const form = reactive<MarketPublishForm>({
-  resourceType: 'COMPONENT',
+  resourceType: MARKET_RESOURCE_TYPE.COMPONENT,
   sourceId: '',
   summary: '',
   categoryId: undefined,
@@ -172,7 +173,7 @@ const rules: FormRules = {
     {
       // 连接器的「源资源」就是上传的 zip；其余类型仍选已有资源
       validator: (_rule, value, callback) => {
-        if (form.resourceType === 'CONNECTOR') {
+        if (form.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR) {
           packageFile.value ? callback() : callback(new Error('请选择连接器包（.zip）'));
           return;
         }
@@ -335,7 +336,7 @@ async function submit() {
       tags: form.tags,
       modifyNote: form.modifyNote || undefined
     };
-    if (form.resourceType === 'CONNECTOR') {
+    if (form.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR) {
       // 上传即提交：落包、建 def、建市场物料一次完成，统一进待审
       const { data: itemId } = await publishConnector(packageFile.value as File, meta);
       ElMessage.success('连接器包已提交，等待治理审核启用');

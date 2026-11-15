@@ -22,6 +22,8 @@ export type WorkspaceTabKind =
   | 'detail'
   | 'form'
   | 'changes'
+  // 草稿审阅（AI 落下的 DRAFT 行：源码 / 编译产物 / 试跑 → 人点采纳或拒绝）
+  | 'component-review'
   | 'market'
   // 物料管理（2026-10-30 由 MarketPane 内部 view/scope 双 ref 提为独立 tab，刷新可恢复现场）
   | 'market-manage'
@@ -69,6 +71,8 @@ export interface WorkspaceTab extends WorkbenchTab {
   code: string;
   /** form/changes：组件 DB 行 id（编辑/代码变更必需） */
   dbId?: number;
+  /** component-review：草稿行主键（同 id 单例；审阅页自取数，采纳/拒绝都按它收口） */
+  reviewId?: number | string;
   /** market-manage：当前视角（pane 内切视角即回写，随会话落盘 → 刷新恢复现场） */
   marketScope?: MarketScope;
   /** market-publish：来路（返回钮回跳市场/管理 tab；随会话落盘，刷新后回跳目标不丢） */

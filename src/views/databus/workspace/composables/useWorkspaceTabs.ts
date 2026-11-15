@@ -3,6 +3,7 @@
  * 多 kind 同容器混排，key 规则见 workbench-unification.md §2.1：
  *   canvas:{chainId}（同链单例）/ component:detail:{code}
  *   / component:form:{id}（新建临时 component:form:new）/ component:changes:{id}
+ *   / component:review:{id}（草稿审阅，同 id 单例，2026-11-15 切片 5 人点生效）
  *   / market（物料市场，全局单例）/ market:manage（物料管理，全局单例，视角存 tab.marketScope）
  *   / market:publish（物料上架，全局单例，来路存 tab.publishFrom，2026-11-01 弹窗 tab 化）
  *   / market-item:{id}（物料详情，同 id 单例）
@@ -17,6 +18,7 @@ import { useWorkbenchTabs } from '@/views/databus/workbench/composables/useWorkb
 import type { ComponentRegistryRow } from '@/views/databus/component/model/registry';
 import type { CreateFileType, FormPreset, MarketScope, WorkspaceTab } from '../workbench.types';
 import { versionLabel } from '../market/marketDisplay';
+import { DATABUS_RESOURCE_TYPE_CHAIN } from '@/constants/databus-common';
 
 /** 新建组件 tab 的保留 key（保存成功后 adoptNewForm 转正） */
 export const NEW_FORM_KEY = 'component:form:new';
@@ -54,6 +56,10 @@ export function formKey(id?: number): string {
 }
 export function changesKey(id: number): string {
   return `component:changes:${id}`;
+}
+/** 组件草稿审阅 tab key（同 id 单例；AI 落下的 DRAFT 行在这里由人拍板，2026-11-15 切片 5） */
+export function componentReviewKey(id: number | string): string {
+  return `component:review:${id}`;
 }
 export function marketItemKey(itemId: number | string): string {
   return `market-item:${itemId}`;
@@ -280,7 +286,7 @@ export function useWorkspaceTabs() {
   }
 
   /** 打开/聚焦新建向导 tab（全局单例：再点只聚焦，草稿不丢；换 filetype 只切分段，preset 未传保留原预设） */
-  function openCreate(filetype: CreateFileType = 'chain', preset?: FormPreset): string {
+  function openCreate(filetype: CreateFileType = DATABUS_RESOURCE_TYPE_CHAIN, preset?: FormPreset): string {
     const existed = wb.tabs.value.find((t) => t.key === CREATE_TAB_KEY);
     if (existed) {
       if (filetype !== existed.filetype) {
@@ -313,6 +319,27 @@ export function useWorkspaceTabs() {
       code: row.code,
       dbId: row.db.id,
       version: row.db.version ?? null,
+      dirty: false
+    });
+  }
+
+  /**
+   * 打开/聚焦草稿审阅 tab（kind component-review，同 id 单例）。
+   * 只认草稿行：pane 自取数（不经台账），采纳/拒绝后由宿主关 tab 并刷台账。
+   */
+  function openComponentReview(id: number | string, name: string): string {
+    const key = componentReviewKey(id);
+    const title = `审阅 · ${name}`;
+    const existed = wb.tabs.value.find((t) => t.key === key);
+    if (existed) {
+      existed.title = title; // 草稿可能已被改名，聚焦时顺手刷新
+    }
+    return wb.open({
+      key,
+      kind: 'component-review',
+      title,
+      code: '',
+      reviewId: id,
       dirty: false
     });
   }
@@ -514,6 +541,7 @@ export function useWorkspaceTabs() {
     openForm,
     openCreate,
     openChanges,
+    openComponentReview,
     openConnectionList,
     openConnectionForm,
     openExecutionList,

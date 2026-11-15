@@ -9,11 +9,11 @@ export interface AgentCardOption {
   style?: 'primary' | 'default';
 }
 
-/** 通用交互卡片（运行时 §16）：kind=confirm 为审批确认，choice 为后续选择卡 */
+/** 通用交互卡片（运行时 §16）：confirm 为审批确认，choice 为后续选择卡，ref 为资源跳转卡 */
 export interface AgentCard {
   /** run 内唯一，点选后原样回传 */
   cardId: string;
-  kind: 'confirm' | 'choice';
+  kind: 'confirm' | 'choice' | 'ref';
   title: string;
   body?: string;
   /** 原文块：真正要执行的那次调用，等宽展示 */
@@ -22,6 +22,16 @@ export interface AgentCard {
   /** 仅 choice 使用 */
   multiSelect?: boolean;
   presentation?: 'inline' | 'dialog';
+  /** 仅 ref 使用：点击由宿主开对应 tab（如草稿审阅页） */
+  resource?: AgentCardResource;
+}
+
+/** ref 卡指向的资源；id 是雪花 id，按字符串收避免精度丢失 */
+export interface AgentCardResource {
+  type: 'component' | 'chain';
+  id?: string;
+  code?: string;
+  name?: string;
 }
 
 /** 卡片回执：用户点了哪一项 */
@@ -108,7 +118,7 @@ export interface AgentConversationVo {
 export interface AgentMessageVo {
   runId: string;
   seq: number;
-  /** databus:agent:canvas / draft / script-draft / run-end / auth */
+  /** databus:agent:chain:canvas:updated / chain:draft:saved / component:draft:saved / run:lifecycle:ended */
   eventCode: string;
   chainId?: number | string;
   content: string;

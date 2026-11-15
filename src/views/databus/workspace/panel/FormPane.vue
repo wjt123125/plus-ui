@@ -11,13 +11,13 @@
   <div class="cf-pane">
     <header class="cf-head">
       <el-tooltip
-        :content="form.status === 'ENABLED' ? '已启用' : '已停用'"
+        :content="form.status === COMPONENT_STATUS.ENABLED ? '已启用' : '已停用'"
         placement="top"
         :show-after="200"
       >
         <span
           class="cf-head__dot"
-          :class="form.status === 'ENABLED' ? 'is-enabled' : 'is-disabled'"
+          :class="form.status === COMPONENT_STATUS.ENABLED ? 'is-enabled' : 'is-disabled'"
           aria-hidden="true"
         />
       </el-tooltip>
@@ -46,8 +46,8 @@
       <el-switch
         v-hasPermi="['databus:component:toggle']"
         :model-value="form.status"
-        active-value="ENABLED"
-        inactive-value="DISABLED"
+        :active-value="COMPONENT_STATUS.ENABLED"
+        :inactive-value="COMPONENT_STATUS.DISABLED"
         size="small"
         @update:model-value="onStatusSwitch"
       />
@@ -93,6 +93,11 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { addComponent, getComponent, toggleComponent, updateComponent } from '@/api/databus/component';
 import type { DatabusComponentForm, ScriptSaveResult } from '@/api/databus/component/types';
+import { COMPONENT_STATUS, type ComponentStatus } from '@/constants/databus';
+import {
+  DATABUS_COMPONENT_DEPRECATED_NO,
+  DATABUS_COMPONENT_SCRIPT_LANG_JAVA
+} from '@/constants/databus-component';
 import modal from '@/plugins/modal';
 import { defaultForm, TAB_OF, type ComponentFormModel, type TabName } from '@/views/databus/component/form/form.types';
 import { useFieldBuilder } from '@/views/databus/component/form/useFieldBuilder';
@@ -306,8 +311,8 @@ async function loadDetail(id: number) {
       scriptLang: data.scriptLang ?? '',
       scriptBody: data.scriptBody ?? '',
       version: data.version ?? null,
-      status: data.status ?? 'ENABLED',
-      deprecated: data.deprecated ?? '0',
+      status: data.status ?? COMPONENT_STATUS.ENABLED,
+      deprecated: data.deprecated ?? DATABUS_COMPONENT_DEPRECATED_NO,
       deprecateNote: data.deprecateNote ?? '',
       docUrl: data.docUrl ?? '',
       remark: data.remark ?? ''
@@ -338,7 +343,7 @@ async function reload() {
 function onScriptPublished(data: ScriptSaveResult, scriptBody: string) {
   hasScriptArtifact.value = true;
   form.value.version = data.version ?? form.value.version;
-  form.value.scriptLang = data.scriptLang ?? 'java';
+  form.value.scriptLang = data.scriptLang ?? DATABUS_COMPONENT_SCRIPT_LANG_JAVA;
   form.value.scriptBody = scriptBody;
   if (data.nodeType) {
     form.value.nodeType = data.nodeType;
@@ -433,12 +438,12 @@ async function handleSubmit() {
  * 停用与卡片/树开关同口径二次确认（停后编辑器面板不再投放该件，已发布链路继续跑）。
  */
 async function onStatusSwitch(val: string | number | boolean | undefined) {
-  const next: 'ENABLED' | 'DISABLED' = val === 'DISABLED' ? 'DISABLED' : 'ENABLED';
+  const next: ComponentStatus = val === COMPONENT_STATUS.DISABLED ? COMPONENT_STATUS.DISABLED : COMPONENT_STATUS.ENABLED;
   if (!isEdit.value || form.value.id == null) {
     form.value.status = next;
     return;
   }
-  if (next === 'DISABLED') {
+  if (next === COMPONENT_STATUS.DISABLED) {
     const confirmed = await modal
       .confirm(
         `确认停用「${form.value.componentName || form.value.componentCode}」？` +
@@ -456,7 +461,7 @@ async function onStatusSwitch(val: string | number | boolean | undefined) {
   form.value.status = next;
   try {
     await toggleComponent(form.value.id, next);
-    modal.msgSuccess(next === 'ENABLED' ? '已启用' : '已停用');
+    modal.msgSuccess(next === COMPONENT_STATUS.ENABLED ? '已启用' : '已停用');
     markBaseline();
     // 上抛宿主刷台账/资源树，否则左树状态点还停在旧值
     emitSaved();

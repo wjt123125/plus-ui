@@ -80,7 +80,7 @@
               <SchemaFieldTree v-if="fields.length" :fields="fields" />
               <el-empty
                 v-else
-                :description="row.source === 'SYSTEM' ? '该组件没有可配置的参数' : '尚未定义配置参数，编辑器中将直接用 JSON 填写'"
+                :description="row.source === OWNER_TYPE.SYSTEM ? '该组件没有可配置的参数' : '尚未定义配置参数，编辑器中将直接用 JSON 填写'"
                 :image-size="60"
               />
             </div>
@@ -115,7 +115,7 @@
               <el-descriptions :column="2" border size="small" class="gov-desc">
                 <el-descriptions-item v-if="row.db && row.scripted" label="执行体">
                   <el-tag type="success" size="small" effect="plain">
-                    {{ row.db.scriptLang || 'java' }} · v{{ row.db.version ?? '-' }}
+                    {{ row.db.scriptLang || DATABUS_COMPONENT_SCRIPT_LANG_JAVA }} · v{{ row.db.version ?? '-' }}
                   </el-tag>
                 </el-descriptions-item>
                 <el-descriptions-item label="节点类型">
@@ -236,6 +236,8 @@ import { ElMessage } from 'element-plus';
 import SchemaFieldTree from '@/views/databus/component/detail/SchemaFieldTree.vue';
 import JsonCodeEditor from '@/views/databus/editor/components/common/JsonCodeEditor.vue';
 import type { ComponentRegistryRow } from '@/views/databus/component/model/registry';
+import { OWNER_TYPE } from '@/constants/databus';
+import { DATABUS_COMPONENT_SCRIPT_LANG_JAVA } from '@/constants/databus-component';
 import {
   CATEGORY_OPTIONS,
   editorLabel,
@@ -278,7 +280,7 @@ watch(
 /** 三态来源文案/标签色 */
 const sourceText = computed(() => {
   switch (props.row.source) {
-    case 'SYSTEM':
+    case OWNER_TYPE.SYSTEM:
       return '内置';
     case 'OVERLAY':
       return '治理覆盖';
@@ -290,7 +292,7 @@ const sourceText = computed(() => {
 });
 
 const sourceTagType = computed<'primary' | 'warning' | 'success'>(() => {
-  if (props.row.source === 'SYSTEM') {
+  if (props.row.source === OWNER_TYPE.SYSTEM) {
     return 'primary';
   }
   return props.row.source === 'OVERLAY' ? 'warning' : 'success';
@@ -299,7 +301,7 @@ const sourceTagType = computed<'primary' | 'warning' | 'success'>(() => {
 /** 三态释义：正常态不占警示条，收进头部来源标签的 hover 提示 */
 const sourceTip = computed(() => {
   switch (props.row.source) {
-    case 'SYSTEM':
+    case OWNER_TYPE.SYSTEM:
       return '系统内置组件，内容只读：名称、参数和示例由程序内置定义；可以为它新建一条同名定制配置来修改外观，也可以脚本化改造成库存脚本件。';
     case 'OVERLAY':
       return '定制配置件：外观和分类取自平台配置，但有哪些配置参数仍由内置代码定义；脚本化后转为库存脚本件。';

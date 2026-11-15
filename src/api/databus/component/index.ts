@@ -8,6 +8,8 @@ import type {
   DatabusComponentForm,
   DatabusComponentQuery,
   DatabusComponentVo,
+  ScriptProbeBo,
+  ScriptProbeResult,
   ScriptRollbackBo,
   ScriptSaveBo,
   ScriptSaveResult,
@@ -172,5 +174,45 @@ export function listScriptRuntime(): AxiosPromise<ScriptRuntime[]> {
   return request({
     url: '/databus/component/script/runtime',
     method: 'get'
+  });
+}
+
+// ------------------------------------------------------------------
+// 草稿审阅：AI 只落 DRAFT，生效必须人在审阅页点采纳
+// ------------------------------------------------------------------
+
+/**
+ * 采纳草稿（先转启用再走保存管线：编译 + 注册 + 版本 +1；失败整体回滚）。
+ * POST /databus/component/script/draft/adopt（权限 databus:component:edit）
+ */
+export function adoptScriptDraft(id: number | string): AxiosPromise<ScriptSaveResult> {
+  return request({
+    url: '/databus/component/script/draft/adopt',
+    method: 'post',
+    data: { id }
+  });
+}
+
+/**
+ * 拒绝草稿（物理删除 DRAFT 行；非草稿态一律拒绝）。
+ * POST /databus/component/script/draft/reject（权限 databus:component:edit）
+ */
+export function rejectScriptDraft(id: number | string): AxiosPromise<boolean> {
+  return request({
+    url: '/databus/component/script/draft/reject',
+    method: 'post',
+    data: { id }
+  });
+}
+
+/**
+ * 探针试跑（临时节点即注即摘，不落库、不写执行记录）。
+ * POST /databus/component/script/probe（权限 databus:component:edit）
+ */
+export function probeScript(data: ScriptProbeBo): AxiosPromise<ScriptProbeResult> {
+  return request({
+    url: '/databus/component/script/probe',
+    method: 'post',
+    data
   });
 }

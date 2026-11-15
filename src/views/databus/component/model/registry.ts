@@ -11,6 +11,8 @@
  * 旧「编码冲突红签」已废除：同码 DB 行启用有脚本即库存件接管，无脚本即治理覆盖，均为合法态。
  */
 import type { ComponentOption, ComponentSource, DatabusComponentVo } from '@/api/databus/component/types';
+import { COMPONENT_STATUS, OWNER_TYPE } from '@/constants/databus';
+import { DATABUS_COMPONENT_DEPRECATED_YES } from '@/constants/databus-component';
 
 /** /options 自带的展示字段，结构类型最小化 */
 export interface DefMeta {
@@ -62,7 +64,7 @@ export function buildRegistry(
   const rows: ComponentRegistryRow[] = [];
   const builtinCodes = new Set<string>();
   for (const opt of options) {
-    if (opt.source === 'SYSTEM') {
+    if (opt.source === OWNER_TYPE.SYSTEM) {
       builtinCodes.add(opt.code);
     }
   }
@@ -70,11 +72,11 @@ export function buildRegistry(
   const matchedDbIds = new Set<number>();
   for (const opt of options) {
     const def = defMap.get(opt.code);
-    if (opt.source === 'SYSTEM') {
+    if (opt.source === OWNER_TYPE.SYSTEM) {
       rows.push({
         code: opt.code,
         name: opt.name,
-        source: 'SYSTEM',
+        source: OWNER_TYPE.SYSTEM,
         option: opt,
         group: def?.group ?? opt.group ?? '',
         domain: opt.domain ?? undefined,
@@ -103,7 +105,7 @@ export function buildRegistry(
         color: db?.color || opt.color || def?.color,
         shortName: db?.shortName || undefined,
         tags: db?.tags ?? undefined,
-        deprecated: db ? db.deprecated === '1' : !!opt.deprecated,
+        deprecated: db ? db.deprecated === DATABUS_COMPONENT_DEPRECATED_YES : !!opt.deprecated,
         deprecateNote: db?.deprecateNote || opt.deprecateNote || undefined,
         disabled: false,
         scripted: !!db?.scriptBody
@@ -128,9 +130,9 @@ export function buildRegistry(
       color: db.color ?? undefined,
       shortName: db.shortName || undefined,
       tags: db.tags ?? undefined,
-      deprecated: db.deprecated === '1',
+      deprecated: db.deprecated === DATABUS_COMPONENT_DEPRECATED_YES,
       deprecateNote: db.deprecateNote || undefined,
-      disabled: db.status === 'DISABLED',
+      disabled: db.status === COMPONENT_STATUS.DISABLED,
       scripted: !!db.scriptBody
     });
   }

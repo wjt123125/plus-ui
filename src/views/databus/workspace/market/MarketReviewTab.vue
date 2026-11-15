@@ -35,13 +35,13 @@
         </header>
 
         <!-- 非待审态提示（他人已审 / 物料被作者删除重提等竞态）：操作栏同步隐藏，只读看现场 -->
-        <div v-if="detail.item.status && detail.item.status !== 'PENDING'" class="mrt__stale">
+        <div v-if="detail.item.status && detail.item.status !== MARKET_STATUS.PENDING" class="mrt__stale">
           该物料已不在待审核状态（当前：{{ statusLabel(detail.item.status) }}），仅可查看。
         </div>
 
         <!-- 内容预览：CHAIN 画布节点清单 / COMPONENT 关键信息（自弹窗原样迁移） -->
         <section class="mrt__block">
-          <template v-if="detail.item.resourceType === 'CHAIN'">
+          <template v-if="detail.item.resourceType === MARKET_RESOURCE_TYPE.CHAIN">
             <h4 class="mrt__h">
               画布结构预览
               <!-- P1 看得见：跳工作台画布 tab 看链路真身（宿主 openCanvas） -->
@@ -51,7 +51,7 @@
                 size="small"
                 text
                 type="primary"
-                @click="emitOpenSource('CHAIN', detail.item.sourceId, null, detail.item.name)"
+                @click="emitOpenSource(MARKET_RESOURCE_TYPE.CHAIN, detail.item.sourceId, null, detail.item.name)"
               >
                 查看链路
               </el-button>
@@ -75,7 +75,7 @@
               </li>
             </ul>
           </template>
-          <template v-else-if="detail.item.resourceType === 'CONNECTOR'">
+          <template v-else-if="detail.item.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR">
             <!-- 连接器审核「看得见」§2.3：查看（开连接器包查看 tab：清单+反编译预览），解盲审。
                  下载原包不在审核页上——收在包查看 tab 头部，看包只此一个入口 -->
             <h4 class="mrt__h">
@@ -114,7 +114,7 @@
                 size="small"
                 text
                 type="primary"
-                @click="emitOpenSource('COMPONENT', detail.item.sourceId!, detail.preview!.code!, detail.item.name)"
+                @click="emitOpenSource(MARKET_RESOURCE_TYPE.COMPONENT, detail.item.sourceId!, detail.preview!.code!, detail.item.name)"
               >
                 查看组件
               </el-button>
@@ -147,7 +147,7 @@
           >
             <template #default="{ data: d }">
               <span class="mrt__dep">
-                <span class="mrt__dep-type">{{ d.resourceType === 'CHAIN' ? '链' : '组件' }}</span>
+                <span class="mrt__dep-type">{{ d.resourceType === MARKET_RESOURCE_TYPE.CHAIN ? '链' : '组件' }}</span>
                 <span class="mrt__dep-name">{{ d.name }}</span>
                 <span class="mrt__dep-status" :class="`is-${(d.marketStatus || 'none').toLowerCase()}`">
                   {{ statusLabel(d.marketStatus) }}
@@ -199,7 +199,7 @@
          闭包联审：依赖未全 ONLINE 时锁主链审核按钮（倒逼先就地审依赖，与依赖行 blockedBy 锁同模式） -->
     <footer v-if="detail?.item" class="mrt__ops">
       <span v-if="isSelf" class="mrt__self">禁自审</span>
-      <template v-else-if="detail.item.status === 'PENDING'">
+      <template v-else-if="detail.item.status === MARKET_STATUS.PENDING">
         <span v-if="!depsAllOnline" class="mrt__ops-hint">
           依赖未全部过审（还剩 {{ depsBlockingCount }} 项），依赖全清后这里出现审核按钮。
         </span>
@@ -224,6 +224,7 @@ import type {
   MarketReviewDependency,
   MarketReviewDetailVo
 } from '@/api/databus/market/types';
+import { MARKET_RESOURCE_TYPE, MARKET_STATUS } from '@/constants/databus';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import { useMarketData } from './useMarketData';
 
@@ -285,12 +286,16 @@ const itemIcon = computed(() => {
   if (!it) {
     return 'lucide:box';
   }
-  return it.resourceType === 'CHAIN' ? 'lucide:spline' : it.icon || 'lucide:box';
+  return it.resourceType === MARKET_RESOURCE_TYPE.CHAIN ? 'lucide:spline' : it.icon || 'lucide:box';
 });
 
 const typeLabel = computed(() => {
   const t = detail.value?.item?.resourceType;
-  return t === 'CHAIN' ? '链路' : t === 'CONNECTOR' ? '连接器' : '组件';
+  return t === MARKET_RESOURCE_TYPE.CHAIN
+    ? '链路'
+    : t === MARKET_RESOURCE_TYPE.CONNECTOR
+      ? '连接器'
+      : '组件';
 });
 
 /* ---------------- 连接器审核「看得见」（§2.3）：查看包 ---------------- */
@@ -349,7 +354,7 @@ function statusLabel(status?: MarketItemStatus | null): string {
 
 /** P1 看得见：依赖项「查看」按钮可见性（链需 sourceId、组件需 code；悬空引用缺实体不可跳） */
 function depViewable(d: MarketReviewDependency): boolean {
-  if (d.resourceType === 'CHAIN') {
+  if (d.resourceType === MARKET_RESOURCE_TYPE.CHAIN) {
     return d.sourceId != null;
   }
   return Boolean(d.code);
@@ -414,12 +419,12 @@ function onViewDep(d: MarketReviewDependency) {
  *  组件物料无依赖（空列表）天然解锁。口径与终审 gate 一致：未上架/悬空引用（marketStatus 空）同样挡 */
 const depsAllOnline = computed(() => {
   const deps = detail.value?.dependencies;
-  return !deps?.length || deps.every((d) => d.marketStatus === 'ONLINE');
+  return !deps?.length || deps.every((d) => d.marketStatus === MARKET_STATUS.ONLINE);
 });
 
 /** 未 ONLINE 依赖计数（锁定提示里的进度数字） */
 const depsBlockingCount = computed(
-  () => (detail.value?.dependencies ?? []).filter((d) => d.marketStatus !== 'ONLINE').length
+  () => (detail.value?.dependencies ?? []).filter((d) => d.marketStatus !== MARKET_STATUS.ONLINE).length
 );
 
 /* ---------------- 闭包联审（2026-10-24）：依赖单据行内就地审 ---------------- */
@@ -429,7 +434,7 @@ const depsBlockingCount = computed(
  *  一层一层审：叶子清了父亲才解锁，不再靠 gate 报错试错） */
 function depReviewable(d: MarketReviewDependency): boolean {
   return (
-    d.marketStatus === 'PENDING' &&
+    d.marketStatus === MARKET_STATUS.PENDING &&
     d.marketItemId != null &&
     d.ownerId !== currentUserId.value &&
     !d.blockedBy?.length
@@ -509,8 +514,8 @@ async function onApprove() {
     return;
   }
   const unviewed = (detail.value?.dependencies ?? [])
-    .filter((d) => d.marketStatus !== 'ONLINE' && !viewedDepKeys.value.has(depKey(d)))
-    .map((d) => `【${d.resourceType === 'CHAIN' ? '链' : '组件'}】${d.name}`);
+    .filter((d) => d.marketStatus !== MARKET_STATUS.ONLINE && !viewedDepKeys.value.has(depKey(d)))
+    .map((d) => `【${d.resourceType === MARKET_RESOURCE_TYPE.CHAIN ? '链' : '组件'}】${d.name}`);
   try {
     if (unviewed.length) {
       await ElMessageBox.confirm(

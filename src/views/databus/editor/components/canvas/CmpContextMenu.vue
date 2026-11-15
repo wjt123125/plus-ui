@@ -109,6 +109,7 @@ import { useEditorActions } from '../../composables/useEditorActions';
 import { ElMessage } from 'element-plus';
 import { useAgentRefs } from '@/views/databus/workbench/ai/useAgentRefs';
 import { getDef } from '../../cmp-defs';
+import { DATABUS_RESOURCE_TYPE_COMPONENT } from '@/constants/databus-common';
 
 defineOptions({ name: 'CmpContextMenu' });
 
@@ -190,7 +191,7 @@ function onAddToAgent() {
   if (!data || data.virtual || !data.defType) {
     return;
   }
-  addRef({ type: 'component', code: data.defType, name: data.title || data.label });
+  addRef({ type: DATABUS_RESOURCE_TYPE_COMPONENT, code: data.defType, name: data.title || data.label });
   ElMessage.success(`已加入会话引用：${data.title || data.label}`);
 }
 

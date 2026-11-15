@@ -35,13 +35,13 @@
       <div class="cf-deprecated">
         <el-switch
           v-model="form.deprecated"
-          active-value="1"
-          inactive-value="0"
+          :active-value="DATABUS_COMPONENT_DEPRECATED_YES"
+          :inactive-value="DATABUS_COMPONENT_DEPRECATED_NO"
           active-text="标记废弃"
           inactive-text="正常"
         />
         <el-input
-          v-if="form.deprecated === '1'"
+          v-if="form.deprecated === DATABUS_COMPONENT_DEPRECATED_YES"
           v-model="form.deprecateNote"
           maxlength="200"
           placeholder="废弃说明/替代组件引导，面板与台账会置灰提示"
@@ -66,6 +66,10 @@
 import { ref } from 'vue';
 import JsonCodeEditor from '../../../editor/components/common/JsonCodeEditor.vue';
 import type { ComponentFormModel } from '../form.types';
+import {
+  DATABUS_COMPONENT_DEPRECATED_NO,
+  DATABUS_COMPONENT_DEPRECATED_YES
+} from '@/constants/databus-component';
 
 defineOptions({ name: 'AdvancedTab' });
 

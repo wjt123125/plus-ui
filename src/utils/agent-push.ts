@@ -1,13 +1,13 @@
 import type { PushMessagePayload } from '@/utils/push-message';
+import { AGENT_EVENT_PREFIX } from '@/constants/databus';
 
 /**
  * AI agent 全局推送总线。
  *
- * 后端把 AI 的产物事件（画布快照 / 草稿 / 脚本草稿 / 收口 / 授权）走既有 PushHelper 全局 SSE 下发，
- * 事件编码统一以 `databus:agent:` 开头、放在 data.eventCode 里（message 留给人类可读文案）。
- * push.ts 在进消息中心之前前置分流到这里，避免 AI 事件污染通知列表。
+ * 后端把 AI 的产物事件（画布快照 / 草稿 / 组件草稿 / 收口）走既有 PushHelper 全局 SSE 下发，
+ * 事件编码统一为 `databus:agent:<域>:<对象>:<动作>`（动作用过去式），放在 data.eventCode 里，
+ * message 留给人类可读文案。push.ts 在进消息中心之前前置分流到这里，避免 AI 事件污染通知列表。
  */
-export const AGENT_PUSH_PREFIX = 'databus:agent:';
 
 export type AgentPushPayload = PushMessagePayload;
 
@@ -22,7 +22,7 @@ const handlers = new Set<AgentPushHandler>();
  */
 export function isAgentPush(payload: PushMessagePayload): boolean {
   const code = payload.data?.eventCode;
-  return typeof code === 'string' && code.startsWith(AGENT_PUSH_PREFIX);
+  return typeof code === 'string' && code.startsWith(AGENT_EVENT_PREFIX);
 }
 
 /**

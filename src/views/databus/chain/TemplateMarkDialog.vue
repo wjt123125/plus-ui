@@ -39,6 +39,7 @@
 
 <script setup lang="ts">
 import { markTemplate } from '@/api/databus/chain';
+import { DATABUS_TEMPLATE_FLAG_YES } from '@/constants/databus-common';
 import modal from '@/plugins/modal';
 
 /**
@@ -76,7 +77,7 @@ const rules = {
 /** 打开：传当前链路 id 与已有模板设置（回显说明/排序） */
 function open(meta: TemplateMeta) {
   chainId.value = meta.id;
-  alreadyTemplate.value = meta.isTemplate === true || meta.isTemplate === '1';
+  alreadyTemplate.value = meta.isTemplate === true || meta.isTemplate === DATABUS_TEMPLATE_FLAG_YES;
   form.value = {
     templateDesc: meta.templateDesc ?? '',
     templateSort: meta.templateSort ?? 0

@@ -27,7 +27,7 @@
           ref="chainSelectRef"
           v-model="chainId"
           value-key="id"
-          status="ENABLED"
+          :status="CHAIN_STATUS.ENABLED"
           :clearable="false"
           :show-status-tag="false"
           :disabled="lockedChainId !== undefined"
@@ -59,6 +59,7 @@
 import { VideoPlay } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { getChain } from '@/api/databus/chain';
+import { CHAIN_STATUS } from '@/constants/databus';
 import { executeChain } from '@/api/databus/execution';
 import type { DatabusExecutionResult } from '@/api/databus/execution/types';
 import { buildDefaultsJson } from '@/views/databus/editor/input-params';

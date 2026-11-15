@@ -113,10 +113,17 @@
             :current-version="currentVersionOf(tab)"
             @rolled="(result) => emit('rolled', tab, result)"
           />
+          <!-- 草稿审阅（切片 5 人点生效）：AI 落下的 DRAFT 行在此看源码/编译产物/试跑，人点采纳或拒绝 -->
+          <ComponentReviewPane
+            v-else-if="tab.kind === 'component-review' && tab.reviewId != null"
+            :component-id="tab.reviewId"
+            @adopted="(payload) => emit('review-adopted', tab, payload)"
+            @rejected="() => emit('review-rejected', tab)"
+          />
           <!-- 新建向导（2026-10-21 新建入口收敛，decisions §10）：filetype 分段四合一表单体，单例 create tab -->
           <CreatePane
             v-else-if="tab.kind === 'create'"
-            :filetype="tab.filetype ?? 'chain'"
+            :filetype="tab.filetype ?? DATABUS_RESOURCE_TYPE_CHAIN"
             :preset="tab.preset"
             :tag-suggestions="tagSuggestions"
             @saved="(payload: CreateSavedPayload) => emit('create-saved', tab, payload)"
@@ -262,6 +269,7 @@
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import modal from '@/plugins/modal';
 import { checkPermi } from '@/utils/permission';
+import { DATABUS_RESOURCE_TYPE_CHAIN } from '@/constants/databus-common';
 import type { ScriptSaveResult } from '@/api/databus/component/types';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import ChainCanvasPane from '@/views/databus/editor/ChainCanvasPane.vue';
@@ -276,6 +284,7 @@ import DetailPane from './DetailPane.vue';
 import FormPane from './FormPane.vue';
 import CreatePane from './CreatePane.vue';
 import ChangesPane from './ChangesPane.vue';
+import ComponentReviewPane from './ComponentReviewPane.vue';
 import ConnectionPane from './ConnectionPane.vue';
 import ExecutionPane from './ExecutionPane.vue';
 import MonitorPane from './MonitorPane.vue';
@@ -301,6 +310,8 @@ const TAB_META: Record<WorkspaceTabKind, { icon: string; color: string }> = {
   detail: { icon: 'lucide:file-text', color: '#22B8CF' },
   form: { icon: 'lucide:file-pen', color: '#2DD288' },
   changes: { icon: 'lucide:file-diff', color: '#F59E0B' },
+  // 草稿审阅（切片 5 人点生效）：file-check＝待人工确认；保留 Amber 示「待拍板」
+  'component-review': { icon: 'lucide:file-check', color: '#F59E0B' },
   market: { icon: 'lucide:store', color: '#4F8EF7' },
   // 物料管理（2026-10-30 由 MarketPane 内部视图提为独立 tab）；2026-11-01 进 launcher 清单后
   // 与「设置」入口在菜单/空态卡必同屏，故换独立图标色（对齐 launcherEntries 同入口同色口径）
@@ -351,6 +362,10 @@ const emit = defineEmits<{
   (e: 'edit', row: ComponentRegistryRow): void;
   (e: 'delete', row: ComponentRegistryRow): void;
   (e: 'changes', row: ComponentRegistryRow): void;
+  /** 草稿审阅：采纳成功（宿主关审阅 tab、刷台账/树，并开详情 tab） */
+  (e: 'review-adopted', tab: WorkspaceTab, payload: { id: number | string; componentCode: string; componentName: string; version?: number }): void;
+  /** 草稿审阅：拒绝成功（草稿行已删，宿主关 tab 并刷台账/树） */
+  (e: 'review-rejected', tab: WorkspaceTab): void;
   /** 物料市场：打开本地副本（使用）/ 安装卸载后刷树 / 启停本地组件副本 */
   (e: 'market-open', localResourceId: string | number, resourceType: 'COMPONENT' | 'CHAIN', title: string): void;
   (e: 'market-installed'): void;

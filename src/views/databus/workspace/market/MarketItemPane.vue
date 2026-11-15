@@ -67,7 +67,7 @@
             <dd>{{ item.codeDisplay }}</dd>
           </div>
           <!-- 连接器版本与构建号：物料行不存，详情接口从源 def 行回填（同 type+version 下 buildNo 越大越新） -->
-          <div v-if="item.resourceType === 'CONNECTOR' && item.version" class="mkti__meta-row">
+          <div v-if="item.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR && item.version" class="mkti__meta-row">
             <dt>版本</dt>
             <dd>{{ versionLabel(item.version) }} (build {{ item.buildNo ?? 0 }})</dd>
           </div>
@@ -84,11 +84,11 @@
         </el-tab-pane>
 
         <!-- 实现页：组件＝脚本+契约（组件的全部就是脚本）；链路＝节点清单+只读画布入口 -->
-        <el-tab-pane v-if="item.resourceType !== 'CONNECTOR'" label="实现" name="impl" lazy>
+        <el-tab-pane v-if="item.resourceType !== MARKET_RESOURCE_TYPE.CONNECTOR" label="实现" name="impl" lazy>
           <div class="mkti__body">
             <div v-if="previewLoading" v-loading="true" class="mkti__impl-loading" />
             <template v-else-if="preview">
-              <template v-if="preview.resourceType === 'COMPONENT'">
+              <template v-if="preview.resourceType === MARKET_RESOURCE_TYPE.COMPONENT">
                 <!-- 元信息一行带过：编码 · 版本 · 语言（不画框、不铺格子） -->
                 <div class="mkti__impl-meta">
                   <span class="mkti__impl-meta-code">{{ preview.code || item.codeDisplay }}</span>
@@ -216,7 +216,7 @@
       <footer class="mkti__foot">
         <!-- 连接器：安装/卸载是每个人的消费动作（上传者、治理者也不例外）；
              全局启停与废弃属治理动作，收口到「物料管理 → 治理」 -->
-        <template v-if="item.resourceType === 'CONNECTOR'">
+        <template v-if="item.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR">
           <template v-if="item.installed">
             <el-button :loading="installLoading" @click="onUninstallConnector">
               <SvgIcon icon-class="lucide:trash-2" /><span>卸载</span>
@@ -224,7 +224,7 @@
           </template>
           <!-- 未上架的连接器装不了（后端 install 对非 ONLINE 物料与未启用 def 都会拒）：
                待审核 / 已驳回 / 已下架只给结论，不给「安装」按钮 -->
-          <span v-else-if="item.status !== 'ONLINE'" class="mkti__foot-hint">
+          <span v-else-if="item.status !== MARKET_STATUS.ONLINE" class="mkti__foot-hint">
             {{ statusMeta.label }}，暂不可安装；通过审核并启用后才能安装
           </span>
           <el-button v-else type="primary" :loading="installLoading" @click="onInstallConnector">
@@ -264,6 +264,7 @@ import { getMarketItem, getMarketPreview, installMarketItem, uninstallMarketItem
 import { listConnectorDefs } from '@/api/databus/connector';
 import type { ConnectorDefVo } from '@/api/databus/connector/types';
 import type { DatabusMarketItemVo, MarketItemStatus, MarketPreviewVo } from '@/api/databus/market/types';
+import { MARKET_RESOURCE_TYPE, MARKET_STATUS } from '@/constants/databus';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import { useUserStore } from '@/store/modules/user';
 import { marketNavIntent, showChainInstallResult } from './useMarketData';
@@ -348,7 +349,7 @@ function onOpenCanvas() {
 /* ---------------- 连接器：实现清单 + 运行时驱动（2026-10-30 收尾，§10.3 / §4.2.1） ---------------- */
 
 /** 详情物料是连接器才有这两页（组件/链路的「实现」走上面的 preview 分支） */
-const isConnector = computed(() => item.value?.resourceType === 'CONNECTOR');
+const isConnector = computed(() => item.value?.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR);
 
 /**
  * 连接器类型键：详情 pane 手上只有市场物料行，没有 defs 列表，故取展示码 `{owner}/{type}` 尾段
@@ -452,14 +453,14 @@ watch(
 /* ---------------- 展示辅助 ---------------- */
 
 const itemIcon = computed(() =>
-  item.value?.resourceType === 'CHAIN'
+  item.value?.resourceType === MARKET_RESOURCE_TYPE.CHAIN
     ? 'lucide:spline'
-    : item.value?.resourceType === 'CONNECTOR'
+    : item.value?.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR
       ? item.value?.icon || 'lucide:plug'
       : item.value?.icon || 'lucide:box'
 );
 const resourceLabel = computed(() =>
-  item.value?.resourceType === 'CHAIN' ? '链路' : item.value?.resourceType === 'CONNECTOR' ? '连接器' : '组件'
+  item.value?.resourceType === MARKET_RESOURCE_TYPE.CHAIN ? '链路' : item.value?.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR ? '连接器' : '组件'
 );
 
 /* ---------------- 权限判定（按权限串，admin 通配免检，对齐 MarketPane） ---------------- */
@@ -491,7 +492,7 @@ function onMine() {
 function onUse() {
   const it = item.value;
   // emit 只收 COMPONENT/CHAIN（连接器无本地资源可打开）
-  if (!it || it.localResourceId == null || (it.resourceType !== 'COMPONENT' && it.resourceType !== 'CHAIN')) {
+  if (!it || it.localResourceId == null || (it.resourceType !== MARKET_RESOURCE_TYPE.COMPONENT && it.resourceType !== MARKET_RESOURCE_TYPE.CHAIN)) {
     return;
   }
   emit('open-local', it.localResourceId, it.resourceType, it.name);
@@ -510,7 +511,7 @@ async function onInstallConfirm(directoryId: string | number | null) {
   try {
     const { data } = await installMarketItem(it.id, { directoryId: directoryId ?? null });
     // 链路安装展示级联复制/复用清单（decisions §十四-2）；组件保持一句话提示
-    if (it.resourceType === 'CHAIN') {
+    if (it.resourceType === MARKET_RESOURCE_TYPE.CHAIN) {
       showChainInstallResult(data);
     } else {
       ElMessage.success(`已安装「${it.name}」，组件已共享注册到物料面板`);
