@@ -280,74 +280,14 @@
                   </button>
                 </div>
               </div>
-              <div class="db-row__ops" @click.stop>
-                <!-- 治理动作全部收纳进「更多」菜单：行上只留状态与名称，避免一排放四个按钮 -->
-                <el-dropdown
-                  trigger="click"
-                  placement="bottom-end"
-                  popper-class="db-menu-popper"
-                  @command="(cmd: string) => onGovernCommand(row, cmd)"
-                >
-                  <el-button
-                    size="small"
-                    text
-                    class="db-row__more"
-                    :loading="isDevDef(row) && devReloadingType === row.type"
-                    aria-label="更多治理动作"
-                  >
-                    <!-- 实心竖排三点：直接内联 SVG，不吃图标字体/子集 -->
-                    <svg class="db-row__dots" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                      <circle cx="12" cy="5" r="2.4" fill="currentColor" />
-                      <circle cx="12" cy="12" r="2.4" fill="currentColor" />
-                      <circle cx="12" cy="19" r="2.4" fill="currentColor" />
-                    </svg>
-                  </el-button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <!-- 开发目录装载的行跑的是本地编译输出，治理动只剩重载与卸载 -->
-                      <el-dropdown-item
-                        v-if="isDevDef(row) && hasPermi('databus:connector:edit')"
-                        class="db-menu-item is-primary"
-                        command="reload"
-                      >
-                        <SvgIcon icon-class="lucide:refresh-cw" /><span>重载</span>
-                      </el-dropdown-item>
-                      <template v-else>
-                        <el-dropdown-item
-                          v-if="row.status === 'ENABLED' && hasPermi('databus:connector:edit')"
-                          class="db-menu-item is-warning"
-                          command="disable"
-                        >
-                          <SvgIcon icon-class="lucide:pause" /><span>停用</span>
-                        </el-dropdown-item>
-                        <el-dropdown-item
-                          v-if="row.status === 'DISABLED' && hasPermi('databus:connector:edit')"
-                          class="db-menu-item is-success"
-                          command="enable"
-                        >
-                          <SvgIcon icon-class="lucide:play" /><span>启用</span>
-                        </el-dropdown-item>
-                        <!-- 废弃是终态（不可逆）：只从可执行态进入，PENDING 已不在治理列表 -->
-                        <el-dropdown-item
-                          v-if="(row.status === 'ENABLED' || row.status === 'DISABLED') && hasPermi('databus:connector:edit')"
-                          class="db-menu-item is-warning"
-                          command="deprecate"
-                        >
-                          <SvgIcon icon-class="lucide:archive" /><span>废弃</span>
-                        </el-dropdown-item>
-                      </template>
-                      <el-dropdown-item
-                        v-if="hasPermi('databus:connector:remove')"
-                        class="db-menu-item is-danger"
-                        command="uninstall"
-                        :divided="!isDevDef(row)"
-                      >
-                        <SvgIcon icon-class="lucide:trash" /><span>卸载</span>
-                      </el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
-              </div>
+              <!-- 治理动作全部收纳进「更多」菜单：行右上角 hover 出现，行上只留状态与名称 -->
+              <SessionMoreMenu
+                class="db-row__more"
+                :items="governMenuItems(row)"
+                :loading="isDevDef(row) && devReloadingType === row.type"
+                aria-label="更多治理动作"
+                @command="(cmd: string) => onGovernCommand(row, cmd)"
+              />
               <SvgIcon v-if="canInspectDef(row)" class="db-row__chevron" icon-class="lucide:chevron-right" />
             </li>
           </ul>
@@ -378,6 +318,7 @@ import { listConnection } from '@/api/databus/connection';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import { isBrandIconName } from '@/views/databus/workbench/composables/useBrandIcons';
 import StatusDot from '../components/StatusDot.vue';
+import SessionMoreMenu from '@/views/databus/workbench/components/SessionMoreMenu.vue';
 import DbSeg, { type DbSegOption } from '@/views/databus/workspace/components/DbSeg.vue';
 import MarketGroupHeader from './MarketGroupHeader.vue';
 import MarketCategoryPane from './MarketCategoryPane.vue';
@@ -745,6 +686,46 @@ async function onUninstall(row: DatabusMarketInstallVo) {
 }
 
 /* ---------------- 连接器 def 治理（治理视角） ---------------- */
+
+/**
+ * 治理菜单项：权限与状态判断都留在页面，共享菜单只负责渲染。
+ * 开发目录装载的行跑的是本地编译输出，治理动只剩重载与卸载。
+ */
+function governMenuItems(row: ConnectorDefVo) {
+  const items: Array<{
+    command: string;
+    label: string;
+    icon: string;
+    tone?: 'primary' | 'success' | 'warning' | 'danger';
+    divided?: boolean;
+  }> = [];
+  if (isDevDef(row)) {
+    if (hasPermi('databus:connector:edit')) {
+      items.push({ command: 'reload', label: '重载', icon: 'lucide:refresh-cw', tone: 'primary' });
+    }
+  } else {
+    if (row.status === 'ENABLED' && hasPermi('databus:connector:edit')) {
+      items.push({ command: 'disable', label: '停用', icon: 'lucide:pause', tone: 'warning' });
+    }
+    if (row.status === 'DISABLED' && hasPermi('databus:connector:edit')) {
+      items.push({ command: 'enable', label: '启用', icon: 'lucide:play', tone: 'success' });
+    }
+    // 废弃是终态（不可逆）：只从可执行态进入，PENDING 已不在治理列表
+    if ((row.status === 'ENABLED' || row.status === 'DISABLED') && hasPermi('databus:connector:edit')) {
+      items.push({ command: 'deprecate', label: '废弃', icon: 'lucide:archive', tone: 'warning' });
+    }
+  }
+  if (hasPermi('databus:connector:remove')) {
+    items.push({
+      command: 'uninstall',
+      label: '卸载',
+      icon: 'lucide:trash',
+      tone: 'danger',
+      divided: !isDevDef(row)
+    });
+  }
+  return items;
+}
 
 /** 治理动作菜单分发：行上只留「更多」，启停/废弃/卸载/重载都在菜单里 */
 function onGovernCommand(row: ConnectorDefVo, cmd: string) {

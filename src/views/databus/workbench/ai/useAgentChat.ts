@@ -12,18 +12,24 @@
  * 状态是**模块级单例、按会话分桶**：AI 栏收起时面板组件会整栏销毁，消息不能跟着丢；
  * 每个 conversationId 一份消息 / 运行态 / SSE 连接，切换会话不重复拉历史，多会话可并行。
  */
-import { computed, reactive, ref } from 'vue';
+import { computed, h, reactive, ref } from 'vue';
+import { ElMessage } from 'element-plus';
 import {
   buildAgentStreamUrl,
+  deleteAgentConversation,
   getActiveAgentRun,
   listAgentConversations,
   listAgentHistory,
+  pinAgentConversation,
+  renameAgentConversation,
+  restoreAgentConversation,
+  searchAgentConversations,
   startAgentChat,
   stopAgentRun
 } from '@/api/databus/agent';
-import type { AgentConversationVo } from '@/api/databus/agent/types';
+import type { AgentCard, AgentCardReply, AgentConversationVo } from '@/api/databus/agent/types';
 import { usePersisted } from '../composables/usePersisted';
-import type { AiSession } from './ai.types';
+import type { AiSession, AiSessionGroup } from './ai.types';
 import { buildRefsText, parseRefsText, type AgentRefItem } from './useAgentRefs';
 
 export type AgentChatRole = 'user' | 'assistant' | 'system';
@@ -31,7 +37,8 @@ export type AgentChatRole = 'user' | 'assistant' | 'system';
 export type AgentSegment =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; text: string }
-  | { kind: 'notice'; text: string; eventCode?: string };
+  | { kind: 'notice'; text: string; eventCode?: string }
+  | { kind: 'card'; card: AgentCard; status: 'pending' | 'answered' | 'disabled'; picked?: string };
 
 export interface AgentChatMessage {
   id: string;
@@ -60,6 +67,8 @@ const EVENT_TEXT = 'text';
 const EVENT_THINKING = 'thinking';
 const EVENT_DONE = 'done';
 const EVENT_ERROR = 'error';
+/** 卡片事件：与模型文字同序，data 是 AgentCard 对象而不是字符串 */
+const EVENT_CARD = 'card';
 
 /** 旧的单例会话 key，迁移到多会话后仅在新 key 为空时读一次 */
 const LEGACY_CONVERSATION_KEY = 'databus.agent.conversationId';
@@ -111,24 +120,27 @@ function newConversationId(): string {
 }
 
 function ensureSession(conversationId: string): AgentSessionState {
-  let state = sessions[conversationId];
-  if (!state) {
-    state = {
+  if (!sessions[conversationId]) {
+    sessions[conversationId] = {
       messages: [],
       running: false,
       runId: '',
       streamingId: '',
       loaded: false
     };
-    sessions[conversationId] = state;
   }
-  return state;
+  // 必须返回响应式代理：首建时返回裸对象，直接改它不会触发 computed / 模板更新
+  // （刷新后 restore 写回历史消息就是这条路径，表现为「拉到了但瀑布流不显示」）
+  return sessions[conversationId];
 }
 
-/** 同类型的相邻段就地合并，避免流式时碎成一堆节点 */
-function appendSegment(message: AgentChatMessage, segment: AgentSegment) {
+/** 同类型的相邻段就地合并，避免流式时碎成一堆节点（卡片不参与合并） */
+function appendSegment(
+  message: AgentChatMessage,
+  segment: Extract<AgentSegment, { kind: 'text' | 'thinking' }>
+) {
   const last = message.segments[message.segments.length - 1];
-  if (last && last.kind === segment.kind && segment.kind !== 'notice') {
+  if (last && last.kind === segment.kind && (last.kind === 'text' || last.kind === 'thinking')) {
     last.text += segment.text;
     return;
   }
@@ -195,6 +207,42 @@ function failStreaming(conversationId: string, reason: string) {
   pushSystem(conversationId, reason, 'error');
 }
 
+/** 卡片到达：挂到本轮 assistant 消息末尾，等用户点选 */
+function handleCard(conversationId: string, card: AgentCard | null | undefined) {
+  const state = sessions[conversationId];
+  if (!state || !card?.cardId) {
+    return;
+  }
+  const target = streamingMessage(state);
+  if (!target) {
+    return;
+  }
+  target.segments.push({ kind: 'card', card, status: 'pending' });
+}
+
+/** 新一轮开始：上一轮没点的卡一律失效，避免点开还在等旧 run */
+function disablePendingCards(state: AgentSessionState) {
+  for (const message of state.messages) {
+    for (const seg of message.segments) {
+      if (seg.kind === 'card' && seg.status === 'pending') {
+        seg.status = 'disabled';
+      }
+    }
+  }
+}
+
+/** 找指定卡片段（cardId 在 run 内唯一） */
+function findCardSegment(state: AgentSessionState, cardId: string) {
+  for (const message of state.messages) {
+    for (const seg of message.segments) {
+      if (seg.kind === 'card' && seg.card.cardId === cardId) {
+        return seg;
+      }
+    }
+  }
+  return undefined;
+}
+
 /** 流事件全部按会话定位，不依赖全局 streamingId */
 function handleEvent(conversationId: string, type: string, data: string) {
   const state = sessions[conversationId];
@@ -222,9 +270,12 @@ function handleEvent(conversationId: string, type: string, data: string) {
         // 刷新回放时不会出现「流式看到的」和「历史拉回来的」两份不同文本。
         const finalText = (done ? (done.fullText ?? '') : data).trim();
         if (finalText) {
+          // 卡片是这一轮的暂停点，不能被收口正文冲掉：思考 → 正文 → 卡片
+          const cards = target.segments.filter((s) => s.kind === 'card');
           target.segments = [
             ...target.segments.filter((s) => s.kind === 'thinking'),
-            { kind: 'text', text: finalText }
+            { kind: 'text', text: finalText },
+            ...cards
           ];
         }
         target.status = 'done';
@@ -256,10 +307,16 @@ function openStream(conversationId: string, runId: string) {
     if (streams.get(conversationId) !== es) {
       return;
     }
-    const payload = parseJson<{ type?: string; data?: string }>(event.data);
-    if (payload) {
-      handleEvent(conversationId, payload.type ?? '', payload.data ?? '');
+    const payload = parseJson<{ type?: string; data?: unknown }>(event.data);
+    if (!payload) {
+      return;
     }
+    const type = payload.type ?? '';
+    if (type === EVENT_CARD) {
+      handleCard(conversationId, payload.data as AgentCard);
+      return;
+    }
+    handleEvent(conversationId, type, typeof payload.data === 'string' ? payload.data : '');
   };
   es.onerror = () => {
     // done / error 后由本端主动 close，此时连接已不是这条，直接忽略
@@ -273,10 +330,11 @@ function openStream(conversationId: string, runId: string) {
 /**
  * 发一句话：本地先定会话 id，把用户气泡与流式 assistant 气泡写进该会话桶，再建 run 拉流。
  *
- * @param content 用户原话
- * @param refs    引用卡（随问题拼成引用段发出去）
+ * @param content    用户原话（卡片点选时是选项文案）
+ * @param refs       引用卡（随问题拼成引用段发出去）
+ * @param cardReply  卡片回执：点了哪张卡的哪一项，由后端校验后才认 userConfirmed
  */
-async function send(content: string, refs?: AgentRefItem[]) {
+async function send(content: string, refs?: AgentRefItem[], cardReply?: AgentCardReply) {
   const text = content.trim();
   const refList = refs ?? [];
   if (!text && !refList.length) {
@@ -288,6 +346,7 @@ async function send(content: string, refs?: AgentRefItem[]) {
   if (state.running) {
     return;
   }
+  disablePendingCards(state);
   state.loaded = true;
   state.messages.push({
     id: nextId(),
@@ -307,7 +366,8 @@ async function send(content: string, refs?: AgentRefItem[]) {
   try {
     const { data } = await startAgentChat({
       content: `${text}${buildRefsText(refList)}`,
-      conversationId
+      conversationId,
+      cardReply
     });
     if (!data?.runId) {
       failStreaming(conversationId, '发起对话失败，请稍后重试');
@@ -423,10 +483,21 @@ async function restore(conversationId?: string) {
   try {
     const { data } = await listAgentHistory(id);
     const restored: AgentChatMessage[] = [];
-    for (const run of data ?? []) {
+    const runs = data ?? [];
+    // 回执落在点选后新建的 run 上，先按 cardId 汇总，才能把「选了哪项」贴回原卡片
+    const replies = new Map<string, string>();
+    for (const run of runs) {
+      for (const raw of run.cardReplies ?? []) {
+        const reply = parseJson<AgentCardReply>(raw);
+        if (reply?.cardId && reply.action) {
+          replies.set(reply.cardId, reply.action);
+        }
+      }
+    }
+    runs.forEach((run, index) => {
       const intent = (run.intent ?? '').trim();
       if (!intent) {
-        continue;
+        return;
       }
       // 引用段是随问题一起发出去的纯文本，恢复时拆回结构化引用，卡片不退化
       const parsed = parseRefsText(intent);
@@ -437,15 +508,26 @@ async function restore(conversationId?: string) {
         refs: parsed.refs.length ? parsed.refs : undefined
       });
       const answer = reportText(run.report);
-      if (answer) {
-        restored.push({
-          id: nextId(),
-          role: 'assistant',
-          segments: [{ kind: 'text', text: answer }],
-          status: 'done'
+      const segments: AgentSegment[] = answer ? [{ kind: 'text', text: answer }] : [];
+      // 卡片不在内存里就靠这一步还原：已回执的标「已选」，只有最新一轮未回执的卡可点，其余置灰
+      const latest = index === runs.length - 1 && run.status !== 'RUNNING';
+      for (const raw of run.cards ?? []) {
+        const card = parseJson<AgentCard>(raw);
+        if (!card?.cardId) {
+          continue;
+        }
+        const picked = replies.get(card.cardId);
+        segments.push({
+          kind: 'card',
+          card,
+          status: picked ? 'answered' : latest ? 'pending' : 'disabled',
+          picked
         });
       }
-    }
+      if (segments.length) {
+        restored.push({ id: nextId(), role: 'assistant', segments, status: 'done' });
+      }
+    });
     // 拉历史期间用户可能已经开问，此时以新消息为准，不能把刚才的对话覆盖掉
     if (restored.length && !state.running && !state.messages.length) {
       state.messages = restored;
@@ -464,18 +546,122 @@ async function restore(conversationId?: string) {
   }
 }
 
-/** 拉会话列表（历史栏数据源），失败就沿用本地已有的会话桶 */
+/** 搜索关键字（空串=普通列表），历史栏搜索框通过 searchSessions 写入 */
+const searchKeyword = ref('');
+
+/** 防并发：快速输入时只认最后一次请求的结果 */
+let loadSeq = 0;
+
+/**
+ * 拉会话列表（历史栏数据源）：有关键字走搜索接口，否则走普通列表。
+ * 失败就沿用本地已有的会话桶，不影响提问。
+ */
 async function refreshSessions() {
+  const seq = ++loadSeq;
   try {
-    const { data } = await listAgentConversations(50);
-    remoteSessions.value = data ?? [];
+    const keyword = searchKeyword.value.trim();
+    const { data } = keyword
+      ? await searchAgentConversations(keyword, 50)
+      : await listAgentConversations(50);
+    if (seq === loadSeq) {
+      remoteSessions.value = data ?? [];
+    }
   } catch {
     /* 拉不到就用本地态，不影响提问 */
   }
 }
 
-/** 会话列表展示时间：当天只给时分，跨天给月-日 */
-function formatTime(value?: string): string | undefined {
+/**
+ * 搜会话：关键字空串即退出搜索，回到完整列表。
+ *
+ * @param keyword 关键字
+ */
+async function searchSessions(keyword: string) {
+  searchKeyword.value = keyword.trim();
+  await refreshSessions();
+}
+
+/**
+ * 重命名会话（只改显示标题，历史问句不动），成功后按当前列表模式刷新。
+ *
+ * @param conversationId 会话 id
+ * @param title          新标题
+ */
+async function renameSession(conversationId: string, title: string) {
+  await renameAgentConversation(conversationId, title.trim());
+  await refreshSessions();
+}
+
+/**
+ * 置顶 / 取消置顶，排序由后端统一给出。
+ *
+ * @param conversationId 会话 id
+ * @param pinned         true 置顶
+ */
+async function pinSession(conversationId: string, pinned: boolean) {
+  await pinAgentConversation(conversationId, pinned);
+  await refreshSessions();
+}
+
+/**
+ * 删除会话：只删服务端覆盖信息，run / step / message 保留；
+ * 本地桶与 SSE 一并清掉，删的若是当前会话就回到空态（下次提问自动新开）。
+ *
+ * @param conversationId 会话 id
+ */
+async function removeSession(conversationId: string) {
+  await deleteAgentConversation(conversationId);
+  closeStream(conversationId);
+  delete sessions[conversationId];
+  if (activeId.value === conversationId) {
+    activeId.value = '';
+  }
+  await refreshSessions();
+  offerUndoRemove(conversationId);
+}
+
+/**
+ * 删除后的反悔窗口：软删只是把会话从列表摘掉，撤销即复位标记，历史一条不少。
+ * 用带「撤销」链接的轻提示，不弹模态框，不打断正在跑的其它会话。
+ *
+ * @param conversationId 刚被删掉的会话 id
+ */
+function offerUndoRemove(conversationId: string) {
+  ElMessage({
+    message: h('span', null, [
+      '会话已删除',
+      h(
+        'a',
+        {
+          style: 'margin-left:8px;color:var(--el-color-primary);cursor:pointer',
+          onClick: () => {
+            ElMessage.closeAll();
+            void undoRemoveSession(conversationId);
+          }
+        },
+        '撤销'
+      )
+    ]),
+    type: 'success',
+    duration: 6000
+  });
+}
+
+/** 撤销删除：复位软删标记后重新拉列表，会话按原活跃时间回到原位 */
+async function undoRemoveSession(conversationId: string) {
+  try {
+    await restoreAgentConversation(conversationId);
+    await refreshSessions();
+  } catch {
+    ElMessage.error('撤销失败，请刷新后重试');
+  }
+}
+
+/**
+ * 会话列表展示时间：24 小时内给相对时间，再往前给「昨天」/月-日，跨年补全年份。
+ * 决策依据是大厂会话列表的通行做法——最近的在用分钟级，久远的不再报分钟。
+ */
+function formatRelativeTime(value?: string): string | undefined {
   if (!value) {
     return undefined;
   }
@@ -485,10 +671,25 @@ function formatTime(value?: string): string | undefined {
   }
   const pad = (n: number) => String(n).padStart(2, '0');
   const now = new Date();
-  if (time.toDateString() === now.toDateString()) {
-    return `${pad(time.getHours())}:${pad(time.getMinutes())}`;
+  const diff = now.getTime() - time.getTime();
+  if (diff < 60_000) {
+    return '刚刚';
   }
-  return `${pad(time.getMonth() + 1)}-${pad(time.getDate())}`;
+  if (diff < 3_600_000) {
+    return `${Math.floor(diff / 60_000)} 分钟前`;
+  }
+  if (time.toDateString() === now.toDateString()) {
+    return `${Math.floor(diff / 3_600_000)} 小时前`;
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (time.toDateString() === yesterday.toDateString()) {
+    return '昨天';
+  }
+  if (time.getFullYear() === now.getFullYear()) {
+    return `${time.getMonth() + 1}-${pad(time.getDate())}`;
+  }
+  return `${time.getFullYear()}-${pad(time.getMonth() + 1)}-${pad(time.getDate())}`;
 }
 
 /** 本地新建、后端还没有 run 的会话行：标题取首问全文压成一行，长度不截断，交给 CSS 按栏宽省略 */
@@ -496,10 +697,52 @@ function localSessionItem(conversationId: string): AiSession {
   const state = sessions[conversationId];
   const firstUser = state?.messages.find((m) => m.role === 'user');
   const title = firstUser ? textOf(firstUser).replace(/\s+/g, ' ').trim() : '';
+  const running = !!state?.running;
   return {
     id: conversationId,
     title: title || '新会话',
-    running: !!state?.running
+    running,
+    status: running ? 'running' : 'finished'
+  };
+}
+
+/**
+ * 卡片点选：把该卡置为已答并回传 cardReply，后端据此认 userConfirmed。
+ *
+ * @param cardId 卡片 id
+ * @param action 选项 key（确认卡为 confirm / cancel）
+ * @param label  选项文案，作为用户气泡发出的那句话
+ */
+async function answerCard(cardId: string, action: string, label: string) {
+  const id = activeId.value;
+  if (!id) {
+    return;
+  }
+  const state = sessions[id];
+  if (!state || state.running) {
+    return;
+  }
+  const segment = findCardSegment(state, cardId);
+  if (!segment || segment.status !== 'pending') {
+    return;
+  }
+  segment.status = 'answered';
+  segment.picked = action;
+  await send(label || segment.card.title, undefined, { cardId, action });
+}
+
+/** 后端会话摘要 → 历史栏行（时间在这里格式化，组件只渲染） */
+function remoteSessionItem(item: AgentConversationVo): AiSession {
+  const running = !!item.running || !!sessions[item.conversationId]?.running;
+  return {
+    id: item.conversationId,
+    title: item.title?.trim() || '未命名会话',
+    time: formatRelativeTime(item.lastTime),
+    lastActiveAt: item.lastTime,
+    running,
+    status: running ? 'running' : 'finished',
+    pinned: !!item.pinned,
+    workspaceId: item.workspaceId ?? null
   };
 }
 
@@ -515,7 +758,7 @@ const running = computed(() => {
   return !!(id && sessions[id]?.running);
 });
 
-/** 历史栏列表：后端会话按最近活跃倒序，本地新建但还没有 run 的会话排在最前 */
+/** 历史栏列表：后端会话按「置顶 + 最近活跃」排序，本地新建但还没有 run 的会话排在最前 */
 const sessionList = computed<AiSession[]>(() => {
   const remote = remoteSessions.value;
   const remoteIds = new Set(remote.map((item) => item.conversationId));
@@ -526,14 +769,57 @@ const sessionList = computed<AiSession[]>(() => {
     }
   }
   for (const item of remote) {
-    list.push({
-      id: item.conversationId,
-      title: item.title?.trim() || '未命名会话',
-      time: formatTime(item.lastTime),
-      running: !!item.running || !!sessions[item.conversationId]?.running
-    });
+    list.push(remoteSessionItem(item));
   }
   return list;
+});
+
+const DEFAULT_WORKSPACE_KEY = 'default';
+const DEFAULT_WORKSPACE_NAME = '默认工作区';
+
+/** 工作区展示名：本轮只有默认工作区，自定义工作区后续接入后换成真实名称 */
+function workspaceName(workspaceId?: number | string | null): string {
+  return workspaceId == null || workspaceId === ''
+    ? DEFAULT_WORKSPACE_NAME
+    : `工作区 ${workspaceId}`;
+}
+
+/** 分组排序键：没有时间戳的（本地新会话）视为最新，其余按时间倒序 */
+function groupSortKey(group: AiSessionGroup): number {
+  if (!group.latest) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  const time = new Date(group.latest.replace(' ', 'T')).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+/**
+ * 历史栏分组视图：按工作区分组，组内保持后端排序（置顶优先 + 最近活跃），组间按组内最新活跃倒序。
+ * 列表视图直接用 sessionList，不分组。
+ */
+const sessionGroups = computed<AiSessionGroup[]>(() => {
+  const groups = new Map<string, AiSessionGroup>();
+  for (const session of sessionList.value) {
+    const key =
+      session.workspaceId == null || session.workspaceId === ''
+        ? DEFAULT_WORKSPACE_KEY
+        : String(session.workspaceId);
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        key,
+        name: workspaceName(session.workspaceId),
+        sessions: [],
+        latest: session.lastActiveAt
+      };
+      groups.set(key, group);
+    }
+    group.sessions.push(session);
+    if (session.lastActiveAt && (!group.latest || session.lastActiveAt > group.latest)) {
+      group.latest = session.lastActiveAt;
+    }
+  }
+  return [...groups.values()].toSorted((a, b) => groupSortKey(b) - groupSortKey(a));
 });
 
 export function useAgentChat() {
@@ -542,14 +828,20 @@ export function useAgentChat() {
     messages,
     running,
     sessionList,
+    sessionGroups,
     ensureSession,
     createSession,
     switchSession,
     newSession,
     send,
+    answerCard,
     stop,
     appendSystem,
     restore,
-    refreshSessions
+    refreshSessions,
+    searchSessions,
+    renameSession,
+    pinSession,
+    removeSession
   };
 }

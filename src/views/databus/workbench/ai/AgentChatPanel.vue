@@ -47,7 +47,15 @@
                 :streaming="m.status === 'streaming' && !hasText(m)"
               />
               <p v-else-if="seg.kind === 'notice'" class="agent-chat__notice">{{ seg.text }}</p>
-              <MarkdownBlock v-else :text="seg.text" />
+              <AgentCardBlock
+                v-else-if="seg.kind === 'card'"
+                :card="seg.card"
+                :status="seg.status"
+                :picked="seg.picked"
+                :allow-full-access="allowFullAccess"
+                @pick="(option, scope) => onCardPick(seg.card.cardId, option, scope)"
+              />
+              <MarkdownBlock v-else-if="seg.kind === 'text'" :text="seg.text" />
             </template>
             <!-- 还没吐字时用一个空行光标表示「在跑」，有正文后正文本身就是进度 -->
             <p v-if="m.status === 'streaming' && !hasText(m)" class="agent-chat__text">
@@ -193,8 +201,9 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { getAgentApprovalMode, listAgentHistory, rollbackRun, updateAgentApprovalMode } from '@/api/databus/agent';
-import type { AgentApprovalMode } from '@/api/databus/agent/types';
+import type { AgentApprovalMode, AgentCardOption } from '@/api/databus/agent/types';
 import { useLucideSubset } from '../composables/useLucideSubset';
+import AgentCardBlock from './AgentCardBlock.vue';
 import MarkdownBlock from './MarkdownBlock.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
 import { useAgentChat, type AgentChatMessage, type AgentSegment } from './useAgentChat';
@@ -222,7 +231,7 @@ const suggestions = [
   '这个连接器的参数该怎么填？'
 ];
 
-const { conversationId, messages, running, send, stop, newSession, appendSystem, restore } =
+const { conversationId, messages, running, send, answerCard, stop, newSession, appendSystem, restore } =
   useAgentChat();
 
 /** 引用卡：只暂存在本面板，发出去即清空 */
@@ -233,11 +242,11 @@ function openRef(item: AgentRefItem) {
   emit('ref-open', item);
 }
 
-/** 把某一类段落拼成纯文本（用户气泡、系统行、空态判断都只要这一种） */
-function segmentText(message: AgentChatMessage, kind: AgentSegment['kind']): string {
+/** 把某一类段落拼成纯文本（用户气泡、系统行、空态判断都只要这一种；卡片不算文字） */
+function segmentText(message: AgentChatMessage, kind: 'text' | 'thinking' | 'notice'): string {
   return message.segments
     .filter((s) => s.kind === kind)
-    .map((s) => s.text)
+    .map((s) => (s.kind === 'card' ? '' : s.text))
     .join('');
 }
 
@@ -260,13 +269,38 @@ function sendWithRefs(text: string) {
   void send(text.trim(), picked);
 }
 
+/** 拆分按钮的作用域：本次执行不切档，另两档先改会话审批再放行 */
+type CardPickScope = 'once' | 'session-auto' | 'session-full';
+
+/**
+ * 卡片点选：回执随下一条消息发给后端。
+ * 带作用域时先把会话审批切成对应档位，切档失败就不放行，避免界面承诺与实际生效不一致。
+ */
+async function onCardPick(cardId: string, option: AgentCardOption, scope?: CardPickScope) {
+  if (running.value) {
+    return;
+  }
+  if (scope === 'session-auto' || scope === 'session-full') {
+    const mode: AgentApprovalMode = scope === 'session-auto' ? 'AUTO' : 'FULL';
+    await changeApprovalMode(mode);
+    if (approvalMode.value !== mode) {
+      return;
+    }
+  }
+  await answerCard(cardId, option.key, option.label);
+}
+
 /** 只在「最后一条是已结束的 AI 回答」时给建议：跑的过程中和用户刚说完都不打扰 */
 const showFollowUps = computed(() => {
   if (running.value) {
     return false;
   }
   const last = messages.value[messages.value.length - 1];
-  return last?.role === 'assistant' && last.status !== 'streaming';
+  if (last?.role !== 'assistant' || last.status === 'streaming') {
+    return false;
+  }
+  // 还有待点的卡时先让用户点卡，别把注意力引到输入框
+  return !last.segments.some((s) => s.kind === 'card' && s.status === 'pending');
 });
 
 /** 点建议直接发送，和 Trae 一致；流式中忽略 */

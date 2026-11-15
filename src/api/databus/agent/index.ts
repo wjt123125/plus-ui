@@ -141,6 +141,17 @@ export function deleteAgentConversation(conversationId: string) {
 }
 
 /**
+ * 撤销删除会话（复位软删标记，历史原样回来）。
+ * POST /databus/agent/conversation/{conversationId}/restore
+ */
+export function restoreAgentConversation(conversationId: string) {
+  return request({
+    url: `/databus/agent/conversation/${conversationId}/restore`,
+    method: 'post'
+  });
+}
+
+/**
  * 回到这次对话前：按 run 整体回滚（新建的删掉、改过的写回对话前结构）。
  * POST /databus/agent/run/{runId}/rollback
  */

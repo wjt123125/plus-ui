@@ -114,6 +114,16 @@
   padding: var(--db-p-lg);
 }
 
+/* 紧凑修饰：窄容器（200px 侧边栏）用。外框与行的左右留白各收一档，
+   发丝线 / 圆角 / 字阶 / 末行去线全部沿用基元——只改留白，不另起一套语法。 */
+.db-list--compact {
+  padding: 8px;
+
+  .db-row {
+    padding: 12px 10px;
+  }
+}
+
 .db-row {
   display: flex;
   align-items: center;
@@ -249,6 +259,43 @@
     background: var(--el-fill-color-light);
     border-radius: var(--db-r-pill);
   }
+}
+
+/* —— 行右上角「更多」（跨页规范，2026-11-14）——
+   横向 ••• 收在行的右上角：默认不可见，hover / 键盘聚焦时才出现，
+   不占行宽、不与右侧 info 列（时间、启停、卸载）抢位置。
+   行主体需自留 padding-right 给三点让位，不做渐变遮罩——遮罩会在浅底上留一道灰边。 */
+.db-row__more {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  z-index: 2;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--db-dur-fast) var(--db-ease);
+}
+
+.db-row:hover .db-row__more,
+.db-row:focus-within .db-row__more {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 触屏没有 hover，三点常驻，否则菜单入口不可达 */
+@media (hover: none) {
+  .db-row__more {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* 选中行：整行浅灰底 + 圆角，与 hover 同色（页面可统一覆写成同一令牌），
+   标题保持正文色不变蓝——选中是位置标记，不是主操作。 */
+.db-row.is-active {
+  background-color: var(--el-fill-color-light);
+  border-radius: var(--db-r-control);
+  border-bottom-color: transparent;
 }
 
 /* —— 加载骨架 —— */

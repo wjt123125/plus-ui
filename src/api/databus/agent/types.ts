@@ -1,9 +1,43 @@
+/** 卡片选项：label 渲染成按钮，description 是按钮下的说明 */
+export interface AgentCardOption {
+  /** 回传的动作键，确认卡为 confirm / cancel */
+  key: string;
+  /** 按钮文案 */
+  label: string;
+  /** 选项自述，必须给 */
+  description?: string;
+  style?: 'primary' | 'default';
+}
+
+/** 通用交互卡片（运行时 §16）：kind=confirm 为审批确认，choice 为后续选择卡 */
+export interface AgentCard {
+  /** run 内唯一，点选后原样回传 */
+  cardId: string;
+  kind: 'confirm' | 'choice';
+  title: string;
+  body?: string;
+  /** 原文块：真正要执行的那次调用，等宽展示 */
+  detail?: string;
+  options: AgentCardOption[];
+  /** 仅 choice 使用 */
+  multiSelect?: boolean;
+  presentation?: 'inline' | 'dialog';
+}
+
+/** 卡片回执：用户点了哪一项 */
+export interface AgentCardReply {
+  cardId: string;
+  action: string;
+}
+
 /** AI 助手对话入参 */
 export interface AgentChatBo {
   /** 用户原话 */
   content: string;
   /** 会话 id，为空则新开会话 */
   conversationId?: string;
+  /** 卡片回执：用户在确认 / 选择卡片上点了哪一项 */
+  cardReply?: AgentCardReply;
 }
 
 /** 发起对话的返回：run 句柄与会话 id */
@@ -24,6 +58,10 @@ export interface AgentRunVo {
   intent?: string;
   status: AgentRunStatus;
   report?: string;
+  /** 本轮产生的卡片 JSON，按 seq 升序；刷新后据此还原 */
+  cards?: string[];
+  /** 本轮收到的卡片回执 JSON，按 seq 升序；回执落在点选后新建的 run 上，需按 cardId 跨 run 归位 */
+  cardReplies?: string[];
   round?: number;
   expireTime?: string;
   createTime?: string;

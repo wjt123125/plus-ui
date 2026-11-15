@@ -25,21 +25,27 @@
         :collapsed="historyCollapsed"
         :width="historyWidth"
         :sessions="sessionList"
+        :groups="sessionGroups"
         :active-id="conversationId"
         @open="onHistoryOpen"
         @new="onAiNewSession"
+        @rename="onHistoryRename"
+        @pin="onHistoryPin"
+        @delete="onHistoryDelete"
+        @search="onHistorySearch"
       >
         <!-- 用户区（n8n 式，§7 改造点3）：头像+昵称+角色整行下拉，替代原 header 右上角用户胶囊 -->
         <template #footer>
           <WorkbenchUserBar settings-entry @settings="goSettings" @logout="onLogout" />
         </template>
       </AiHistoryRail>
-      <Splitter v-if="!historyCollapsed" v-model="historyWidth" :min="180" />
+      <Splitter v-if="!historyCollapsed" v-model="historyWidth" :min="200" />
 
       <!-- 栏 2：AI 助手（对话面板薄壳，状态在 useAgentChat 模块级单例） -->
       <AiAssistantRail
         :collapsed="aiCollapsed"
         :width="aiWidth"
+        :running="agentRunning"
         title="AI 助手"
         welcome-title="DB Copilot"
         welcome-desc="用自然语言定位链路与组件、解释编排意图、排查脚本编译与执行问题。"
@@ -839,6 +845,38 @@ function onHistoryOpen(session: AiSession) {
   switchSession(session.id);
 }
 
+/** 历史栏重命名：只改显示标题，成功后状态层按当前搜索/列表模式刷新 */
+async function onHistoryRename(session: AiSession, title: string) {
+  try {
+    await renameSession(session.id, title);
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
+
+/** 历史栏置顶 / 取消置顶：排序由后端统一给出，刷新即可 */
+async function onHistoryPin(session: AiSession, pinned: boolean) {
+  try {
+    await pinSession(session.id, pinned);
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
+
+/** 历史栏删除：软删覆盖信息，删的若是当前会话由状态层回到空态 */
+async function onHistoryDelete(session: AiSession) {
+  try {
+    await removeSession(session.id);
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
+
+/** 历史栏搜索：空串即退出搜索，回到完整列表 */
+function onHistorySearch(keyword: string) {
+  void searchSessions(keyword);
+}
+
 /**
  * AI 对话里点引用卡：链路开画布 tab，组件开详情 tab。
  * 组件只带 code 时按台账反查，查不到（如未登记的内置件）只提示、不跳转。
@@ -898,8 +936,20 @@ interface AgentCanvasEvent {
   revealNodeId?: string | null;
 }
 
-const { conversationId, sessionList, createSession, switchSession, appendSystem, refreshSessions } =
-  useAgentChat();
+const {
+  conversationId,
+  running: agentRunning,
+  sessionList,
+  sessionGroups,
+  createSession,
+  switchSession,
+  appendSystem,
+  refreshSessions,
+  searchSessions,
+  renameSession,
+  pinSession,
+  removeSession
+} = useAgentChat();
 /** 引用卡：右键「加入会话」只暂存引用，发消息时由对话面板拼进问题 */
 const { addRef } = useAgentRefs();
 

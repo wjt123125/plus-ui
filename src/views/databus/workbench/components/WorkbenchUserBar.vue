@@ -139,8 +139,9 @@ function handleCommand(command: string) {
     cursor: pointer;
     transition: background-color 0.15s ease;
 
-    &:hover {
-      background: var(--el-fill-color-light, #f5f7fa);
+    &:hover,
+    &:active {
+      background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
     }
   }
 
@@ -211,7 +212,7 @@ function handleCommand(command: string) {
 
       &:not(.is-disabled):hover,
       &:not(.is-disabled):focus {
-        background: var(--el-fill-color-light, #f5f7fa);
+        background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
         color: var(--el-text-color-primary);
       }
     }

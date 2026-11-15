@@ -234,6 +234,27 @@ const LUCIDE_SUBSET: IconifyJSON = {
     },
     moon: {
       body: `<path ${S} d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>`
+    },
+    // 会话历史侧栏（AiHistoryRail）：置顶/取消置顶、重命名、分组视图切换
+    pin: {
+      body: `<g ${S}><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4a1 1 0 0 1 1 1z"/></g>`
+    },
+    'pin-off': {
+      body: `<g ${S}><path d="M12 17v5"/><path d="M15 9.34V7a1 1 0 0 1 1-1a2 2 0 0 0 0-4H7.89"/><path d="m2 2l20 20"/><path d="M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11"/></g>`
+    },
+    pencil: {
+      body: `<g ${S}><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5L2 22l1.5-5.5Z"/><path d="m15 5l4 4"/></g>`
+    },
+    // 列表视图（左图标 + 右文字行）与分组视图（树形层级）的切换
+    'layout-list': {
+      body: `<g ${S}><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/><path d="M14 4h7M14 9h7M14 15h7M14 20h7"/></g>`
+    },
+    'list-tree': {
+      body: `<g ${S}><path d="M21 12h-8M21 6H8M21 18h-8"/><path d="M3 6v4c0 1.1.9 2 2 2h3"/><path d="M3 10v6c0 1.1.9 2 2 2h3"/></g>`
+    },
+    // 物料治理「停用」（与 play 的三角暂停语义成对）
+    pause: {
+      body: `<g ${S}><rect width="4" height="16" x="14" y="4" rx="1"/><rect width="4" height="16" x="6" y="4" rx="1"/></g>`
     }
   }
 };

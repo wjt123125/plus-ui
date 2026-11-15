@@ -10,7 +10,11 @@
     -->
     <!-- 头部 30px：与工作台顶部 header、会话历史栏头、右栏抽屉 tab、资源树头同一条水平线 -->
     <div class="ai-rail__head">
-      <SvgIcon class="ai-rail__spark" icon-class="lucide:sparkle-filled" />
+      <SvgIcon
+        class="ai-rail__spark"
+        :class="{ 'is-running': running }"
+        icon-class="lucide:sparkle-filled"
+      />
       <span class="ai-rail__title">{{ title }}</span>
       <el-tooltip content="新会话" placement="bottom">
         <button type="button" class="ai-rail__head-btn" @click="emit('new-session')">
@@ -52,12 +56,15 @@ withDefaults(
     welcomeTitle?: string;
     welcomeDesc?: string;
     inputPlaceholder?: string;
+    /** 当前会话是否在跑：小星星呼吸，表示 AI 正在工作 */
+    running?: boolean;
   }>(),
   {
     title: 'AI 助手',
     welcomeTitle: 'AI 助手',
     welcomeDesc: '用自然语言完成查询、配置与排障。',
-    inputPlaceholder: 'AI 助手开发中，敬请期待…'
+    inputPlaceholder: 'AI 助手开发中，敬请期待…',
+    running: false
   }
 );
 
@@ -87,6 +94,11 @@ const emit = defineEmits<{
     flex: none;
     color: var(--db-blue, #007aff);
     font-size: 15px;
+
+    /* 会话运行中：小星星呼吸（明暗 + 轻微缩放），停下即归位 */
+    &.is-running {
+      animation: ai-spark-breathe 1.8s ease-in-out infinite;
+    }
   }
 
   &__head {
@@ -184,6 +196,26 @@ const emit = defineEmits<{
   &__input {
     flex-shrink: 0;
     padding: 10px 12px 12px;
+  }
+}
+
+/* 运行中的「呼吸」：明暗为主、缩放极轻，避免在 34px 头部里晃眼 */
+@keyframes ai-spark-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-rail__spark.is-running {
+    animation: none;
   }
 }
 </style>
