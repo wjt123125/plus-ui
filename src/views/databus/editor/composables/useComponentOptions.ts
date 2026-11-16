@@ -12,6 +12,8 @@ import { applyComponentOptions } from '../cmp-defs';
  */
 let pending: Promise<ComponentOption[]> | null = null;
 const options = ref<ComponentOption[]>([]);
+/** 瞬态选项（草稿预览链路）：不进物料区，只并入 optionMap 供右抽屉出 cfg 表单 */
+const transientOptions = ref<ComponentOption[]>([]);
 const loaded = ref(false);
 const error = ref(false);
 
@@ -47,8 +49,21 @@ export function useComponentOptions() {
     for (const item of options.value) {
       map.set(item.code, item);
     }
+    // 瞬态项后写：草稿预览期间以草稿契约为准
+    for (const item of transientOptions.value) {
+      map.set(item.code, item);
+    }
     return map;
   });
+
+  /** 注入草稿预览用的瞬态选项（同 code 覆盖；预览 tab 关闭时 remove） */
+  function injectTransientOption(opt: ComponentOption) {
+    transientOptions.value = [...transientOptions.value.filter((o) => o.code !== opt.code), opt];
+  }
+
+  function removeTransientOption(code: string) {
+    transientOptions.value = transientOptions.value.filter((o) => o.code !== code);
+  }
 
   function ensureOptions() {
     return fetchOptions().catch(() => {
@@ -63,5 +78,14 @@ export function useComponentOptions() {
     return ensureOptions();
   }
 
-  return { options, loaded, error, optionMap, ensureOptions, retryOptions };
+  return {
+    options,
+    loaded,
+    error,
+    optionMap,
+    ensureOptions,
+    retryOptions,
+    injectTransientOption,
+    removeTransientOption
+  };
 }

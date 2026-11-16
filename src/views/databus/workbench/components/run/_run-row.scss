@@ -1,0 +1,68 @@
+/* 运行流日志行的公共视觉（两种行共用，保证列宽/配色/动作按钮不漂移） */
+.run-row {
+  display: grid;
+  grid-template-columns: 64px minmax(80px, auto) 1fr;
+  column-gap: 12px;
+  padding: 2px 12px;
+
+  /* terminal 惯例：失败红、成功绿，概要行一眼分级 */
+  &.is-error .run-row__result {
+    color: var(--el-color-danger, #f56c6c);
+    font-weight: 600;
+  }
+
+  &.is-success .run-row__result {
+    color: var(--el-color-success, #67c23a);
+  }
+}
+
+.run-row__time {
+  color: var(--el-text-color-placeholder);
+}
+
+.run-row__code {
+  color: var(--el-text-color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-row__text {
+  min-width: 0;
+  word-break: break-all;
+}
+
+.run-row__line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.run-row__cost {
+  color: var(--el-text-color-secondary);
+}
+
+.run-row__error {
+  color: var(--el-color-danger, #f56c6c);
+}
+
+/* 行尾动作：统一「详情」文字按钮 + 方向图标（↗ 跳转 / ⌄⌃ 展开） */
+.run-row__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--el-color-primary);
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+
+  .svg-icon {
+    font-size: 12px;
+  }
+}

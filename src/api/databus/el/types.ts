@@ -42,6 +42,8 @@ export interface PreviewRunBo {
   requestJson?: string;
   /** 入参登记表（后端执行前按必填路径复核；默认值不注入） */
   inputParams?: import('@/api/databus/chain/types').ChainInputParam[];
+  /** 草稿组件主键：草稿预览链路传入，后端执行前临时注册、跑完摘除 */
+  draftComponentId?: number | string | null;
 }
 
 /**

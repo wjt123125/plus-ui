@@ -114,8 +114,8 @@ import { useCompileConsole } from '@/views/databus/workbench/composables/useComp
 defineOptions({ name: 'ComponentFormPane' });
 
 const props = defineProps<{
-  /** databus_component 行 id；空为新增 */
-  dbId?: number;
+  /** databus_component 行 id（雪花 id 超 2^53，后端按字符串下发）；空为新增 */
+  dbId?: number | string;
   /** 台账已有标签聚合，供标签输入联想 */
   tagSuggestions?: string[];
   /** 宿主自增触发重载（回滚/外部保存后同步） */
@@ -284,7 +284,7 @@ function applyPreset() {
 }
 
 /** 拉详情并回填（首次挂载、宿主刷新与脚本回滚后复用） */
-async function loadDetail(id: number) {
+async function loadDetail(id: number | string) {
   detailLoading.value = true;
   try {
     const { data } = await getComponent(id);

@@ -53,8 +53,10 @@
                 :status="seg.status"
                 :picked="seg.picked"
                 :allow-full-access="allowFullAccess"
+                :draft-codes="draftCodes"
                 @pick="(option, scope) => onCardPick(seg.card.cardId, option, scope)"
                 @open="onCardOpen(seg.card)"
+                @preview="onCardPreview(seg.card)"
               />
               <MarkdownBlock v-else-if="seg.kind === 'text'" :text="seg.text" />
             </template>
@@ -217,11 +219,18 @@ defineOptions({ name: 'AgentChatPanel' });
 
 useLucideSubset();
 
+/** 宿主传入的「当前草稿组件编码」：卡片播放钮据此判断，历史卡片缺 draft 字段也能露出 */
+defineProps<{
+  draftCodes?: string[];
+}>();
+
 const emit = defineEmits<{
   /** 回滚完成：宿主据此重建画布、关掉已删除链路的 tab */
   'agent-rolled-back': [chains: { chainId: number | string; deleted: boolean }[]];
   /** 点引用卡：跳转由宿主承接，面板不感知工作台内部路由 */
   'ref-open': [ref: AgentRefItem];
+  /** 草稿卡「▶ 试运行」：开单节点预览链路（宿主判草稿态） */
+  'ref-preview': [ref: AgentRefItem];
 }>();
 
 const inputPlaceholder = '@ 添加上下文，/ 使用命令和技能';
@@ -252,6 +261,20 @@ function onCardOpen(card: AgentCard) {
     return;
   }
   emit('ref-open', {
+    type: resource.type,
+    id: resource.id,
+    code: resource.code,
+    name: resource.name || card.title
+  });
+}
+
+/** 草稿卡「▶」：与「详情」同一资源载荷，宿主按草稿态开预览链路 */
+function onCardPreview(card: AgentCard) {
+  const resource = card.resource;
+  if (!resource) {
+    return;
+  }
+  emit('ref-preview', {
     type: resource.type,
     id: resource.id,
     code: resource.code,

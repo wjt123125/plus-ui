@@ -32,6 +32,8 @@ export interface AgentCardResource {
   id?: string;
   code?: string;
   name?: string;
+  /** 仅组件：是否草稿（前端据此在卡片上露出「▶ 试运行」） */
+  draft?: boolean;
 }
 
 /** 卡片回执：用户点了哪一项 */

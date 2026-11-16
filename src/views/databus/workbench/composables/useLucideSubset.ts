@@ -42,6 +42,11 @@ const LUCIDE_SUBSET: IconifyJSON = {
     },
     // 用户区下拉（§7 改造点3）：展开箭头、退出登录
     'chevron-down': { body: `<path ${S} d="m6 9l6 6l6-6"/>` },
+    'chevron-up': { body: `<path ${S} d="m18 15l-6-6l-6 6"/>` },
+    // 运行流行尾「详情 ↗」：跳转到执行记录（区别于就地展开的 chevron）
+    'arrow-up-right': {
+      body: `<g ${S}><path d="M7 7h10v10"/><path d="M7 17 17 7"/></g>`
+    },
     'log-out': {
       body: `<g ${S}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17l5-5l-5-5"/><path d="M21 12H9"/></g>`
     },
@@ -142,6 +147,10 @@ const LUCIDE_SUBSET: IconifyJSON = {
     },
     play: {
       body: '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/>'
+    },
+    // 组件草稿试跑（debug 语义，与画布试运行三角区分：这里是探针不是跑链路）
+    bug: {
+      body: `<g ${S}><path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/></g>`
     },
     star: {
       body: '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/>'
@@ -255,6 +264,10 @@ const LUCIDE_SUBSET: IconifyJSON = {
     // 物料治理「停用」（与 play 的三角暂停语义成对）
     pause: {
       body: `<g ${S}><rect width="4" height="16" x="14" y="4" rx="1"/><rect width="4" height="16" x="6" y="4" rx="1"/></g>`
+    },
+    // 试运行结果 tab（终端行「详情」开 tab）：终端提示符，与底部终端的执行语义同源
+    terminal: {
+      body: `<path ${S} d="M12 19h8M4 17l6-6l-6-6"/>`
     }
   }
 };

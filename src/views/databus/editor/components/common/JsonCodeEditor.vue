@@ -1,5 +1,5 @@
 <template>
-  <div ref="rootRef" class="json-code-editor">
+  <div ref="rootRef" class="json-code-editor" :class="{ 'is-plain': plain }">
     <div v-if="!readonly" class="json-code-editor__toolbar">
       <el-button
         size="small"
@@ -52,7 +52,7 @@
         :placeholder="placeholder"
         :extensions="extensions"
         :style="{ height: '100%' }"
-        :indent-with-tab="true"
+        :indent-with-tab="!plain"
         :tab-size="2"
         @update:model-value="onUpdate"
         @ready="onReady"
@@ -85,12 +85,18 @@ const props = withDefaults(
     readonly?: boolean;
     /** 显示「填入示例」按钮：点击把 placeholder 内容写入编辑器 */
     fillPlaceholder?: boolean;
+    /**
+     * 极简只读形态：无行号、无折叠槽、无活动行高亮、无边框底色，
+     * 用于嵌在卡片里展示 JSON（试运行结果页），避免「框套框、线太多」。
+     */
+    plain?: boolean;
   }>(),
   {
     placeholder: '在此输入 JSON',
     height: '240px',
     readonly: false,
-    fillPlaceholder: false
+    fillPlaceholder: false,
+    plain: false
   }
 );
 
@@ -117,6 +123,27 @@ const jsonLinter = linter((view): Diagnostic[] => {
 });
 
 const extensions = computed(() => {
+  // 极简只读：只留语法高亮 + 折行，去掉行号、折叠槽、活动行等一切装饰
+  if (props.plain) {
+    return [
+      json(),
+      EditorView.lineWrapping,
+      syntaxHighlighting(jsonHighlight),
+      EditorState.readOnly.of(true),
+      EditorView.theme({
+        '&': {
+          backgroundColor: 'transparent',
+          color: '#303133',
+          fontSize: '12px',
+          fontFamily:
+            'Menlo, Monaco, "Cascadia Code", "JetBrains Mono", Consolas, monospace'
+        },
+        '.cm-content': { padding: '0 0 0 5px' },
+        '.cm-line': { padding: '0' },
+        '&.cm-focused': { outline: 'none' }
+      })
+    ];
+  }
   const list = [
     basicSetup,
     json(),
@@ -357,6 +384,31 @@ function compressJson() {
   border: 1px solid var(--el-border-color);
   border-radius: 4px;
   overflow: hidden;
+}
+
+.json-code-editor.is-plain {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.json-code-editor.is-plain .json-code-editor__core {
+  padding: 0;
+}
+
+/* plain：与卡片同底色，去掉行号槽与活动行底色，只留干净的 JSON 文本 */
+.json-code-editor.is-plain :deep(.cm-editor),
+.json-code-editor.is-plain :deep(.cm-scroller) {
+  background: transparent;
+}
+
+.json-code-editor.is-plain :deep(.cm-gutters) {
+  display: none;
+}
+
+.json-code-editor.is-plain :deep(.cm-activeLine) {
+  background: transparent;
 }
 
 .json-code-editor__toolbar {

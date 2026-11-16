@@ -48,6 +48,14 @@ export const SETTINGS_KEY = 'settings';
 export function canvasKey(chainId: WorkspaceTab['chainId']): string {
   return `canvas:${chainId}`;
 }
+/** 草稿预览链路 key：与真链路画布分开命名，避免与同编码正式链路抢 tab */
+export function previewCanvasKey(draftId: number | string): string {
+  return `canvas:preview:${draftId}`;
+}
+/** 试运行结果 tab key（同一 run 单例） */
+export function previewResultKey(runId: number): string {
+  return `preview-result:${runId}`;
+}
 export function detailKey(code: string): string {
   return `component:detail:${code}`;
 }
@@ -122,6 +130,52 @@ export function useWorkspaceTabs() {
       chainId,
       code: '',
       title,
+      dirty: false
+    });
+  }
+
+  /**
+   * 打开/聚焦草稿预览链路 tab（kind canvas，同草稿单例）。
+   * 纯内存单节点：previewDraftId 驱动 pane 拉草稿、注瞬态物料，不落库、不参与脏标记。
+   */
+  function openPreviewCanvas(draftId: number | string, name: string): string {
+    const key = previewCanvasKey(draftId);
+    const title = `预览 · ${name}`;
+    const existed = wb.tabs.value.find((t) => t.key === key);
+    if (existed) {
+      existed.title = title; // 草稿可能已被改名，聚焦时顺手刷新
+    }
+    return wb.open({
+      key,
+      kind: 'canvas',
+      title,
+      code: '',
+      previewDraftId: draftId,
+      dirty: false
+    });
+  }
+
+  /** 关闭某草稿的预览 tab（采纳/拒绝后调用：草稿身份已变，预览不再有意义） */
+  function closePreviewCanvas(draftId: number | string): void {
+    const key = previewCanvasKey(draftId);
+    const remain = wb.tabs.value.filter((t) => t.key !== key);
+    if (remain.length === wb.tabs.value.length) {
+      return;
+    }
+    wb.tabs.value = remain;
+    if (wb.activeKey.value === key) {
+      wb.activeKey.value = remain[remain.length - 1]?.key ?? '';
+    }
+  }
+
+  /** 打开/聚焦试运行结果 tab（同 run 单例；结果本体在内存，pane 按 runId 取） */
+  function openPreviewResult(runId: number, title: string): string {
+    return wb.open({
+      key: previewResultKey(runId),
+      kind: 'preview-result',
+      title,
+      code: '',
+      previewRunId: runId,
       dirty: false
     });
   }
@@ -529,6 +583,9 @@ export function useWorkspaceTabs() {
   return {
     ...wb,
     openCanvas,
+    openPreviewCanvas,
+    closePreviewCanvas,
+    openPreviewResult,
     refreshTitleIfOpen,
     openDetail,
     openMarket,

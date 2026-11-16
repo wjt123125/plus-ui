@@ -22,7 +22,7 @@ export type WorkspaceTabKind =
   | 'detail'
   | 'form'
   | 'changes'
-  // 草稿审阅（AI 落下的 DRAFT 行：源码 / 编译产物 / 试跑 → 人点采纳或拒绝）
+  // 草稿审阅（AI 落下的 DRAFT 行：源码 / 编译产物 → 人点采纳或拒绝）
   | 'component-review'
   | 'market'
   // 物料管理（2026-10-30 由 MarketPane 内部 view/scope 双 ref 提为独立 tab，刷新可恢复现场）
@@ -41,7 +41,9 @@ export type WorkspaceTabKind =
   | 'alert-record'
   | 'settings'
   // 新建向导（单例 tab，顶部 filetype 分段四合一，2026-10-21 新建入口收敛）
-  | 'create';
+  | 'create'
+  // 试运行结果（终端行「详情」打开；tab 只存 runId，结果本体在内存 useRunConsole，刷新即失效）
+  | 'preview-result';
 
 /** 新建向导可选的资源类型（向导 tab 顶部分段，CreatePane 按 filetype 分发表单体） */
 export type CreateFileType = 'chain' | 'component' | 'directory' | 'connection';
@@ -69,10 +71,17 @@ export interface WorkspaceTab extends WorkbenchTab {
   chainCode?: string;
   /** detail/form/changes：组件编码（detail 正本身份是 code，内置件亦适用）；canvas/market 为空串 */
   code: string;
-  /** form/changes：组件 DB 行 id（编辑/代码变更必需） */
-  dbId?: number;
+  /** form/changes：组件 DB 行 id（编辑/代码变更必需；雪花 id 超 2^53，后端可能下发字符串） */
+  dbId?: number | string;
   /** component-review：草稿行主键（同 id 单例；审阅页自取数，采纳/拒绝都按它收口） */
   reviewId?: number | string;
+  /**
+   * canvas：草稿预览链路——草稿行主键。给了就不落库：canvas 用瞬态物料渲染单节点，
+   * 试运行时随请求下发 draftComponentId 由后端临时注册 FlowBus（见 useDraftPreview）
+   */
+  previewDraftId?: number | string;
+  /** preview-result：终端运行行 id（结果本体在内存 useRunConsole，不随 tab 落盘） */
+  previewRunId?: number;
   /** market-manage：当前视角（pane 内切视角即回写，随会话落盘 → 刷新恢复现场） */
   marketScope?: MarketScope;
   /** market-publish：来路（返回钮回跳市场/管理 tab；随会话落盘，刷新后回跳目标不丢） */

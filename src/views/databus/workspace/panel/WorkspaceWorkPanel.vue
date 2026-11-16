@@ -78,10 +78,11 @@
       <template v-for="tab in tabs" :key="tab.key">
         <div v-show="tab.key === activeKey" class="ws-panel__pane">
           <ChainCanvasPane
-            v-if="tab.kind === 'canvas' && tab.chainId != null"
+            v-if="tab.kind === 'canvas' && (tab.chainId != null || tab.previewDraftId != null)"
             :ref="(el) => setCanvasPane(tab.key, el)"
             host="workbench"
-            :load-chain-id="tab.chainId"
+            :load-chain-id="tab.chainId ?? null"
+            :preview-draft-id="tab.previewDraftId ?? null"
             :active="tab.key === activeKey"
             @dirty-change="(dirty) => emit('dirty-change', tab.key, dirty)"
             @open-chain="(chainId, title) => emit('open-chain', chainId, title)"
@@ -119,6 +120,11 @@
             :component-id="tab.reviewId"
             @adopted="(payload) => emit('review-adopted', tab, payload)"
             @rejected="() => emit('review-rejected', tab)"
+          />
+          <!-- 试运行结果（终端「运行」行点详情打开）：结果本体在内存运行流里，刷新即失效 -->
+          <PreviewResultPane
+            v-else-if="tab.kind === 'preview-result' && tab.previewRunId != null"
+            :run-id="tab.previewRunId"
           />
           <!-- 新建向导（2026-10-21 新建入口收敛，decisions §10）：filetype 分段四合一表单体，单例 create tab -->
           <CreatePane
@@ -285,6 +291,7 @@ import FormPane from './FormPane.vue';
 import CreatePane from './CreatePane.vue';
 import ChangesPane from './ChangesPane.vue';
 import ComponentReviewPane from './ComponentReviewPane.vue';
+import PreviewResultPane from './PreviewResultPane.vue';
 import ConnectionPane from './ConnectionPane.vue';
 import ExecutionPane from './ExecutionPane.vue';
 import MonitorPane from './MonitorPane.vue';
@@ -312,6 +319,8 @@ const TAB_META: Record<WorkspaceTabKind, { icon: string; color: string }> = {
   changes: { icon: 'lucide:file-diff', color: '#F59E0B' },
   // 草稿审阅（切片 5 人点生效）：file-check＝待人工确认；保留 Amber 示「待拍板」
   'component-review': { icon: 'lucide:file-check', color: '#F59E0B' },
+  // 试运行结果（终端行「详情」开 tab，2026-11-16）：terminal 图标＝执行语义同源
+  'preview-result': { icon: 'lucide:terminal', color: '#4F8EF7' },
   market: { icon: 'lucide:store', color: '#4F8EF7' },
   // 物料管理（2026-10-30 由 MarketPane 内部视图提为独立 tab）；2026-11-01 进 launcher 清单后
   // 与「设置」入口在菜单/空态卡必同屏，故换独立图标色（对齐 launcherEntries 同入口同色口径）

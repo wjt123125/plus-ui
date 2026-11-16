@@ -68,8 +68,8 @@ import JavaCodeEditor from '@/views/databus/component/form/JavaCodeEditor.vue';
 defineOptions({ name: 'ComponentChangesPane' });
 
 const props = defineProps<{
-  /** databus_component 行 id */
-  dbId: number;
+  /** databus_component 行 id（雪花 id 超 2^53，后端按字符串下发） */
+  dbId: number | string;
   /** 组件编码，面板头部展示 */
   code?: string;
   /** 当前生效版本号（外部保存/回滚后由宿主更新，触发重载） */

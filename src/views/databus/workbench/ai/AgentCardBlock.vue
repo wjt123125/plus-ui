@@ -1,20 +1,35 @@
 <!--
   通用交互卡片：折叠块（像思考块一样），标题行标识「确认」或「选择」+ 卡片标题 + 状态。
   确认卡展开后是影响摘要 + 等宽原文块 + 右下角「取消 / 确认执行（带作用域菜单）」。
-  ref 卡不是交互卡，只留一行「打开审阅」入口，点击交给宿主开 tab。
+  ref 卡不是交互卡：整卡点开详情/审阅，草稿卡额外带播放钮开单节点预览链路，都交给宿主开 tab。
   pending 默认展开等待操作；已选 / 已结束后自动收起，点标题可回看。
 -->
 <template>
-  <div class="agent-card" :class="[`is-${status}`, `is-${card.kind}`, { 'is-open': open }]">
-    <!-- 资源卡：整行就是入口，不做折叠，状态也不影响可点 -->
-    <button v-if="card.kind === DATABUS_CARD_KIND_REF" type="button" class="agent-card__ref" @click="emit('open')">
-      <span class="agent-card__chip">{{ card.resource?.type === DATABUS_RESOURCE_TYPE_CHAIN ? '链路' : '组件' }}</span>
-      <span class="agent-card__ref-text">
-        <span class="agent-card__title">{{ card.title }}</span>
-        <span v-if="card.body" class="agent-card__ref-desc">{{ card.body }}</span>
-      </span>
-      <span class="agent-card__ref-go">打开审阅 ›</span>
-    </button>
+  <div
+    class="agent-card"
+    :class="[`is-${status}`, `is-${card.kind}`, { 'is-open': open }]"
+    :style="refTint"
+  >
+    <!-- 资源卡：整卡即「打开详情」，不加多余文字提示；草稿卡右侧多一个播放钮开预览链路
+         （不折叠，状态不影响可点） -->
+    <div v-if="card.kind === DATABUS_CARD_KIND_REF" class="agent-card__ref">
+      <button type="button" class="agent-card__ref-main" @click="emit('open')">
+        <span class="agent-card__chip">{{ card.resource?.type === DATABUS_RESOURCE_TYPE_CHAIN ? '链路' : '组件' }}</span>
+        <span class="agent-card__ref-text">
+          <span class="agent-card__title">{{ card.title }}</span>
+          <span v-if="card.body" class="agent-card__ref-desc">{{ card.body }}</span>
+        </span>
+      </button>
+      <button
+        v-if="playable"
+        type="button"
+        class="agent-card__ref-play"
+        title="试运行（打开预览链路）"
+        @click="emit('preview')"
+      >
+        <SvgIcon icon-class="lucide:play" />
+      </button>
+    </div>
     <template v-else>
       <button type="button" class="agent-card__head" @click="open = !open">
         <span class="agent-card__chip">{{ card.kind === DATABUS_CARD_KIND_CONFIRM ? '确认' : '选择' }}</span>
@@ -108,7 +123,8 @@ import type { AgentCard, AgentCardOption } from '@/api/databus/agent/types';
 import {
   DATABUS_CARD_KIND_CONFIRM,
   DATABUS_CARD_KIND_REF,
-  DATABUS_RESOURCE_TYPE_CHAIN
+  DATABUS_RESOURCE_TYPE_CHAIN,
+  DATABUS_RESOURCE_TYPE_COMPONENT
 } from '@/constants/databus-common';
 
 /** 拆分按钮的作用域：本次 / 本会话切自动审批 / 本会话完全允许 */
@@ -120,13 +136,35 @@ const props = defineProps<{
   picked?: string;
   /** 部署是否开放「完全访问」档，未开放则菜单项置灰 */
   allowFullAccess?: boolean;
+  /** 当前仍是草稿的组件编码：历史卡片没带 resource.draft，靠台账现算兜底 */
+  draftCodes?: string[];
 }>();
 
 const emit = defineEmits<{
   pick: [option: AgentCardOption, scope?: CardPickScope];
   /** ref 卡：只要求宿主开对应 tab，不回传消息 */
   open: [];
+  /** ref 卡（草稿）：开单节点预览链路，同样不回传消息 */
+  preview: [];
 }>();
+
+/**
+ * 播放钮是否露出：卡片自带 draft 标记优先（新卡片），缺省则查当前草稿台账
+ * （老消息落库时还没有该字段，不回查就永远看不到入口）。
+ */
+const playable = computed(() => {
+  const resource = props.card.resource;
+  if (props.card.kind !== DATABUS_CARD_KIND_REF) {
+    return false;
+  }
+  if (!resource || resource.type !== DATABUS_RESOURCE_TYPE_COMPONENT) {
+    return false;
+  }
+  if (resource.draft) {
+    return true;
+  }
+  return !!resource.code && (props.draftCodes ?? []).includes(resource.code);
+});
 
 const open = ref(props.status === 'pending');
 
@@ -137,6 +175,17 @@ watch(
     open.value = value === 'pending';
   }
 );
+
+/** ref 卡的类型色：只给极淡 tint 与文字着色，主体保持中性（与输入区引用卡同一套口径） */
+const refTint = computed(() => {
+  if (props.card.kind !== DATABUS_CARD_KIND_REF) {
+    return undefined;
+  }
+  const chain = props.card.resource?.type === DATABUS_RESOURCE_TYPE_CHAIN;
+  return {
+    '--card-ink': chain ? 'var(--db-ref-chain, #5457d6)' : 'var(--db-ref-component, #0f8f6f)'
+  };
+});
 
 /** 确认卡只认主次两个按钮：primary 是放行，另一个是取消 */
 const confirmOption = computed(
@@ -175,32 +224,81 @@ const stateText = computed(() => {
   margin: 2px 0 10px;
 }
 
-/* 资源卡：整行可点，正文说明折行，右侧常驻跳转提示 */
+/* 资源卡：容器承载 tint，主体是内部按钮（避免按钮嵌套），草稿卡右侧挂「▶」
+   （与输入区 .agent-chat__ref 同一套口径，不用主色描边） */
 .agent-card__ref {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
   max-width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--db-rule, rgba(60, 60, 67, 0.14));
-  border-radius: 8px;
-  background: transparent;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--card-ink, var(--db-ink-muted, #6e6e73)) 5%, transparent);
+  box-shadow: inset 0 0 0 0.5px
+    color-mix(in srgb, var(--card-ink, var(--db-ink-muted, #6e6e73)) 20%, transparent);
   color: inherit;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+}
+
+.agent-card__ref-main {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
   text-align: left;
   cursor: pointer;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
+}
+
+/* 试运行入口：草稿卡才有；裸图标，不画按钮框，hover 才染类型色 */
+.agent-card__ref-play {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--db-ink-muted, #6e6e73);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.agent-card__ref-play:hover {
+  color: var(--card-ink, var(--db-ink-muted, #6e6e73));
 }
 
 .agent-card__ref:hover {
-  border-color: var(--db-blue, #007aff);
-  background: rgba(0, 122, 255, 0.05);
+  background: color-mix(in srgb, var(--card-ink, var(--db-ink-muted, #6e6e73)) 9%, transparent);
+  box-shadow: inset 0 0 0 0.5px
+    color-mix(in srgb, var(--card-ink, var(--db-ink-muted, #6e6e73)) 32%, transparent);
 }
 
-.agent-card__ref .agent-card__chip {
+/* 类型标签跟随资源类型色：只占一小块 tint，不与正文争主色 */
+.agent-card .agent-card__ref .agent-card__chip {
   margin-top: 1px;
+  background: color-mix(in srgb, var(--card-ink, var(--db-ink-muted, #6e6e73)) 12%, transparent);
+  color: var(--card-ink, var(--db-ink-muted, #6e6e73));
+  font-weight: 500;
+}
+
+.agent-card__ref .agent-card__title {
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .agent-card__ref-text {
@@ -216,13 +314,6 @@ const stateText = computed(() => {
   font-size: 11.5px;
   line-height: 1.6;
   word-break: break-word;
-}
-
-.agent-card__ref-go {
-  flex: none;
-  color: var(--db-blue, #007aff);
-  font-size: 12px;
-  line-height: 1.6;
 }
 
 .agent-card__head {
@@ -255,7 +346,8 @@ const stateText = computed(() => {
   line-height: 18px;
 }
 
-.agent-card.is-pending .agent-card__chip {
+/* 待办高亮只给确认/选择卡的头部；资源卡的标签用资源类型色，不跟主色 */
+.agent-card.is-pending .agent-card__head .agent-card__chip {
   background: rgba(0, 122, 255, 0.08);
   color: var(--db-blue, #007aff);
 }

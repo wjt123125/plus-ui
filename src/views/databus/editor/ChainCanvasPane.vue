@@ -6,13 +6,14 @@
       'is-palette-collapsed': paletteCollapsed,
       'is-props-collapsed': propsCollapsed,
       'is-embedded': host === 'workbench',
-      'is-readonly': isReadonly
+      'is-readonly': isReadonly,
+      'is-preview': isPreview
     }"
   >
     <!-- 三栏：组件面板 / 画布 / 参数表单（IDE 化后无顶栏，网格单行，画布吃满高度；
          文档动作收口到画布空白右键菜单 + 快捷键 + 右上浮钮，见 useEditorActions） -->
     <div class="databus-editor__body">
-      <div v-if="!isReadonly" class="databus-editor__palette">
+      <div v-if="!isReadonly && !isPreview" class="databus-editor__palette">
         <CmpPalette @collapse="setPaletteCollapsed(true)" />
       </div>
       <div class="databus-editor__canvas-wrap">
@@ -33,7 +34,7 @@
           @back="backToList"
         />
         <button
-          v-if="paletteCollapsed && !isReadonly"
+          v-if="paletteCollapsed && !isReadonly && !isPreview"
           type="button"
           class="databus-editor__palette-expand"
           title="展开物料区"
@@ -76,11 +77,14 @@
       @execute="runPreview"
     />
 
-    <!-- 试运行：执行结果（banner/步骤表/上下文快照在组件内，步骤标题推断由 composable 注入） -->
+    <!-- 试运行：执行结果（banner/步骤表/上下文快照在组件内，步骤标题推断由 composable 注入）。
+         仅独立编辑器窗口使用：工作台宿主的结果走终端行 + 结果 tab，不再弹窗 -->
     <PreviewResultDialog
+      v-if="host === 'editor'"
       v-model:visible="previewResultVisible"
       :result="previewResult"
       :resolve-step-title="stepTitle"
+      :request-json="previewRequest"
       @reopen="reopenPreview"
       @open-step="openStepDetail"
     />
@@ -134,9 +138,12 @@ import { useChainDocument } from './composables/useChainDocument';
 import { provideEditorActions } from './composables/useEditorActions';
 import { useEditorHotkeys } from './composables/useEditorHotkeys';
 import { usePanelCollapse } from './composables/usePanelCollapse';
-import { usePreviewRun } from './composables/usePreviewRun';
+import { useDraftPreview } from './composables/useDraftPreview';
+import { usePreviewRun, type PreviewRunPayload } from './composables/usePreviewRun';
 import { useComponentOptions } from './composables/useComponentOptions';
 import { useChainOptions } from './composables/useChainOptions';
+import { useRunConsole } from '@/views/databus/workbench/composables/useRunConsole';
+import { useWorkspaceTerminal } from '@/views/databus/workspace/composables/useWorkspaceTerminal';
 import { DATABUS_CHAIN_DEF_TYPE } from '@/constants/databus-chain';
 import { DATABUS_TEMPLATE_FLAG_NO } from '@/constants/databus-common';
 
@@ -155,14 +162,20 @@ const props = withDefaults(
     /** workbench 宿主：要加载的链路主键（19 位雪花 id 保字符串）；editor 宿主忽略。
      *  命名避开 useChainDocument 的 chainId（当前编辑链路，可被切换器改） */
     loadChainId?: number | string | null;
+    /** workbench 宿主：草稿预览链路（纯内存单节点，不落库）；给了就忽略 loadChainId，
+     *  草稿按瞬态物料渲染，试运行时随请求下发 draftComponentId 由后端临时注册 */
+    previewDraftId?: number | string | null;
     /** workbench 宿主：本 tab 是否激活（非激活实例快捷键短路） */
     active?: boolean;
     /** 只读分享态（standalone 只读页宿主）：单列画布、隐藏物料区/右抽屉/编辑动作，
      *  仅渲染已保存链路供查看（loadChainId 指定）。拖拽/连线/右键菜单一并屏蔽。 */
     readonly?: boolean;
   }>(),
-  { host: 'editor', loadChainId: null, active: true, readonly: false }
+  { host: 'editor', loadChainId: null, previewDraftId: null, active: true, readonly: false }
 );
+
+/** 草稿预览链路：单节点、无物料区、不落库 */
+const isPreview = computed(() => props.previewDraftId != null);
 
 const emit = defineEmits<{
   'dirty-change': [dirty: boolean];
@@ -420,10 +433,17 @@ watch(canUndo, (v) => {
 watch(editingId, () => {
   dirty.value = false;
 });
-watch(dirty, (v) => emit('dirty-change', v));
+watch(dirty, (v) => {
+  // 预览链路不落库，不点亮 tab 脏点
+  emit('dirty-change', isPreview.value ? false : v);
+});
 
 /** 保存链路（包装）：成功后脏圆点归零，失败保持脏（提醒未保存） */
 async function handleSaveChain() {
+  if (isPreview.value) {
+    ElMessage.info('预览链路不落库，无法保存');
+    return;
+  }
   try {
     await saveChain();
     dirty.value = false;
@@ -454,6 +474,30 @@ async function saveAsEl() {
 }
 
 // 试运行：入参/结果/步骤抽屉三态 + 必填拦截 + 步骤标题推断（逻辑下沉 composable）
+// 工作台宿主把结果交给终端（行摘要 + 结果 tab）；独立编辑器窗口保留结果弹窗（无终端）
+const runConsole = useRunConsole();
+const { switchTab } = useWorkspaceTerminal();
+/** 预览链路的运行标识（终端行与结果 tab 标题/编码） */
+const previewRunTitle = ref('');
+const previewRunCode = ref('');
+
+function onPreviewResult(payload: PreviewRunPayload) {
+  const steps = payload.result.steps ?? [];
+  const costMs = steps.reduce((sum, s) => sum + (s.timeSpent ?? 0), 0);
+  runConsole.appendPreview({
+    title: previewRunTitle.value || chainName.value || '试运行',
+    code: previewRunCode.value || chainId.value || '',
+    level: payload.result.success ? 'success' : 'error',
+    text: payload.result.success ? '' : payload.result.errorMessage || payload.result.message || '试运行失败',
+    costMs: costMs || null,
+    result: payload.result,
+    titleByTag: payload.titleByTag,
+    requestJson: payload.requestJson
+  });
+  // 终端可能已开在别的流（watch 只在 open 由 false→true 时切）
+  switchTab('run');
+}
+
 const {
   previewVisible,
   previewRunning,
@@ -471,7 +515,9 @@ const {
   treeModel,
   inputParams,
   ensureCanvasHasNodes,
-  ensureDataSpacesValid
+  ensureDataSpacesValid,
+  draftComponentId: computed(() => props.previewDraftId),
+  onResult: props.host === 'workbench' ? onPreviewResult : undefined
 });
 
 // 文档动作注入：画布空白右键菜单/右上浮层 inject（IDE 化后顶栏已删，命令统一收口于此）
@@ -559,6 +605,16 @@ async function reloadFromServer() {
 
 defineExpose({ applyAgentCanvas, reloadFromServer });
 
+// 草稿预览链路：拉草稿 → 注瞬态物料 → 铺单节点树（不落库）；
+// 草稿登记过的试运行入参一并写进编辑器状态，试运行弹窗就能预填默认值
+const draftPreview = useDraftPreview({
+  treeModel,
+  reproject: () => ctrl.reproject(),
+  autoLayout: () => ctrl.autoLayout(),
+  applyInputParams: onInputParamsSave
+});
+onBeforeUnmount(() => draftPreview.dispose());
+
 onMounted(() => {
   // 预拉物料（唯一数据源）：成功后重投影一次，把加载瞬间渲染为「未注册」的业务卡刷新成真物料
   void useComponentOptions()
@@ -571,6 +627,19 @@ onMounted(() => {
     if (!initFromRoute()) {
       redirectToChainList();
     }
+  } else if (props.previewDraftId != null) {
+    // 工作台宿主·草稿预览：单节点、纯内存；加载完落运行标识（终端行/结果 tab 用）
+    void draftPreview.load(props.previewDraftId).then((info) => {
+      if (!info) {
+        return;
+      }
+      previewRunTitle.value = `预览 · ${info.name}`;
+      previewRunCode.value = info.code;
+      chainName.value = previewRunTitle.value;
+      if (props.active && vueFlowRef.value?.clientWidth) {
+        viewportSettled = true;
+      }
+    });
   } else if (props.loadChainId != null) {
     // 工作台宿主：v-show 保活 mount 一次即加载；同链单例保证 loadChainId 不再变化
     void loadChainToEditor(props.loadChainId).finally(() => {
@@ -610,6 +679,15 @@ onMounted(() => {
 .databus-editor.is-embedded {
   height: 100%;
   grid-template-columns: var(--palette-w) minmax(0, 1fr);
+}
+
+/* 草稿预览链路：单节点不落库，物料区与右抽屉都不渲染，网格收成单列画布 */
+.databus-editor.is-preview {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.databus-editor.is-preview .databus-editor__canvas-wrap {
+  grid-column: 1;
 }
 
 /* 只读分享态宿主：物料区/右抽屉都不渲染，网格收成单列画布，画布占第一轨道 */

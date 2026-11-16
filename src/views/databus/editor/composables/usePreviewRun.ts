@@ -11,17 +11,30 @@ import type { ElNode, ElTreeModel } from './useElTreeModel';
 /**
  * 试运行（1C：生成 EL → 校验 → 真执行，不落库）。
  * 持有：入参弹窗/结果弹窗/步骤抽屉三态、必填即时拦截、结果步骤的标题推断。
- * 结果 banner / 上下文快照等纯展示派生由 PreviewResultDialog 内部计算。
+ * 结果 banner / 上下文快照等纯展示派生由 PreviewResultBody 内部计算。
  */
+export interface PreviewRunPayload {
+  result: PreviewRunVo;
+  /** 步骤标题快照（tag → 组件名），供结果 tab 脱离画布模型树独立渲染 */
+  titleByTag: Record<string, string>;
+  /** 本次实际发出的入参文本：结果页要回答「我给了它什么」，出参之外必须有入参 */
+  requestJson: string;
+}
+
 export interface PreviewRunStore {
   treeModel: ElTreeModel;
   inputParams: Ref<ChainInputParam[]>;
   ensureCanvasHasNodes: () => boolean;
   ensureDataSpacesValid: () => boolean;
+  /** 草稿预览链路：草稿行主键，随请求下发（后端临时注册、跑完摘除） */
+  draftComponentId?: Ref<number | string | null>;
+  /** 结果落点：工作台宿主交终端 + 结果 tab；不传则保留结果弹窗（独立编辑器窗口无终端） */
+  onResult?: (payload: PreviewRunPayload) => void;
 }
 
 export function usePreviewRun(store: PreviewRunStore) {
-  const { treeModel, inputParams, ensureCanvasHasNodes, ensureDataSpacesValid } = store;
+  const { treeModel, inputParams, ensureCanvasHasNodes, ensureDataSpacesValid, draftComponentId, onResult } =
+    store;
 
   const previewVisible = ref(false);
   const previewRunning = ref(false);
@@ -77,10 +90,23 @@ export function usePreviewRun(store: PreviewRunStore) {
       const { data } = await previewRunApi({
         jsonEl: cmpProperty,
         requestJson: previewRequest.value,
-        inputParams: inputParams.value
+        inputParams: inputParams.value,
+        draftComponentId: draftComponentId?.value ?? null
       });
-      previewResult.value = data;
       previewVisible.value = false;
+      if (!data) {
+        ElMessage.error('试运行接口无返回');
+        return;
+      }
+      if (onResult) {
+        onResult({
+          result: data,
+          titleByTag: snapshotStepTitles(),
+          requestJson: previewRequest.value
+        });
+        return;
+      }
+      previewResult.value = data;
       previewResultVisible.value = true;
     } finally {
       previewRunning.value = false;
@@ -136,6 +162,18 @@ export function usePreviewRun(store: PreviewRunStore) {
     const leaf = row.tag ? leafCfgByTag.value.get(row.tag) : undefined;
     const def = getDef(leaf?.code ?? row.nodeId ?? '');
     return def?.label ?? '';
+  }
+
+  /** 结果离画布时的标题快照：结果 tab 只认这次运行时的组件名 */
+  function snapshotStepTitles(): Record<string, string> {
+    const map: Record<string, string> = {};
+    leafCfgByTag.value.forEach((leaf, tag) => {
+      const label = getDef(leaf.code)?.label;
+      if (label) {
+        map[tag] = label;
+      }
+    });
+    return map;
   }
 
   return {

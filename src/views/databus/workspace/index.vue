@@ -54,8 +54,10 @@
       >
         <!-- 对话面板接管 body + input 区；会话身份只认 conversationId -->
         <AgentChatPanel
+          :draft-codes="draftComponentCodes"
           @agent-rolled-back="onAgentRolledBack"
           @ref-open="onAgentRefOpen"
+          @ref-preview="onAgentRefPreview"
         />
       </AiAssistantRail>
       <Splitter v-if="!aiCollapsed" v-model="aiWidth" :min="AI_MIN_WIDTH" />
@@ -115,7 +117,7 @@
         </WorkspaceWorkPanel>
 
         <!-- 底部终端：执行 / 编译双小 tab 同卡片（Trae terminal 范式），任一流有日志自动弹出 -->
-        <WorkbenchTerminal @view-record="onOpenExecutionRecord" />
+        <WorkbenchTerminal @view-record="onOpenExecutionRecord" @view-preview="onViewPreview" />
       </div>
 
       <!-- 栏 4：右抽屉统一资源树（六 section 组织链路/组件/目录/收藏/模板）。
@@ -394,7 +396,8 @@ function toggleFocus() {
   aiCollapsed.value = true;
   historyCollapsed.value = true;
   setDrawerCollapsed(true);
-  consoleOpen.value = false;
+  // 走终端统一的 close：连带复位两条流的 open，避免只关容器导致下次 append 不自动弹出
+  closeTerminal();
 }
 
 /* ---------------- 前端偏好（开合与宽度） ---------------- */
@@ -413,12 +416,18 @@ const drawerWidth = usePersisted('databus.drawer.width', 300);
 /** 当前激活画布上报的抽屉名片（无画布时为 null，属性/EL/大纲显示空态） */
 const activePort = useActiveDrawerPort();
 
-/* ---------------- 终端（执行/编译双流同卡片） ---------------- */
+/* ---------------- 终端（运行/构建双流同卡片） ---------------- */
 
 /** 底部终端整体开合：header 开关与终端共用同一个单例 ref（v-model:console-open） */
-const { open: consoleOpen, exec, comp } = useWorkspaceTerminal();
+const {
+  open: consoleOpen,
+  run,
+  comp,
+  switchTab: switchTerminalTab,
+  close: closeTerminal
+} = useWorkspaceTerminal();
 /** header 收起态角标：两条流错误数之和 */
-const consoleErrorCount = computed(() => exec.errorCount.value + comp.errorCount.value);
+const consoleErrorCount = computed(() => run.errorCount.value + comp.errorCount.value);
 /** 编译控制台诊断跳行目标（激活/切到对应组件编辑 tab，行内跳转由 ScriptTab 完成） */
 const { revealTarget } = useCompileConsole();
 
@@ -448,6 +457,14 @@ const activeCode = computed(() => {
 });
 /** 本会话有未保存草稿的组件编码 → 树上标橙点 */
 const dirtyCodes = computed(() => tabs.value.filter((t) => t.dirty && t.code).map((t) => t.code));
+
+/**
+ * 当前仍是 DRAFT 的组件编码：AI 资源卡的播放钮据此露出。
+ * 用台账现算而不是只认卡片上的 draft 字段——老消息落库时还没有该字段。
+ */
+const draftComponentCodes = computed(() =>
+  rows.value.filter((r) => r.db?.status === COMPONENT_STATUS.DRAFT).map((r) => r.code)
+);
 
 /** 启动期编译/注册失败的库存脚本件（资源树：叶子 E 码 + 树头警示条） */
 const unhealthy = computed(() => runtimeHealth.value.filter((h) => !h.healthy));
@@ -598,6 +615,8 @@ async function handleReviewAdopted(
 ) {
   wb.close(tab.key);
   delete refreshTokens[tab.key];
+  // 草稿转正后预览链路已无意义（编码进 FlowBus，后端会拒绝再次临时注册）
+  wb.closePreviewCanvas(payload.id);
   await getList();
   const row = rowByCode(payload.componentCode);
   if (row) {
@@ -612,6 +631,7 @@ async function handleReviewAdopted(
 async function handleReviewRejected(tab: WorkspaceTab, payload: { id: number; componentCode: string }) {
   wb.close(tab.key);
   delete refreshTokens[tab.key];
+  wb.closePreviewCanvas(payload.id);
   removeRecent(DATABUS_RESOURCE_TYPE_COMPONENT, payload.componentCode);
   await getList();
 }
@@ -972,6 +992,32 @@ async function openComponentRef(item: AgentRefItem) {
     return;
   }
   openDetail(row);
+}
+
+/**
+ * 草稿卡「▶ 试运行」：开一条纯内存单节点预览链路（不落库、不持久化）。
+ * 只有草稿行有该入口；这里再兜一层状态校验，避免旧消息/竞态把已生效组件当草稿跑。
+ */
+async function onAgentRefPreview(item: AgentRefItem) {
+  let row = item.code ? rowByCode(item.code) : undefined;
+  if (!row && item.code) {
+    await getList().catch(() => undefined);
+    row = rowByCode(item.code);
+  }
+  if (row?.db?.id == null) {
+    ElMessage.warning(`未找到组件「${item.name}」，暂无法试运行`);
+    return;
+  }
+  if (row.db.status !== COMPONENT_STATUS.DRAFT) {
+    ElMessage.warning('只有草稿组件支持预览链路');
+    return;
+  }
+  wb.openPreviewCanvas(row.db.id, row.name);
+}
+
+/** 终端试运行行「详情」：结果本体在内存运行流里，按 runId 开结果 tab（不弹窗） */
+function onViewPreview(runId: number, title?: string) {
+  wb.openPreviewResult(runId, title || '试运行结果');
 }
 
 // 台账刷新后剔除已不存在的「最近访问」自建组件项（链路项由资源树按链路表过滤）
@@ -1483,17 +1529,18 @@ async function handleDeleteChain(node: ResourceTreeNode) {
   void reloadTree();
 }
 
-/** 执行完成：成败概要写入执行终端（自动弹出），行尾自带「查看记录」跳转入口 */
+/** 执行完成：成败概要写入运行终端（自动弹出），行尾自带「详情 ↗」跳执行记录 */
 function onExecuted(result: DatabusExecutionResult) {
   const ctx = executeCtx.value;
-  exec.append({
+  run.appendChain({
     level: result.success ? 'success' : 'error',
-    chainId: result.chainId ?? ctx?.chainId,
-    chainCode: ctx?.chainCode ?? String(ctx?.chainId ?? ''),
+    code: ctx?.chainCode ?? String(ctx?.chainId ?? result.chainId ?? ''),
     text: result.message ?? '',
-    costTime: result.costTime,
+    costMs: result.costTime,
     recordId: result.recordId ?? null
   });
+  // 显式切「运行」：容器此前若被收起过（open 残留 true）watch 不会触发
+  switchTerminalTab('run');
   executeCtx.value = null;
 }
 

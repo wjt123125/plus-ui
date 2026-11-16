@@ -3,6 +3,8 @@
  * （org.dromara.databus.domain.vo.ComponentOptionsVo / ComponentOptionVo / PropSchema）。
  */
 
+import type { ChainInputParam } from '@/api/databus/chain/types';
+
 /** 控件类型（后端反射阶段已解析，不含 AUTO） */
 export type WidgetKind =
   | 'TEXT'
@@ -205,6 +207,11 @@ export interface DatabusComponentVo {
   paramSchema?: string | null;
   /** 配置 JSON 示例【契约缓存】 */
   dataExample?: string | null;
+  /**
+   * 试运行入参登记表（AI 落草稿时登记；预览链路据此预填入参，真实执行不注入默认值）。
+   * 仅草稿预览链路会用到，已生效组件留空即可。
+   */
+  inputParams?: ChainInputParam[] | null;
   /** 输入 Schema（预留，连线校验用）【契约缓存】 */
   inputSchema?: string | null;
   /** 输出 Schema（预留，连线校验用）【契约缓存】 */
@@ -271,7 +278,7 @@ export interface ScriptSaveBo {
 
 /** 回滚入参（POST /databus/component/script/rollback） */
 export interface ScriptRollbackBo {
-  id: number;
+  id: number | string;
   versionNo: number;
 }
 
@@ -316,30 +323,6 @@ export interface ScriptRuntime {
 }
 
 // ------------------------------------------------------------------
-// 草稿审阅（AI 落下的 DRAFT 行：源码 / 编译产物 / 试跑 → 人点采纳或拒绝）
+// 草稿审阅（AI 落下的 DRAFT 行：源码 / 编译产物 → 人点采纳或拒绝）
+// 试运行不在这里：会话卡片「▶」开画布预览链路，走 /databus/editor/preview-run
 // ------------------------------------------------------------------
-
-/** 审阅页探针试跑入参（POST /databus/component/script/probe） */
-export interface ScriptProbeBo {
-  /** 完整 Java 类源码（审阅页直接用草稿正文） */
-  scriptBody: string;
-  /** 上下文根 $ 的 JSON 字符串；不传＝空上下文 */
-  requestData?: string;
-}
-
-/** 探针试跑结果（编译失败同样 200 返回，success=false 带行列诊断） */
-export interface ScriptProbeResult {
-  success: boolean;
-  costMs?: number | null;
-  /** 失败总述（成功为空） */
-  message?: string | null;
-  /** 执行结束后上下文 JSON 快照 */
-  output?: string | null;
-  nodeType?: NodeTypeKind | null;
-  /** 节点级错误（探针单节点，最多一条） */
-  nodeErrors?: string[] | null;
-  /** 危险 API 命中提示 */
-  risks?: string[] | null;
-  /** 编译诊断（编不过时有值） */
-  diagnostics?: ScriptDiagnostic[] | null;
-}

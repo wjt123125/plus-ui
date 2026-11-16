@@ -264,8 +264,27 @@ export const CMP_DEFS: CmpDef[] = [...STRUCTURE_DEFS];
 const STRUCTURE_TYPES = new Set(STRUCTURE_DEFS.map((d) => d.type));
 const DEF_MAP = new Map(STRUCTURE_DEFS.map((d) => [d.type, d]));
 
+/**
+ * 瞬态组件（草稿预览链路用）：草稿没进 /options，但画布要按真物料渲染并出 cfg 表单。
+ * 独立于 DEF_MAP：物料刷新不会冲掉，也不进 CMP_DEFS（物料区不出现草稿）。
+ */
+const TRANSIENT_DEFS = new Map<string, CmpDef>();
+
 export function getDef(type: string): CmpDef | undefined {
-  return DEF_MAP.get(type);
+  return DEF_MAP.get(type) ?? TRANSIENT_DEFS.get(type);
+}
+
+/** 登记一个瞬态组件（草稿预览用）；同 code 覆盖，预览 tab 关闭时清掉 */
+export function setTransientDef(opt: ComponentOption): void {
+  TRANSIENT_DEFS.set(opt.code, toCmpDef(opt, new Set([...knownGroupKeys(), opt.group ?? ''])));
+  materialTick.value++;
+}
+
+/** 摘掉瞬态组件；物料区正常件不受影响 */
+export function clearTransientDef(code: string): void {
+  if (TRANSIENT_DEFS.delete(code)) {
+    materialTick.value++;
+  }
 }
 
 /**

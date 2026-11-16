@@ -8,8 +8,6 @@ import type {
   DatabusComponentForm,
   DatabusComponentQuery,
   DatabusComponentVo,
-  ScriptProbeBo,
-  ScriptProbeResult,
   ScriptRollbackBo,
   ScriptSaveBo,
   ScriptSaveResult,
@@ -205,14 +203,3 @@ export function rejectScriptDraft(id: number | string): AxiosPromise<boolean> {
   });
 }
 
-/**
- * 探针试跑（临时节点即注即摘，不落库、不写执行记录）。
- * POST /databus/component/script/probe（权限 databus:component:edit）
- */
-export function probeScript(data: ScriptProbeBo): AxiosPromise<ScriptProbeResult> {
-  return request({
-    url: '/databus/component/script/probe',
-    method: 'post',
-    data
-  });
-}

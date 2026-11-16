@@ -1,25 +1,31 @@
 <!--
-  工作区底部终端（执行 / 编译双小 tab，Trae terminal 范式）：
+  工作区底部终端（运行 / 构建双小 tab，Trae terminal 范式）：
   与两侧 console 的独立卡片不同，这里把两种流收进同一卡片，头部小 tab 切换展示哪一条。
-  两条 console（ExecuteConsole / CompileConsole）以 bare 模式渲染日志体，头部（tab 条 + 清空/收起）
+  「运行」内含链路执行与组件试跑两类行（按 source 分派），不再单独占一个 tab。
+  两条 console（RunConsole / CompileConsole）以 bare 模式渲染日志体，头部（tab 条 + 清空/收起）
   由本容器统一提供；自动弹出仍由各自 append 驱动（见 useWorkspaceTerminal）。
 -->
 <template>
   <section v-if="open" class="ws-term" aria-label="终端">
     <header class="ws-term__head">
-      <!-- 终端小页签：统一走 DbSeg（带滑动滑块）；角标内容仍由本页样式渲染 -->
-      <DbSeg
-        class="ws-term__tabs"
-        item-class="ws-term__tab"
-        :options="termOptions"
-        :model-value="tab"
-        @change="onTabChange"
-      >
-        <template #item="{ option }">
+      <!-- 终端小页签：终端专属文字 tab（无胶囊轨道/滑块），激活靠字重+短下划线，与下方等宽日志同一套表达 -->
+      <nav ref="tabsRef" class="ws-term__tabs" role="tablist" aria-label="终端流">
+        <!-- 共享下划线：按激活段几何测量后平移，切段时滑过去而不是各段自己亮一下 -->
+        <span class="ws-term__ink" :class="{ 'is-ready': inkReady }" :style="inkStyle" aria-hidden="true" />
+        <button
+          v-for="option in termOptions"
+          :key="option.value"
+          type="button"
+          role="tab"
+          class="ws-term__tab"
+          :class="{ 'is-active': tab === option.value }"
+          :aria-selected="tab === option.value"
+          @click="onTabChange(option.value)"
+        >
           {{ option.label }}
           <i v-if="option.badge" class="ws-term__badge">{{ option.badge }}</i>
-        </template>
-      </DbSeg>
+        </button>
+      </nav>
       <span class="ws-term__spacer" />
       <el-tooltip content="清空" placement="top" :show-after="300">
         <button type="button" class="ws-term__btn" @click="clearActive">
@@ -34,41 +40,91 @@
     </header>
 
     <div class="ws-term__body">
-      <ExecuteConsole v-show="tab === 'execute'" bare @view-record="onViewRecord" />
+      <RunConsole v-show="tab === 'run'" @view-record="onViewRecord" @view-preview="onViewPreview" />
       <CompileConsole v-show="tab === 'compile'" bare />
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
-import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
-import ExecuteConsole from '@/views/databus/workbench/components/ExecuteConsole.vue';
+import RunConsole from '@/views/databus/workbench/components/RunConsole.vue';
 import CompileConsole from '@/views/databus/workbench/components/CompileConsole.vue';
 import { useWorkspaceTerminal } from '../composables/useWorkspaceTerminal';
 
 defineOptions({ name: 'WorkbenchTerminal' });
 
-/** 执行日志行「查看记录」上抛宿主：由工作台开 execution-record tab */
+/** 运行日志行「详情 ↗」上抛宿主：由工作台开 execution-record tab */
 const emit = defineEmits<{
   (e: 'view-record', recordId: number | string, title?: string): void;
+  (e: 'view-preview', runId: number, title?: string): void;
 }>();
 
-const { open, tab, exec, comp, switchTab, close, clearActive } = useWorkspaceTerminal();
+const { open, tab, run, comp, switchTab, close, clearActive } = useWorkspaceTerminal();
 
 /** 段选项：错误角标并进选项，切段时滑块与角标一起跟手 */
 const termOptions = computed(() => [
-  { label: '执行', value: 'execute', badge: exec.errorCount.value || '' },
-  { label: '编译', value: 'compile', badge: comp.errorCount.value || '' }
+  { label: '运行', value: 'run', badge: run.errorCount.value || '' },
+  { label: '构建', value: 'compile', badge: comp.errorCount.value || '' }
 ]);
 
+/* 下划线滑块：段宽由文案决定，位移只能量不能算，量法与 DbSeg 一致 */
+const tabsRef = ref<HTMLElement>();
+const inkReady = ref(false);
+const ink = reactive({ x: 0, w: 0 });
+
+const inkStyle = computed(() => ({
+  width: `${ink.w}px`,
+  transform: `translate3d(${ink.x}px, 0, 0)`
+}));
+
+function measureInk() {
+  const active = tabsRef.value?.querySelector<HTMLElement>('.ws-term__tab.is-active');
+  if (!active) {
+    return;
+  }
+  // 两端各内缩 2px，和下划线不长到文字外沿的观感一致
+  ink.x = active.offsetLeft + 2;
+  ink.w = Math.max(active.offsetWidth - 4, 8);
+  if (!inkReady.value) {
+    requestAnimationFrame(() => {
+      inkReady.value = true;
+    });
+  }
+}
+
+watch(
+  () => [tab.value, termOptions.value.map((o) => `${o.label}${o.badge ?? ''}`).join('|')],
+  () => nextTick(measureInk)
+);
+
+let inkObserver: ResizeObserver | undefined;
+
+onMounted(() => {
+  void nextTick(measureInk);
+  if (typeof ResizeObserver !== 'undefined' && tabsRef.value) {
+    inkObserver = new ResizeObserver(() => measureInk());
+    inkObserver.observe(tabsRef.value);
+  }
+  // 字体迟到会改变段宽（首次测量可能落在字体 swap 之前）
+  void document.fonts?.ready.then(() => measureInk());
+});
+
+onBeforeUnmount(() => {
+  inkObserver?.disconnect();
+});
+
 function onTabChange(value: string | number) {
-  switchTab(value === 'compile' ? 'compile' : 'execute');
+  switchTab(value === 'compile' ? 'compile' : 'run');
 }
 
 function onViewRecord(recordId: number | string, title?: string) {
   emit('view-record', recordId, title);
+}
+
+function onViewPreview(runId: number, title?: string) {
+  emit('view-preview', runId, title);
 }
 
 useLucideSubset();
@@ -96,18 +152,70 @@ useLucideSubset();
   height: 30px;
   padding: 0 6px 0 8px;
 }
-/* 终端小页签：胶囊轨道/项走全局 .db-seg / .db-seg__item（databus-tabs） */
+/* 终端小页签：终端专属文字 tab，起点与日志缩进对齐；下划线由共享滑块承担 */
+.ws-term__tabs {
+  position: relative;
+  display: flex;
+  align-self: stretch;
+  align-items: stretch;
+  gap: 16px;
+}
+
+/* 主题色下划线滑块：从激活段量出位移，切段时 0.22s 滑过去 */
+.ws-term__ink {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  z-index: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--app-accent-strong, var(--el-color-primary));
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform;
+
+  /* 首帧直接落位，避免从左侧 0 位置滑入的假动画 */
+  &.is-ready {
+    opacity: 1;
+    transition:
+      transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+      width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+.ws-term__tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  /* 字重恒定：切换时文字不重新排版，滑块宽度才稳 */
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  transition: color 0.15s ease;
+
+  &:hover {
+    color: var(--el-text-color-primary);
+  }
+
+  &.is-active {
+    color: var(--el-text-color-primary);
+  }
+}
+
+/* 错误角标：上标式纯红数字，不占背景块，避免和文字抢注意力 */
 .ws-term__badge {
-  min-width: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--el-color-danger-light-9, #fef0f0);
-  color: var(--el-color-danger, #f56c6c);
-  font-size: 11px;
+  font-size: 10px;
   font-style: normal;
   font-weight: 600;
-  line-height: 15px;
-  text-align: center;
+  line-height: 1;
+  color: var(--el-color-danger, #f56c6c);
+  transform: translateY(-5px);
 }
 .ws-term__spacer {
   flex: 1;
