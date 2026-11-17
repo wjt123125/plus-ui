@@ -608,6 +608,41 @@ async function handleRolled(tab: WorkspaceTab, result: ScriptSaveResult) {
   }
 }
 
+/**
+ * 草稿归属会话：component:draft:saved 事件带出 conversationId，采纳成功后据此续跑。
+ * 内存即可——刷新后丢失只意味着不自动续跑，不影响任何数据。
+ */
+const agentDraftConversations = new Map<string, string>();
+
+/**
+ * 采纳成功后自动续跑（施工单 §3.3）：
+ * 把「已采纳」告诉落草稿的那个会话，助手下一轮就能直接引用组件写链路。
+ * 历史草稿（无归属）不触发；会话不活跃或正忙时只留提示，绝不抢跑/擅自切会话。
+ */
+function continueAfterDraftAdopted(payload: {
+  id: number | string;
+  componentCode: string;
+  componentName: string;
+  version?: number;
+}) {
+  const draftId = String(payload.id);
+  const ownerConversationId = agentDraftConversations.get(draftId);
+  if (!ownerConversationId) {
+    return;
+  }
+  agentDraftConversations.delete(draftId);
+  const text = `【系统】组件「${payload.componentName}」（${payload.componentCode}）已在审阅页采纳，版本 ${payload.version ?? '当前版本'}。请继续：用组件引用写链路草稿、选好 connectionId，然后试跑。`;
+  if (ownerConversationId !== conversationId.value) {
+    appendSystem(text, undefined, ownerConversationId);
+    return;
+  }
+  if (agentRunning.value) {
+    appendSystem(`组件「${payload.componentName}」已采纳；本轮结束后再让助手继续。`, undefined, ownerConversationId);
+    return;
+  }
+  void send(text);
+}
+
 /** 草稿采纳成功：关审阅 tab、刷台账/树，再开该组件详情 tab 看生效结果（Pane 已提示成功） */
 async function handleReviewAdopted(
   tab: WorkspaceTab,
@@ -624,11 +659,34 @@ async function handleReviewAdopted(
     wb.openDetail({ code: payload.componentCode, name: payload.componentName });
     touchRecent({ type: DATABUS_RESOURCE_TYPE_COMPONENT, refId: payload.componentCode, title: payload.componentName });
   }
+  // 生效结果落定后再续跑：助手拿到的是「已启用」事实，不会引用到草稿
+  continueAfterDraftAdopted(payload);
+}
+
+/**
+ * 草稿被拒后回灌：告知落草稿的会话「草稿已销毁」，避免助手继续等采纳或引用不存在的组件。
+ * 与采纳续跑对称：历史草稿（无归属）不回灌；会话不活跃或正忙时只留提示。
+ */
+function continueAfterDraftRejected(payload: { id: number | string; componentCode: string }) {
+  const draftId = String(payload.id);
+  const ownerConversationId = agentDraftConversations.get(draftId);
+  if (!ownerConversationId) {
+    return;
+  }
+  agentDraftConversations.delete(draftId);
+  const text = `【系统】组件草稿「${payload.componentCode}」已在审阅页被拒绝并销毁，未生效、链路里不能引用。请先问用户：改源码重做，还是换现成组件。`;
+  if (ownerConversationId !== conversationId.value || agentRunning.value) {
+    appendSystem(text, undefined, ownerConversationId);
+    return;
+  }
+  void send(text);
 }
 
 /** 草稿拒绝成功：草稿行已物理删除，关 tab、清最近访问并刷台账/树（Pane 已提示成功） */
 async function handleReviewRejected(tab: WorkspaceTab, payload: { id: number | string; componentCode: string }) {
   wb.close(tab.key);
+  // 拒绝即草稿销毁：归属映射由回灌函数消费，避免 Map 随会话增长
+  continueAfterDraftRejected(payload);
   wb.closePreviewCanvas(payload.id);
   removeRecent(DATABUS_RESOURCE_TYPE_COMPONENT, payload.componentCode);
   await getList();
@@ -1066,6 +1124,7 @@ const {
   createSession,
   switchSession,
   appendSystem,
+  send,
   refreshSessions,
   searchSessions,
   renameSession,
@@ -1120,6 +1179,10 @@ useAgentPush((payload) => {
   if (code === AGENT_EVENT.COMPONENT_DRAFT_SAVED) {
     void getList();
     if (evt?.componentId != null) {
+      // 记下是哪个会话落下的草稿：采纳成功后只对它的主人自动续跑，历史草稿不触发
+      if (evt.conversationId) {
+        agentDraftConversations.set(String(evt.componentId), evt.conversationId);
+      }
       const key = wb.openComponentReview(
         evt.componentId,
         evt.componentName || evt.componentCode || '脚本草稿'
