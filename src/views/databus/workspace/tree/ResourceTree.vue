@@ -323,18 +323,27 @@ void reload();
 const chainMap = computed(() => new Map(chains.value.map((c) => [String(c.id), c])));
 const rowByCode = computed(() => new Map(props.rows.map((r) => [r.code, r])));
 const userStore = useUserStore();
-/** 当前用户 id（数值化对齐 db.createBy；未登录态为 null → 自建件区为空） */
-const myUserId = computed(() => {
-  const id = Number(userStore.userId);
-  return Number.isFinite(id) && id > 0 ? id : null;
+/**
+ * 当前用户 id（未登录态为 null → 自建件区为空）。
+ * 一律以字符串保存：用户主键是雪花 ID，后端 BigNumberSerializer 会把超 JS 安全整数的
+ * Long 序列化成字符串，若这里数值化再与 db.createBy 严格比较会永远不相等。
+ */
+const myUserId = computed<string | null>(() => {
+  const id = userStore.userId;
+  return id == null || id === '' ? null : String(id);
 });
+
+/** 归属判定：db.createBy 可能是 number 也可能是雪花字符串，归一化后比较 */
+function isMine(createBy?: number | string | null): boolean {
+  return myUserId.value != null && createBy != null && String(createBy) === myUserId.value;
+}
 /** 超级管理员不参与按人隔离（对齐后端 isSuperAdmin 豁免口径，admin 树全量） */
 const isSuperAdmin = computed(() => userStore.roles.includes('superadmin'));
 /** 自建组件按人隔离：只显示我创建的台账行（目录/链路过滤在后端，此处是组件侧客户端过滤） */
 const selfBuiltRows = computed(() =>
   isSuperAdmin.value
     ? props.rows.filter((r) => r.db != null)
-    : props.rows.filter((r) => r.db != null && r.db.createBy === myUserId.value)
+    : props.rows.filter((r) => r.db != null && isMine(r.db.createBy))
 );
 const systemRows = computed(() => props.rows.filter((r) => r.source === OWNER_TYPE.SYSTEM));
 const dirtySet = computed(() => new Set(props.dirtyCodes ?? []));
@@ -482,7 +491,7 @@ function marketLeaf(it: DatabusMarketInstallVo): ResourceTreeNode | null {
   }
   const row = it.componentCode ? rowByCode.value.get(it.componentCode) : undefined;
   // 自己装自己：本体叶已在我的自建区（可挪动归属），引用叶多余跳过（超管豁免同口径）
-  if (row?.db != null && !isSuperAdmin.value && row.db.createBy === myUserId.value) {
+  if (row?.db != null && !isSuperAdmin.value && isMine(row.db.createBy)) {
     return null;
   }
   return {

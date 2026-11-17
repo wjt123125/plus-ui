@@ -11,7 +11,7 @@
  *   / connector-pkg:{type}:{version}（连接器包查看，同 type+version 单例，2026-10-29 「看包」弹窗 tab 化）
  * 会话落 localStorage：刷新恢复上次打开的 tab（无历史=空白工作台）；重复打开只聚焦。
  */
-import { watch } from 'vue';
+import { reactive, watch } from 'vue';
 import modal from '@/plugins/modal';
 import { usePersisted } from '@/views/databus/workbench/composables/usePersisted';
 import { useWorkbenchTabs } from '@/views/databus/workbench/composables/useWorkbenchTabs';
@@ -89,6 +89,47 @@ export function executionRecordKey(id: number | string): string {
 
 export function useWorkspaceTabs() {
   const wb = useWorkbenchTabs<WorkspaceTab>();
+
+  /* ---- 统一刷新令牌：tab key → 自增计数，pane 侧 watch 到变化即重新取数 ----
+   * 只放内存，**不挂到 tab 对象上**：tab 整体落 localStorage，挂上去会让每次刷新都写盘并污染恢复数据。
+   * 令牌只在 tab 已存在时自增（不存在时 no-op），关闭时清理，避免 key 复用残留旧令牌。 */
+  const refreshTokens = reactive<Record<string, number>>({});
+
+  /** 让指定 tab 重新取数；tab 不存在返回 false（调用方无需先判断是否已打开） */
+  function refresh(key: string): boolean {
+    if (!wb.tabs.value.some((t) => t.key === key)) {
+      return false;
+    }
+    refreshTokens[key] = (refreshTokens[key] ?? 0) + 1;
+    return true;
+  }
+
+  /** 批量刷新某类 tab（可再按 tab 过滤），返回实际刷新条数 */
+  function refreshByKind(kind: WorkspaceTab['kind'], match?: (t: WorkspaceTab) => boolean): number {
+    let count = 0;
+    for (const t of wb.tabs.value) {
+      if (t.kind === kind && (!match || match(t)) && refresh(t.key)) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  /** 关闭 tab 并清理其令牌 */
+  function close(key: string): void {
+    delete refreshTokens[key];
+    wb.close(key);
+  }
+
+  /** 批量关 tab 后清理孤儿令牌（closeKeys / closeByCode 直接改 tabs 数组，绕过了 close） */
+  function pruneTokens(): void {
+    const alive = new Set(wb.tabs.value.map((t) => t.key));
+    Object.keys(refreshTokens).forEach((key) => {
+      if (!alive.has(key)) {
+        delete refreshTokens[key];
+      }
+    });
+  }
 
   /* ---- 会话持久化：刷新恢复上次打开的 tab；手动清空后刷新=空白工作台 ---- */
 
@@ -493,6 +534,7 @@ export function useWorkspaceTabs() {
     if (!remain.some((t) => t.key === wb.activeKey.value)) {
       wb.activeKey.value = remain[remain.length - 1]?.key ?? '';
     }
+    pruneTokens();
   }
 
   /**
@@ -516,6 +558,7 @@ export function useWorkspaceTabs() {
     }
     const remain = wb.tabs.value.filter((t) => !target.has(t.key));
     wb.tabs.value = remain;
+    pruneTokens();
     if (target.has(wb.activeKey.value)) {
       wb.activeKey.value = remain.some((t) => t.key === focusKey)
         ? focusKey
@@ -582,6 +625,11 @@ export function useWorkspaceTabs() {
 
   return {
     ...wb,
+    refreshTokens,
+    refresh,
+    refreshByKind,
+    close,
+    pruneTokens,
     openCanvas,
     openPreviewCanvas,
     closePreviewCanvas,

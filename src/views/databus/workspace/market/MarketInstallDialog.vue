@@ -102,6 +102,7 @@ import { MARKET_RESOURCE_TYPE } from '@/constants/databus';
 import { DATABUS_DIRECTORY_ROOT_ID } from '@/constants/databus-common';
 import modal from '@/plugins/modal';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
+import { itemIcon as itemIconOf } from './marketDisplay';
 
 defineOptions({ name: 'MarketInstallDialog' });
 
@@ -141,9 +142,7 @@ const installTip = computed(() => {
     : '按所选目录挂到你的资源树。';
 });
 
-const itemIcon = computed(() =>
-  props.item?.resourceType === MARKET_RESOURCE_TYPE.CHAIN ? 'lucide:spline' : props.item?.icon || 'lucide:box'
-);
+const itemIcon = computed(() => (props.item ? itemIconOf(props.item) : 'lucide:box'));
 
 interface DirOption {
   value: string | number;

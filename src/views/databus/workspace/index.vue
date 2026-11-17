@@ -167,7 +167,7 @@
 </template>
 
 <script setup name="DatabusWorkspace" lang="ts">
-import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/store/modules/user';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -176,6 +176,7 @@ import {
   listComponent,
   listComponentOptions,
   listScriptRuntime,
+  rejectScriptDraft,
   toggleComponent
 } from '@/api/databus/component';
 import type { ComponentOption, ScriptRuntime, ScriptSaveResult } from '@/api/databus/component/types';
@@ -254,7 +255,7 @@ const { loading, withLoading } = useLoading(true);
 const togglingCode = ref<string>();
 
 const wb = useWorkspaceTabs();
-const { tabs, activeKey } = wb;
+const { tabs, activeKey, refreshTokens, refresh, refreshByKind } = wb;
 
 /** 设置入口（§7 改造点3）：壳内开设置 tab（全局单例），不再跳 RuoYi 后台 */
 const router = useRouter();
@@ -431,8 +432,7 @@ const consoleErrorCount = computed(() => run.errorCount.value + comp.errorCount.
 /** 编译控制台诊断跳行目标（激活/切到对应组件编辑 tab，行内跳转由 ScriptTab 完成） */
 const { revealTarget } = useCompileConsole();
 
-/** tab key → 重载令牌：回滚后自增，让同组件的编辑面板重取脚本体 */
-const refreshTokens = reactive<Record<string, number>>({});
+/* tab 重载令牌由 useWorkspaceTabs 持有（wb.refresh 自增、close 时清理），此处只消费 */
 
 /* ---------------- tab 派生态 ---------------- */
 
@@ -603,7 +603,7 @@ async function handleRolled(tab: WorkspaceTab, result: ScriptSaveResult) {
   }
   for (const t of tabs.value) {
     if (t.code === tab.code && t.kind === 'form') {
-      refreshTokens[t.key] = (refreshTokens[t.key] ?? 0) + 1;
+      refresh(t.key);
     }
   }
 }
@@ -614,7 +614,6 @@ async function handleReviewAdopted(
   payload: { id: number | string; componentCode: string; componentName: string; version?: number }
 ) {
   wb.close(tab.key);
-  delete refreshTokens[tab.key];
   // 草稿转正后预览链路已无意义（编码进 FlowBus，后端会拒绝再次临时注册）
   wb.closePreviewCanvas(payload.id);
   await getList();
@@ -628,9 +627,8 @@ async function handleReviewAdopted(
 }
 
 /** 草稿拒绝成功：草稿行已物理删除，关 tab、清最近访问并刷台账/树（Pane 已提示成功） */
-async function handleReviewRejected(tab: WorkspaceTab, payload: { id: number; componentCode: string }) {
+async function handleReviewRejected(tab: WorkspaceTab, payload: { id: number | string; componentCode: string }) {
   wb.close(tab.key);
-  delete refreshTokens[tab.key];
   wb.closePreviewCanvas(payload.id);
   removeRecent(DATABUS_RESOURCE_TYPE_COMPONENT, payload.componentCode);
   await getList();
@@ -640,12 +638,20 @@ async function handleDelete(row: ComponentRegistryRow) {
   if (row.db?.id == null) {
     return;
   }
-  await modal.confirm(`是否确认删除自定义组件"${row.name}"（${row.code}）？删除后不可恢复。`);
-  await delComponent(row.db.id);
+  // 草稿走拒绝端点（物理删行 + 清宿主残留），语义与通用删除不同：草稿从未生效、无链路引用
+  const isDraft = row.db.status === COMPONENT_STATUS.DRAFT;
+  await modal.confirm(
+    isDraft
+      ? `是否确认删除草稿"${row.name}"（${row.code}）？草稿从未生效，删除后不可恢复。`
+      : `是否确认删除自定义组件"${row.name}"（${row.code}）？删除后不可恢复。`
+  );
+  if (isDraft) {
+    await rejectScriptDraft(row.db.id);
+  } else {
+    await delComponent(row.db.id);
+  }
   modal.msgSuccess('删除成功');
-  const staleKeys = tabs.value.filter((t) => t.code === row.code).map((t) => t.key);
   wb.closeByCode(row.code);
-  staleKeys.forEach((key) => delete refreshTokens[key]);
   removeRecent(DATABUS_RESOURCE_TYPE_COMPONENT, row.code);
   await getList();
 }
@@ -737,11 +743,8 @@ function onConnectorPackageOpen(type: string, version: string, source?: string) 
  * 审核减号、连接器启停、安装态都靠这个令牌广播（workbench-unification.md §2.1 连带红线）。
  */
 function bumpMarketTokens() {
-  tabs.value
-    .filter((t) => t.kind === 'market' || t.kind === 'market-manage')
-    .forEach((t) => {
-      refreshTokens[t.key] = (refreshTokens[t.key] ?? 0) + 1;
-    });
+  refreshByKind('market');
+  refreshByKind('market-manage');
 }
 
 /**
@@ -843,10 +846,7 @@ function onOpenConnection(id: number | 'new', title: string) {
  * 编辑时把标题改成最新连接名。
  */
 function onConnectionSaved(tab: WorkspaceTab, payload: ConnectionSaved) {
-  const listTab = tabs.value.find((t) => t.kind === 'connection-list');
-  if (listTab) {
-    refreshTokens[listTab.key] = (refreshTokens[listTab.key] ?? 0) + 1;
-  }
+  refreshByKind('connection-list');
   if (payload.isNew) {
     wb.close(tab.key);
   } else {
@@ -877,10 +877,7 @@ async function onCreateSaved(payload: CreateSavedPayload) {
       await reloadTree();
       break;
     case DATABUS_RESOURCE_TYPE_CONNECTION: {
-      const listTab = tabs.value.find((t) => t.kind === 'connection-list');
-      if (listTab) {
-        refreshTokens[listTab.key] = (refreshTokens[listTab.key] ?? 0) + 1;
-      }
+      refreshByKind('connection-list');
       break;
     }
   }
@@ -899,12 +896,12 @@ function onCreateFiletype(tab: WorkspaceTab, filetype: CreateFileType) {
  */
 function onOpenExecutionRecord(recordId: number | string, title?: string) {
   wb.openExecutionRecord(recordId, title);
-  refreshTokens[EXECUTION_LIST_KEY] = (refreshTokens[EXECUTION_LIST_KEY] ?? 0) + 1;
+  refresh(EXECUTION_LIST_KEY);
 }
 
 /** 记录 tab 内重跑完成：列表 tab 若已打开则刷新（未打开时下次打开自会取数） */
 function onExecutionRefresh() {
-  refreshTokens[EXECUTION_LIST_KEY] = (refreshTokens[EXECUTION_LIST_KEY] ?? 0) + 1;
+  refresh(EXECUTION_LIST_KEY);
 }
 
 /** AI 助手选中某组件（v1 空壳预留）：等价于在树上点该叶子 */
@@ -1123,7 +1120,12 @@ useAgentPush((payload) => {
   if (code === AGENT_EVENT.COMPONENT_DRAFT_SAVED) {
     void getList();
     if (evt?.componentId != null) {
-      wb.openComponentReview(evt.componentId, evt.componentName || evt.componentCode || '脚本草稿');
+      const key = wb.openComponentReview(
+        evt.componentId,
+        evt.componentName || evt.componentCode || '脚本草稿'
+      );
+      // 同 id 草稿被重写时审阅 tab 是「已开只是聚焦」，必须显式刷新才能看到新源码/编译产物
+      wb.refresh(key);
     }
     return;
   }

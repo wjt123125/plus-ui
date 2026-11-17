@@ -227,6 +227,8 @@ import type {
 import { MARKET_RESOURCE_TYPE, MARKET_STATUS } from '@/constants/databus';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import { useMarketData } from './useMarketData';
+import { itemIcon as itemIconOf, resourceTypeMeta } from './marketDisplay';
+import { usePaneRefresh } from '../composables/usePaneRefresh';
 
 defineOptions({ name: 'MarketReviewTab' });
 
@@ -235,6 +237,8 @@ useLucideSubset();
 const props = defineProps<{
   /** 受审物料主键（tab 持久化的字符串，防雪花 id 精度丢失） */
   itemId: string;
+  /** 宿主刷新令牌：他处审核/依赖状态变化后自增 */
+  refreshToken?: number;
 }>();
 
 const emit = defineEmits<{
@@ -274,6 +278,15 @@ onMounted(async () => {
   }
 });
 
+// 令牌刷新：静默重拉审核详情（不显示整页 loading，依赖状态树就地更新）
+usePaneRefresh(props, async () => {
+  try {
+    await reloadDetail();
+  } catch {
+    // 拦截器已提示；保留现有内容，避免刷新把已展示的详情打成空态
+  }
+}, { immediate: false });
+
 /* ---------------- 禁自审（decisions §七-7.1，与待审核列表行同口径） ---------------- */
 const userStore = useUserStore();
 const currentUserId = computed(() => userStore.userId);
@@ -281,22 +294,9 @@ const isSelf = computed(() => detail.value?.item?.ownerId === currentUserId.valu
 
 /* ---------------- 展示辅助（自弹窗原样迁移） ---------------- */
 
-const itemIcon = computed(() => {
-  const it = detail.value?.item;
-  if (!it) {
-    return 'lucide:box';
-  }
-  return it.resourceType === MARKET_RESOURCE_TYPE.CHAIN ? 'lucide:spline' : it.icon || 'lucide:box';
-});
+const itemIcon = computed(() => (detail.value?.item ? itemIconOf(detail.value.item) : 'lucide:box'));
 
-const typeLabel = computed(() => {
-  const t = detail.value?.item?.resourceType;
-  return t === MARKET_RESOURCE_TYPE.CHAIN
-    ? '链路'
-    : t === MARKET_RESOURCE_TYPE.CONNECTOR
-      ? '连接器'
-      : '组件';
-});
+const typeLabel = computed(() => resourceTypeMeta(detail.value?.item?.resourceType).label);
 
 /* ---------------- 连接器审核「看得见」（§2.3）：查看包 ---------------- */
 

@@ -115,7 +115,7 @@
           v-model:page="recordQuery.pageNum"
           v-model:limit="recordQuery.pageSize"
           :total="recordTotal"
-          @pagination="getRecordList"
+          @pagination="getRecordList()"
         />
       </div>
     </div>
@@ -141,10 +141,17 @@ import { useLoading } from '@/hooks/async/useLoading';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
 import { ALERT_DISPATCH_STATUS, ALERT_NOTIFY_STATUS, ALERT_STATUS } from '@/constants/databus';
+import { usePaneRefresh } from '../composables/usePaneRefresh';
 
 /**
  * 告警记录 pane：只读历史告警列表（分页/筛选）+ 手动评估。
  */
+
+const props = withDefaults(defineProps<{ active?: boolean; refreshToken?: number; pollMs?: number }>(), {
+  active: true,
+  /** 自动轮询间隔（毫秒），0 关闭；宿主可覆盖 */
+  pollMs: 30000
+});
 
 /* 行图标走离线 lucide 子集，否则内网环境图标空白（详见 useLucideSubset 注释） */
 useLucideSubset();
@@ -173,12 +180,18 @@ const recordQuery = ref<DatabusAlertRecordQuery>({
   endTime: undefined
 });
 
-const getRecordList = async () => {
-  await withRecordLoading(async () => {
+const getRecordList = async (silent = false) => {
+  const task = async () => {
     const res = await listAlertRecord(recordQuery.value);
     recordList.value = res.data?.rows ?? [];
     recordTotal.value = res.data?.total ?? 0;
-  });
+  };
+  // 静默模式（轮询/令牌刷新）不闪表格 loading，保留当前页数据直到新数据到达
+  if (silent) {
+    await task();
+  } else {
+    await withRecordLoading(task);
+  }
 };
 
 const handleRecordQuery = () => {
@@ -261,6 +274,13 @@ const formatTime = (t?: string | null) => {
 
 onMounted(() => {
   getRecordList();
+});
+
+// 令牌刷新 + 自动轮询：只在 tab 激活时跑，避免后台 tab 持续打接口
+usePaneRefresh(props, () => getRecordList(true), {
+  pollMs: props.pollMs,
+  enabled: () => props.active,
+  immediate: false
 });
 </script>
 

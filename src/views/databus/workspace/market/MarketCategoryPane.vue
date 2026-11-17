@@ -194,8 +194,14 @@ import { MARKET_RESOURCE_TYPE } from '@/constants/databus';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import MarketGroupHeader from './MarketGroupHeader.vue';
 import TagSelect from './TagSelect.vue';
+import { usePaneRefresh } from '../composables/usePaneRefresh';
 
 defineOptions({ name: 'MarketCategoryPane' });
+
+const props = defineProps<{
+  /** 宿主刷新令牌：分类治理在 MarketManagePane 的 category 视角下渲染，令牌需透传到本组件才有刷新能力 */
+  refreshToken?: number;
+}>();
 
 useLucideSubset();
 
@@ -238,13 +244,17 @@ function toggleGroup(type: string): void {
   collapsedGroups.value[type] = !isCollapsed(type);
 }
 
-async function load(): Promise<void> {
-  loading.value = true;
+async function load(silent = false): Promise<void> {
+  if (!silent) {
+    loading.value = true;
+  }
   try {
     const { data } = await listMarketCategories();
     categories.value = data ?? [];
   } finally {
-    loading.value = false;
+    if (!silent) {
+      loading.value = false;
+    }
   }
 }
 
@@ -468,6 +478,9 @@ function onRowCommand(c: DatabusMarketCategoryVo, cmd: string): void {
 defineExpose({ openCreate });
 
 onMounted(load);
+
+// 令牌刷新：分类被其它入口（市场、上架）改动后重取
+usePaneRefresh(props, () => load(true), { immediate: false });
 </script>
 
 <style lang="scss" scoped>

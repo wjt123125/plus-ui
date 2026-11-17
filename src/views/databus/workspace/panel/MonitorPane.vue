@@ -75,7 +75,7 @@
                 />
               </el-popover>
             </div>
-            <el-button :loading="loading" @click="reload">
+            <el-button :loading="loading" @click="reload()">
               <el-icon><Refresh /></el-icon>
               <span>刷新</span>
             </el-button>
@@ -316,6 +316,7 @@ import type {
 } from '@/api/databus/monitor/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import { usePersisted } from '@/views/databus/workbench/composables/usePersisted';
+import { usePaneRefresh } from '../composables/usePaneRefresh';
 
 // 离线注入 lucide 子集，避免运行时联网拉图标
 useLucideSubset();
@@ -325,7 +326,11 @@ useLucideSubset();
  * 空数据是正常态（链路未跑/未到整点聚合），所有区块给空态占位，图表仅在有点时初始化，避免崩图。
  */
 
-const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true });
+const props = withDefaults(defineProps<{ active?: boolean; refreshToken?: number; pollMs?: number }>(), {
+  active: true,
+  /** 自动轮询间隔（毫秒），0 关闭；宿主可覆盖 */
+  pollMs: 30000
+});
 
 const emit = defineEmits<{ (e: 'open-alert'): void }>();
 
@@ -1015,8 +1020,8 @@ const renderCharts = async () => {
   renderErrorBar();
 };
 
-const reload = async () => {
-  await withLoading(async () => {
+const reload = async (silent = false) => {
+  const task = async () => {
     const [ovRes, trendRes, healthRes, rankRes, streamRes] = await Promise.all([
       monitorOverview(hours.value),
       monitorTrend(hours.value),
@@ -1030,7 +1035,13 @@ const reload = async () => {
     ranking.value =
       rankRes.data ?? { hours: hours.value, topN: 10, chainFailures: [], slowNodes: [], hotErrors: [] };
     errorStream.value = streamRes.data ?? [];
-  });
+  };
+  // 静默模式（轮询/令牌刷新）不闪 loading，避免每 30s 整盘骨架跳一次
+  if (silent) {
+    await task();
+  } else {
+    await withLoading(task);
+  }
   await renderCharts();
 };
 
@@ -1113,6 +1124,13 @@ watch(
 onMounted(() => {
   window.addEventListener('resize', handleResize);
   reload();
+});
+
+// 令牌刷新 + 自动轮询：只在 tab 激活时跑（非激活时 display:none，绘图也拿不到尺寸）
+usePaneRefresh(props, () => reload(true), {
+  pollMs: props.pollMs,
+  enabled: () => props.active,
+  immediate: false
 });
 
 onBeforeUnmount(() => {

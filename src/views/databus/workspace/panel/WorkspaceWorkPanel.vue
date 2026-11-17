@@ -114,12 +114,13 @@
             :current-version="currentVersionOf(tab)"
             @rolled="(result) => emit('rolled', tab, result)"
           />
-          <!-- 草稿审阅（切片 5 人点生效）：AI 落下的 DRAFT 行在此看源码/编译产物/试跑，人点采纳或拒绝 -->
+          <!-- 草稿审阅（切片 5 人点生效）：AI 落下的 DRAFT 行在此看源码/编译产物，人点采纳或拒绝 -->
           <ComponentReviewPane
             v-else-if="tab.kind === 'component-review' && tab.reviewId != null"
             :component-id="tab.reviewId"
+            :refresh-token="refreshTokens[tab.key] ?? 0"
             @adopted="(payload) => emit('review-adopted', tab, payload)"
-            @rejected="() => emit('review-rejected', tab)"
+            @rejected="(payload) => emit('review-rejected', tab, payload)"
           />
           <!-- 试运行结果（终端「运行」行点详情打开）：结果本体在内存运行流里，刷新即失效 -->
           <PreviewResultPane
@@ -188,6 +189,7 @@
           <MarketReviewTab
             v-else-if="tab.kind === 'market-review' && tab.marketReviewItemId != null"
             :item-id="tab.marketReviewItemId"
+            :refresh-token="refreshTokens[tab.key] ?? 0"
             @open-source="
               (type: 'COMPONENT' | 'CHAIN', sourceId: string | number, code: string | null, title: string) =>
                 emit('market-open-source', type, sourceId, code, title)
@@ -201,6 +203,7 @@
           <MarketItemPane
             v-else-if="tab.kind === 'market-detail' && tab.marketItemId != null"
             :item-id="tab.marketItemId"
+            :refresh-token="refreshTokens[tab.key] ?? 0"
             @open-local="
               (id: string | number, type: 'COMPONENT' | 'CHAIN', title: string) =>
                 emit('market-open', id, type, title)
@@ -228,6 +231,7 @@
           <ConnectionPane
             v-else-if="tab.kind === 'connection-form'"
             :form-id="tab.formId"
+            :refresh-token="refreshTokens[tab.key] ?? 0"
             @saved="(payload: ConnectionSaved) => emit('connection-saved', tab, payload)"
             @cancel="requestClose(tab.key)"
             @dirty-change="(dirty: boolean) => emit('dirty-change', tab.key, dirty)"
@@ -242,6 +246,7 @@
           <ExecutionPane
             v-else-if="tab.kind === 'execution-record'"
             :record-id="tab.recordId"
+            :refresh-token="refreshTokens[tab.key] ?? 0"
             @open="(id: number | string, title?: string) => emit('open-execution', id, title)"
             @refresh="emit('execution-refresh')"
           />
@@ -249,10 +254,18 @@
           <MonitorPane
             v-else-if="tab.kind === 'monitor-overview'"
             :active="tab.key === activeKey"
+            :refresh-token="refreshTokens[tab.key] ?? 0"
             @open-alert="emit('open-alert')"
           />
-          <AlertPane v-else-if="tab.kind === 'alert-record'" />
-          <SettingsPane v-else-if="tab.kind === 'settings'" />
+          <AlertPane
+            v-else-if="tab.kind === 'alert-record'"
+            :active="tab.key === activeKey"
+            :refresh-token="refreshTokens[tab.key] ?? 0"
+          />
+          <SettingsPane
+            v-else-if="tab.kind === 'settings'"
+            :refresh-token="refreshTokens[tab.key] ?? 0"
+          />
           <el-empty v-else description="资源已不在台账中" :image-size="80" />
         </div>
       </template>
@@ -373,8 +386,8 @@ const emit = defineEmits<{
   (e: 'changes', row: ComponentRegistryRow): void;
   /** 草稿审阅：采纳成功（宿主关审阅 tab、刷台账/树，并开详情 tab） */
   (e: 'review-adopted', tab: WorkspaceTab, payload: { id: number | string; componentCode: string; componentName: string; version?: number }): void;
-  /** 草稿审阅：拒绝成功（草稿行已删，宿主关 tab 并刷台账/树） */
-  (e: 'review-rejected', tab: WorkspaceTab): void;
+  /** 草稿审阅：拒绝成功（草稿行已删，宿主关 tab、清最近访问并刷台账/树） */
+  (e: 'review-rejected', tab: WorkspaceTab, payload: { id: number | string; componentCode: string }): void;
   /** 物料市场：打开本地副本（使用）/ 安装卸载后刷树 / 启停本地组件副本 */
   (e: 'market-open', localResourceId: string | number, resourceType: 'COMPONENT' | 'CHAIN', title: string): void;
   (e: 'market-installed'): void;

@@ -169,7 +169,11 @@
           <span>返回列表</span>
         </button>
       </div>
-      <ExecutionRecordBody :record-id="viewRecordId" @rerun="handleRerunResult" />
+      <ExecutionRecordBody
+        :record-id="viewRecordId"
+        :refresh-token="refreshToken"
+        @rerun="handleRerunResult"
+      />
     </div>
 
     <ManualExecuteDialog v-model:visible="executeDialogVisible" @executed="handleExecuted" />

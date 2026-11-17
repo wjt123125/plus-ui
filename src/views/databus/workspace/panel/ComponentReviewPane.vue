@@ -1,7 +1,6 @@
 <!--
   组件草稿审阅面板（工作台右栏 tab）：AI 只落 DRAFT，生效须人点采纳。
-  两段：源码（只读，诊断标红）/ 编译产物（契约与配置示例）。
-  试运行不在这里——会话卡片的「▶」开画布预览链路，结果走终端 + 结果 tab。
+  两段：源码（只读，诊断标红）/ 编译产物。
   底部操作条仅草稿态出现。
 -->
 <template>
@@ -63,9 +62,6 @@
                 <el-descriptions-item label="配置参数">{{ fieldCount }} 项</el-descriptions-item>
                 <el-descriptions-item label="物料分组">{{ groupText }}</el-descriptions-item>
                 <el-descriptions-item label="脚本版本">v{{ detail.version ?? 0 }}</el-descriptions-item>
-                <el-descriptions-item v-if="detail.remark" label="AI 自查" :span="2">
-                  {{ detail.remark }}
-                </el-descriptions-item>
               </el-descriptions>
 
               <div class="review-section">
@@ -80,7 +76,8 @@
               </div>
             </div>
           </el-tab-pane>
-        </el-tabs>
+
+          </el-tabs>
       </template>
     </div>
 
@@ -119,13 +116,15 @@ import { adoptScriptDraft, getComponent, rejectScriptDraft } from '@/api/databus
 import type { DatabusComponentVo, PropSchema, ScriptDiagnostic } from '@/api/databus/component/types';
 import { COMPONENT_STATUS } from '@/constants/databus';
 import { groupLabel, nodeTypeLabel, parseSchemaFields, prettyJson } from '@/views/databus/component/model/labels';
-import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
+import { usePaneRefresh } from '../composables/usePaneRefresh';
 
 defineOptions({ name: 'ComponentReviewPane' });
 
 const props = defineProps<{
   /** 草稿组件主键（DRAFT 行）；雪花 id 可能是字符串，别转 Number */
   componentId: number | string;
+  /** 宿主刷新令牌：同一草稿被重写时自增，触发静默重取 */
+  refreshToken?: number;
 }>();
 
 const emit = defineEmits<{
@@ -136,7 +135,6 @@ const emit = defineEmits<{
 const loading = ref(false);
 const detail = ref<DatabusComponentVo | null>(null);
 const activeTab = ref<'source' | 'artifact'>('source');
-useLucideSubset();
 
 /** 采纳失败时的编译诊断（同时推给源码编辑器标红） */
 const adoptDiagnostics = ref<ScriptDiagnostic[]>([]);
@@ -150,19 +148,28 @@ const nodeTypeText = computed(() => nodeTypeLabel(detail.value?.nodeType));
 const groupText = computed(() => groupLabel(detail.value?.groupName));
 const example = computed(() => prettyJson(detail.value?.dataExample));
 
-/** 源码标红诊断：只认采纳失败的编译诊断 */
+/** 源码标红诊断：仅采纳失败时带回（草稿入库前已过编译） */
 const sourceDiagnostics = computed<ScriptDiagnostic[]>(() => adoptDiagnostics.value);
 
-async function load() {
-  loading.value = true;
-  detail.value = null;
+/**
+ * 取草稿详情。
+ * @param soft 令牌刷新走静默模式：保留当前子页、不清空 detail（避免闪白）；
+ *             但采纳诊断必须清掉——源码已变，旧诊断不再代表当前版本。
+ */
+async function load(soft = false) {
+  if (!soft) {
+    loading.value = true;
+    detail.value = null;
+    activeTab.value = 'source';
+  }
   adoptDiagnostics.value = [];
-  activeTab.value = 'source';
   try {
     const { data } = await getComponent(props.componentId);
     detail.value = data ?? null;
   } finally {
-    loading.value = false;
+    if (!soft) {
+      loading.value = false;
+    }
   }
 }
 
@@ -175,6 +182,9 @@ watch(
   },
   { immediate: true }
 );
+
+// 同 id 草稿被 AI 重写：tab 早已打开，只能靠令牌触发静默重取
+usePaneRefresh(props, () => load(true), { immediate: false });
 
 async function onAdopt() {
   if (!detail.value || !isDraft.value || adopting.value) {
@@ -346,13 +356,6 @@ async function onReject() {
   }
 }
 
-.review-section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
 .review-diags {
   display: flex;
   flex-direction: column;
@@ -418,19 +421,6 @@ async function onReject() {
   background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
   box-shadow: inset 0 0 0 0.5px var(--db-rule-strong, rgba(60, 60, 67, 0.24));
   color: var(--db-ink, #1c1c1e);
-}
-
-/* 试跑：主色淡底，够醒目但不抢采纳 */
-.review-btn--soft.el-button {
-  background: color-mix(in srgb, var(--db-blue, #007aff) 8%, transparent);
-  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--db-blue, #007aff) 20%, transparent);
-  color: var(--db-blue, #007aff);
-}
-
-.review-btn--soft.el-button:not(.is-disabled):hover {
-  background: color-mix(in srgb, var(--db-blue, #007aff) 13%, transparent);
-  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--db-blue, #007aff) 32%, transparent);
-  color: var(--db-blue, #007aff);
 }
 
 /* 拒绝：常态中性，悬停才转危险色，避免一进来就一团红 */

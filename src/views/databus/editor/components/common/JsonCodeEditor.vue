@@ -138,7 +138,7 @@ const extensions = computed(() => {
           fontFamily:
             'Menlo, Monaco, "Cascadia Code", "JetBrains Mono", Consolas, monospace'
         },
-        '.cm-content': { padding: '0 0 0 5px' },
+        '.cm-content': { padding: '0 0 0 0' },
         '.cm-line': { padding: '0' },
         '&.cm-focused': { outline: 'none' }
       })

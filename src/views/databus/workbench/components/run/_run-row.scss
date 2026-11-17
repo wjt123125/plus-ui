@@ -42,8 +42,14 @@
   color: var(--el-text-color-secondary);
 }
 
+/* 错误原文与结果页失败卡同口径：等宽 + danger 色，行布局不动 */
 .run-row__error {
   color: var(--el-color-danger, #f56c6c);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* 行尾动作：统一「详情」文字按钮 + 方向图标（↗ 跳转 / ⌄⌃ 展开） */

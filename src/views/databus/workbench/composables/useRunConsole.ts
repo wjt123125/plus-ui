@@ -29,7 +29,7 @@ export interface ChainRunEntry extends RunLogBase {
 }
 
 /**
- * 画布试运行（内存结果）：终端只放摘要，完整结果进结果 tab。
+ * 画布试运行（preview-run 内核，内存结果）：终端只放摘要，完整结果进结果 tab。
  * 结果本体与终端同生命周期——刷新即失效，与「不落库」口径一致。
  */
 export interface PreviewRunEntry extends RunLogBase {

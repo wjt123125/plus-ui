@@ -9,6 +9,40 @@ import { clearTransientDef, setTransientDef } from '../cmp-defs';
 import { useComponentOptions } from './useComponentOptions';
 import type { ElTreeModel } from './useElTreeModel';
 
+/** 数据空间名：EL 里节点 tag，沿用「编码 + 序号」惯例，非法字符归一化 */
+function toDataSpace(code: string): string {
+  const base = code.replace(/[^A-Za-z0-9_]/g, '_').replace(/^(\d)/, '_$1');
+  return `${base}1`;
+}
+
+/** 配置示例只在是合法 JSON 时用作初始 cfg，坏数据不塞进画布 */
+function exampleJson(dataExample?: string | null): string | null {
+  const text = dataExample?.trim();
+  if (!text) {
+    return null;
+  }
+  try {
+    JSON.parse(text);
+    return text;
+  } catch {
+    return null;
+  }
+}
+
+/** 草稿叶子：id=组件编码、tag=数据空间名、data=配置示例 */
+function buildSeed(vo: DatabusComponentVo): CmpProperty {
+  const seed: CmpProperty = {
+    id: vo.componentCode,
+    type: 'NodeComponent',
+    properties: { tag: toDataSpace(vo.componentCode) }
+  };
+  const data = exampleJson(vo.dataExample);
+  if (data) {
+    seed.properties!.data = data;
+  }
+  return seed;
+}
+
 /**
  * 草稿预览链路：把 DRAFT 组件拉成一条「单节点、不落库」的画布树。
  *
@@ -31,26 +65,6 @@ export function useDraftPreview(store: DraftPreviewStore) {
   /** 已注入瞬态物料的编码：卸载时精确摘除 */
   let injectedCode: string | null = null;
 
-  /** 数据空间名：EL 里节点 tag，沿用「编码 + 序号」惯例，非法字符归一化 */
-  function toDataSpace(code: string): string {
-    const base = code.replace(/[^A-Za-z0-9_]/g, '_').replace(/^(\d)/, '_$1');
-    return `${base}1`;
-  }
-
-  /** 配置示例只在是合法 JSON 时用作初始 cfg，坏数据不塞进画布 */
-  function exampleJson(dataExample?: string | null): string | null {
-    const text = dataExample?.trim();
-    if (!text) {
-      return null;
-    }
-    try {
-      JSON.parse(text);
-      return text;
-    } catch {
-      return null;
-    }
-  }
-
   function toOption(vo: DatabusComponentVo): ComponentOption {
     const fields = parseSchemaFields(vo.paramSchema) ?? [];
     return {
@@ -68,19 +82,6 @@ export function useDraftPreview(store: DraftPreviewStore) {
       dataExample: vo.dataExample ?? null,
       schema: fields.length ? { fields } : null
     };
-  }
-
-  function buildSeed(vo: DatabusComponentVo): CmpProperty {
-    const seed: CmpProperty = {
-      id: vo.componentCode,
-      type: 'NodeComponent',
-      properties: { tag: toDataSpace(vo.componentCode) }
-    };
-    const data = exampleJson(vo.dataExample);
-    if (data) {
-      seed.properties!.data = data;
-    }
-    return seed;
   }
 
   /**
@@ -116,7 +117,7 @@ export function useDraftPreview(store: DraftPreviewStore) {
     treeModel.project();
     reproject();
     autoLayout();
-    // 入参登记：AI 落草稿时把探针跑通的样板入参存进了组件行，这里写进编辑器状态，
+    // 入参登记：AI 落草稿前会自检脚本，把可用的样板入参一并存进组件行；这里写进编辑器状态，
     // 试运行弹窗按 defaultValue 预填（空登记＝保持 {}，与以前一致）
     if (data.inputParams?.length) {
       applyInputParams(data.inputParams);

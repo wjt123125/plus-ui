@@ -146,10 +146,13 @@ import { getExecution, rerunExecution } from '@/api/databus/execution';
 import type { DatabusExecutionResult, ExecutionDetailVo } from '@/api/databus/execution/types';
 import JsonCodeEditor from '@/views/databus/editor/components/common/JsonCodeEditor.vue';
 import { EXECUTION_STATUS } from '@/constants/databus';
+import { usePaneRefresh } from '../composables/usePaneRefresh';
 
 const props = defineProps<{
   /** 要展示的记录主键（雪花 id 超 2^53，故与 VO 同宽）；变化即重载 */
   recordId?: number | string | null;
+  /** 宿主刷新令牌：RUNNING 记录需要静默刷新最新状态 */
+  refreshToken?: number;
 }>();
 
 const emit = defineEmits<{
@@ -162,13 +165,17 @@ const loading = ref(false);
 const rerunning = ref(false);
 
 /** 加载详情 */
-const loadDetail = async (id: number | string) => {
-  loading.value = true;
+const loadDetail = async (id: number | string, silent = false) => {
+  if (!silent) {
+    loading.value = true;
+  }
   try {
     const res = await getExecution(id);
     detail.value = res.data;
   } finally {
-    loading.value = false;
+    if (!silent) {
+      loading.value = false;
+    }
   }
 };
 
@@ -183,6 +190,13 @@ watch(
   },
   { immediate: true }
 );
+
+// 令牌刷新：静默重取（列表重跑/他处状态变化后，记录内容跟着更新）
+usePaneRefresh(props, () => {
+  if (props.recordId !== null && props.recordId !== undefined && props.recordId !== '') {
+    return loadDetail(props.recordId, true);
+  }
+}, { immediate: false });
 
 const handleRerun = async () => {
   if (!detail.value) return;

@@ -1,7 +1,7 @@
 <!--
   工作区底部终端（运行 / 构建双小 tab，Trae terminal 范式）：
   与两侧 console 的独立卡片不同，这里把两种流收进同一卡片，头部小 tab 切换展示哪一条。
-  「运行」内含链路执行与组件试跑两类行（按 source 分派），不再单独占一个 tab。
+  「运行」内含链路执行与画布试运行两类行（按 source 分派），不再单独占一个 tab。
   两条 console（RunConsole / CompileConsole）以 bare 模式渲染日志体，头部（tab 条 + 清空/收起）
   由本容器统一提供；自动弹出仍由各自 append 驱动（见 useWorkspaceTerminal）。
 -->

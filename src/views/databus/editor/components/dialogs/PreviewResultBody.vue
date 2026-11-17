@@ -20,10 +20,21 @@
       <span class="pr__banner-cost">{{ costText }}</span>
     </header>
 
-    <!-- 失败原因 / EL 校验未通过：一条左竖线提示；成功态不出现 -->
-    <p v-if="issue" class="pr__issue">{{ issue }}</p>
+    <!-- 失败原因：执行过程里有失败步骤时不再出（原文只在步骤行出现一次）；EL 校验失败/整体异常无步骤时它是唯一出口 -->
+    <div v-if="showIssueCard" class="pr__card">
+      <div class="pr__error-head">
+        <span class="pr__error-bar" aria-hidden="true" />
+        <span class="pr__error-title">失败原因</span>
+        <button type="button" class="pr__error-copy" @click="copyError(issue)">复制</button>
+      </div>
+      <pre class="pr__error-body" :class="{ 'is-folded': issueFolded }">{{ issue }}</pre>
+      <button v-if="issueFoldable" type="button" class="pr__error-toggle" @click="issueExpanded = !issueExpanded">
+        {{ issueExpanded ? '收起' : `展开（${issueLines} 行）` }}
+      </button>
+    </div>
 
-    <details class="pr__card" open>
+    <!-- 入参：空（null / 空串 / {} / []）不渲染，空态已由横幅副行的「入参 N 项」承载 -->
+    <details v-if="!requestEmpty" class="pr__card" open>
       <summary class="pr__card-head">
         <span class="pr__card-title">入参</span>
         <span v-if="requestMeta" class="pr__card-meta">{{ requestMeta }}</span>
@@ -37,8 +48,8 @@
       />
     </details>
 
-    <!-- 出参：结果页的主角，同款卡片，标题给键数 -->
-    <details v-if="outputText" class="pr__card" open>
+    <!-- 出参：结果页的主角，同款卡片，标题给键数；空不渲染 -->
+    <details v-if="!outputEmpty" class="pr__card" open>
       <summary class="pr__card-head">
         <span class="pr__card-title">出参</span>
         <span v-if="outputMeta" class="pr__card-meta">{{ outputMeta }}</span>
@@ -54,8 +65,8 @@
       <pre v-else class="pr__plain">{{ outputText }}</pre>
     </details>
 
-    <!-- 多步：步骤列表；每行点开抽屉看该组件跑完的上下文快照 -->
-    <details v-if="steps.length > 1" class="pr__card" open>
+    <!-- 执行过程：多步必出；单步只在失败时出（失败时它是「哪个节点挂了」的唯一标识）。成功单步由出参卡承载，避免重复 -->
+    <details v-if="steps.length > 1 || failedCount > 0" class="pr__card" open>
       <summary class="pr__card-head">
         <span class="pr__card-title">执行过程</span>
         <span class="pr__card-meta">{{ steps.length }} 步</span>
@@ -66,7 +77,6 @@
           v-for="(row, i) in steps"
           :key="`${row.nodeId}-${i}`"
           class="pr__step"
-          :class="{ 'is-fail': !row.success }"
           :style="{ paddingLeft: depthPx(row) }"
           @click="emit('openStep', row)"
         >
@@ -78,13 +88,25 @@
           <span class="pr__step-result" :class="{ 'is-error': !row.success }" :title="stepResultText(row)">
             {{ stepResultText(row) }}
           </span>
-          <span class="pr__step-time">{{ row.timeSpent }} ms</span>
+          <span class="pr__step-tail">
+            <span class="pr__step-time">{{ row.timeSpent }} ms</span>
+            <!-- 失败行 hover 才浮现：复制完整原文（行内文本是省略号截断的） -->
+            <button
+              v-if="!row.success"
+              type="button"
+              class="pr__step-copy"
+              title="复制错误原文"
+              @click.stop="copyError(stepResultText(row))"
+            >
+              <el-icon><CopyDocument /></el-icon>
+            </button>
+          </span>
         </li>
       </ol>
     </details>
 
-    <!-- 上下文：运行结束时的完整数据空间，附录位，默认收起 -->
-    <details v-if="prettyContext" class="pr__card pr__card--appendix">
+    <!-- 上下文：运行结束时的完整数据空间，附录位，默认收起；空不渲染 -->
+    <details v-if="!contextEmpty" class="pr__card pr__card--appendix">
       <summary class="pr__card-head">
         <span class="pr__card-title">上下文</span>
         <span class="pr__card-meta">{{ contextMeta }}</span>
@@ -96,8 +118,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import { ArrowRight, CircleCheckFilled, CircleCloseFilled, RemoveFilled } from '@element-plus/icons-vue';
+import { computed, ref } from 'vue';
+import { ArrowRight, CircleCheckFilled, CircleCloseFilled, CopyDocument, RemoveFilled } from '@element-plus/icons-vue';
+import { ElMessage } from 'element-plus';
 import type { NodeStep, PreviewRunVo } from '@/api/databus/el/types';
 import JsonCodeEditor from '@/views/databus/editor/components/common/JsonCodeEditor.vue';
 
@@ -174,6 +197,33 @@ const issue = computed(() => {
   return r.valid === false ? (r.message ?? '') : '';
 });
 
+/** 失败原因卡：有失败步骤时原文已由步骤行承载，不再重复一张卡 */
+const showIssueCard = computed(() => !!issue.value && failedCount.value === 0);
+
+/** 失败原因折叠：超过 6 行收起，避免长堆栈把入参/出参卡挤出屏 */
+const ISSUE_FOLD_LINES = 6;
+
+const issueExpanded = ref(false);
+
+const issueLines = computed(() => (issue.value ? issue.value.split('\n').length : 0));
+
+const issueFoldable = computed(() => issueLines.value > ISSUE_FOLD_LINES);
+
+const issueFolded = computed(() => issueFoldable.value && !issueExpanded.value);
+
+/** 复制错误原文：失败原因卡与失败步骤行共用 */
+async function copyError(text: string) {
+  if (!text) {
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    ElMessage.success('已复制错误原文');
+  } catch {
+    ElMessage.warning('复制失败，请手动选中复制');
+  }
+}
+
 /** 入参：JSON 美化（缺省 {}） */
 const requestText = computed(() => prettyJson(props.requestJson) || '{}');
 
@@ -203,10 +253,12 @@ const responsePart = computed<unknown>(() => {
   return null;
 });
 
-/** 出参原文：单步看本节点数据空间快照，多步看 $.response；取不到 JSON 时退回组件自报摘要 */
+/** 出参原文：单步看本节点数据空间快照，多步看 $.response；快照为空时退回组件自报摘要 */
 const outputRaw = computed<unknown>(() => {
   if (singleStep.value) {
-    return singleStep.value.detailJson || singleStep.value.summary || '';
+    const detail = singleStep.value.detailJson;
+    // detailJson 为空 JSON（如 "{}"）时不能挡住有内容的摘要
+    return isEmptyValue(detail) ? singleStep.value.summary || detail || '' : detail;
   }
   return responsePart.value;
 });
@@ -235,6 +287,37 @@ const contextMeta = computed(() => {
 });
 
 const prettyContext = computed(() => prettyJson(props.result?.contextJson));
+
+/** 空态判定：三张数据卡共用。null / 空串 / {} / [] 算空；非 JSON 纯文本有内容即算有数据 */
+function isEmptyValue(raw: unknown): boolean {
+  if (raw === null || raw === undefined) {
+    return true;
+  }
+  let val: unknown = raw;
+  if (typeof raw === 'string') {
+    if (!raw.trim()) {
+      return true;
+    }
+    try {
+      val = JSON.parse(raw);
+    } catch {
+      return false;
+    }
+  }
+  if (Array.isArray(val)) {
+    return val.length === 0;
+  }
+  if (val && typeof val === 'object') {
+    return Object.keys(val as object).length === 0;
+  }
+  return false;
+}
+
+const requestEmpty = computed(() => isEmptyValue(props.requestJson));
+
+const outputEmpty = computed(() => isEmptyValue(outputRaw.value));
+
+const contextEmpty = computed(() => isEmptyValue(props.result?.contextJson));
 
 /** JSON 美化：字符串先解析；非法/空返回空串 */
 function prettyJson(raw: unknown): string {
@@ -363,17 +446,75 @@ function depthPx(row: NodeStep): string {
   white-space: nowrap;
 }
 
-/* ---------- 失败提示 ---------- */
-.pr__issue {
-  margin: 0;
-  padding: 8px 10px;
-  border-left: 2px solid var(--el-color-danger);
-  border-radius: 0 var(--app-radius-md, 10px) var(--app-radius-md, 10px) 0;
-  background: var(--el-color-danger-light-9, #fef0f0);
+/* ---------- 失败原因卡：与入参/出参同构，红色只做竖条与标题点缀 ---------- */
+.pr__error-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pr__error-bar {
+  flex: none;
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--el-color-danger, #f56c6c);
+}
+
+.pr__error-title {
   color: var(--el-color-danger, #f56c6c);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.pr__error-copy {
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--db-ink-muted, #6e6e73);
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.pr__error-copy:hover {
+  color: var(--el-color-primary);
+  text-decoration: underline;
+}
+
+.pr__error-body {
+  margin: 0;
+  overflow: auto;
+  color: var(--db-ink-secondary, #3a3a3c);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* 6 行 × 12px × 1.55 ≈ 112px，超出收起 */
+.pr__error-body.is-folded {
+  max-height: 112px;
+  overflow: hidden;
+}
+
+.pr__error-toggle {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--db-ink-muted, #6e6e73);
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.pr__error-toggle:hover {
+  color: var(--el-color-primary);
+  text-decoration: underline;
 }
 
 .pr__fold-caret {
@@ -471,9 +612,7 @@ function depthPx(row: NodeStep): string {
   background: var(--el-fill-color-lighter, #fafafa);
 }
 
-.pr__step.is-fail {
-  background: var(--el-color-danger-light-9, #fef0f0);
-}
+/* 失败行只靠红点 + 红字标识，不上底色（避免和错误卡抢焦点） */
 
 .pr__step-dot {
   width: 6px;
@@ -531,5 +670,40 @@ function depthPx(row: NodeStep): string {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+/* 行尾：耗时 + 复制位。成功行不出图标但保留宽度，保证各步耗时列不错位 */
+.pr__step-tail {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 74px;
+}
+
+.pr__step-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--db-ink-muted, #6e6e73);
+  font-size: 12px;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.pr__step:hover .pr__step-copy,
+.pr__step-copy:focus-visible {
+  opacity: 1;
+}
+
+.pr__step-copy:hover {
+  color: var(--el-color-primary);
 }
 </style>

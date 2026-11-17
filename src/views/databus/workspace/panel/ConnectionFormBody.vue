@@ -165,6 +165,7 @@ import { buildConfigRules, resolveGroups, type ResolvedGroup } from './connectio
 import { useConnectorOptions } from './useConnectorOptions';
 import type { ConnectionSaved } from '../workbench.types';
 import { FLAG } from '@/constants/databus';
+import { usePaneRefresh } from '../composables/usePaneRefresh';
 
 /**
  * 连接表单主体。
@@ -174,6 +175,8 @@ import { FLAG } from '@/constants/databus';
  */
 const props = defineProps<{
   connectionId: number | 'new';
+  /** 宿主刷新令牌：他处改同一连接后自增（表单已脏时不覆盖用户输入） */
+  refreshToken?: number;
 }>();
 
 const emit = defineEmits<{
@@ -369,16 +372,25 @@ function syncConfigTextFromForm() {
   configText.value = cfg && Object.keys(cfg).length > 0 ? JSON.stringify(cfg, null, 2) : '';
 }
 
-async function reload() {
-  form.value = buildInitFormData();
-  activeTab.value = tabs.value[0].key;
-  configText.value = '';
+async function reload(silent = false) {
   if (props.connectionId === 'new') {
+    if (silent) {
+      return;
+    }
+    form.value = buildInitFormData();
+    activeTab.value = tabs.value[0].key;
+    configText.value = '';
     await nextTick();
     markBaseline();
     return;
   }
-  detailLoading.value = true;
+  // 静默（令牌刷新）：不重置表单、不挂 loading，直接用服务端最新值覆盖已清空脏态的表单
+  if (!silent) {
+    form.value = buildInitFormData();
+    activeTab.value = tabs.value[0].key;
+    configText.value = '';
+    detailLoading.value = true;
+  }
   try {
     const { data } = await getConnection(props.connectionId);
     // config 必须是可变对象：SchemaField 直接原地写 model[name]；老数据可能整列缺省，统一兜成 {}
@@ -387,7 +399,9 @@ async function reload() {
     await nextTick();
     markBaseline();
   } finally {
-    detailLoading.value = false;
+    if (!silent) {
+      detailLoading.value = false;
+    }
   }
 }
 
@@ -445,7 +459,16 @@ onMounted(() => {
   void reload();
   void loadConnectorOptions();
 });
-watch(() => props.connectionId, reload);
+watch(() => props.connectionId, () => {
+  void reload();
+});
+
+// 令牌刷新：他处改了同一连接则回显最新值；用户有未保存改动时不动（避免吞掉输入）
+usePaneRefresh(props, () => {
+  if (!dirty.value) {
+    void reload(true);
+  }
+}, { immediate: false });
 
 defineExpose({ reload });
 </script>

@@ -14,7 +14,9 @@
          （不折叠，状态不影响可点） -->
     <div v-if="card.kind === DATABUS_CARD_KIND_REF" class="agent-card__ref">
       <button type="button" class="agent-card__ref-main" @click="emit('open')">
-        <span class="agent-card__chip">{{ card.resource?.type === DATABUS_RESOURCE_TYPE_CHAIN ? '链路' : '组件' }}</span>
+        <span class="agent-card__ref-head" :title="refMetaOf.label" :aria-label="refMetaOf.label">
+          <SvgIcon :icon-class="refMetaOf.icon" />
+        </span>
         <span class="agent-card__ref-text">
           <span class="agent-card__title">{{ card.title }}</span>
           <span v-if="card.body" class="agent-card__ref-desc">{{ card.body }}</span>
@@ -126,6 +128,7 @@ import {
   DATABUS_RESOURCE_TYPE_CHAIN,
   DATABUS_RESOURCE_TYPE_COMPONENT
 } from '@/constants/databus-common';
+import { refMeta } from './agentRefTypes';
 
 /** 拆分按钮的作用域：本次 / 本会话切自动审批 / 本会话完全允许 */
 type CardPickScope = 'once' | 'session-auto' | 'session-full';
@@ -187,6 +190,11 @@ const refTint = computed(() => {
   };
 });
 
+/** 资源卡类型标记：图标与中文标签只从 agentRefTypes 注册表取，卡片内不再写死 */
+const refMetaOf = computed(() =>
+  refMeta(props.card.resource?.type ?? DATABUS_RESOURCE_TYPE_COMPONENT)
+);
+
 /** 确认卡只认主次两个按钮：primary 是放行，另一个是取消 */
 const confirmOption = computed(
   () => props.card.options.find((option) => option.style === 'primary') ?? props.card.options[0]
@@ -225,14 +233,16 @@ const stateText = computed(() => {
 }
 
 /* 资源卡：容器承载 tint，主体是内部按钮（避免按钮嵌套），草稿卡右侧挂「▶」
-   （与输入区 .agent-chat__ref 同一套口径，不用主色描边） */
+   （与输入区 .agent-chat__ref 同一套口径，不用主色描边）。
+   左端图标是整卡高的卡片「头」，图标在其中居中 */
 .agent-card__ref {
   display: flex;
-  align-items: flex-start;
-  gap: 6px;
+  align-items: stretch;
+  gap: 4px;
   width: 100%;
   max-width: 100%;
-  padding: 9px 12px;
+  padding: 0 10px 0 0;
+  overflow: hidden;
   border: 0;
   border-radius: 10px;
   background: color-mix(in srgb, var(--card-ink, var(--db-ink-muted, #6e6e73)) 5%, transparent);
@@ -247,8 +257,7 @@ const stateText = computed(() => {
 .agent-card__ref-main {
   display: flex;
   flex: 1;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: stretch;
   min-width: 0;
   padding: 0;
   border: 0;
@@ -257,6 +266,18 @@ const stateText = computed(() => {
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+/* 卡片头：与正文同高，宽度固定，图标在色块内水平垂直居中 */
+.agent-card__ref-head {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  font-size: 18px;
+  color: var(--card-ink, var(--db-ink-muted, #6e6e73));
+  background: color-mix(in srgb, var(--card-ink, var(--db-ink-muted, #6e6e73)) 12%, transparent);
 }
 
 /* 试运行入口：草稿卡才有；裸图标，不画按钮框，hover 才染类型色 */
@@ -288,17 +309,10 @@ const stateText = computed(() => {
     color-mix(in srgb, var(--card-ink, var(--db-ink-muted, #6e6e73)) 32%, transparent);
 }
 
-/* 类型标签跟随资源类型色：只占一小块 tint，不与正文争主色 */
-.agent-card .agent-card__ref .agent-card__chip {
-  margin-top: 1px;
-  background: color-mix(in srgb, var(--card-ink, var(--db-ink-muted, #6e6e73)) 12%, transparent);
-  color: var(--card-ink, var(--db-ink-muted, #6e6e73));
-  font-weight: 500;
-}
-
 .agent-card__ref .agent-card__title {
   font-size: 13px;
   font-weight: 600;
+  line-height: 18px;
 }
 
 .agent-card__ref-text {
@@ -307,6 +321,7 @@ const stateText = computed(() => {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  padding: 8px 0 8px 10px;
 }
 
 .agent-card__ref-desc {

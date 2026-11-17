@@ -114,7 +114,7 @@
         </li>
         <li class="res-tree-ctx__divider" />
         <li
-          v-hasPermi="['databus:component:remove']"
+          v-hasPermi="menu.node.lifecycle === 'draft' ? ['databus:component:edit'] : ['databus:component:remove']"
           class="res-tree-ctx__item is-danger"
           @click="onCommand('delete-component')"
         >

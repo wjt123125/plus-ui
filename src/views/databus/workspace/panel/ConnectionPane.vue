@@ -13,6 +13,7 @@
     <div v-if="objectId !== undefined" class="conn-pane__form db-pane-gutter">
       <ConnectionFormBody
         :connection-id="objectId"
+        :refresh-token="refreshToken"
         @saved="onObjectSaved"
         @cancel="onObjectCancel"
         @dirty-change="(d) => emit('dirty-change', d)"

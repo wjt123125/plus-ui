@@ -157,7 +157,7 @@
           v-model:page="ruleQuery.pageNum"
           v-model:limit="ruleQuery.pageSize"
           :total="ruleTotal"
-          @pagination="getRuleList"
+          @pagination="getRuleList()"
         />
       </div>
 
@@ -237,11 +237,14 @@ import { useLoading } from '@/hooks/async/useLoading';
 import AlertRuleForm from '@/views/databus/alert/AlertRuleForm.vue';
 import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
 import { FLAG } from '@/constants/databus';
+import { usePaneRefresh } from '../composables/usePaneRefresh';
 
 /**
  * 设置 pane：左导航 + 右内容。
  * 分组：告警规则（实表）/ 通知渠道（空态）/ 静默期（空态）/ 系统与偏好（主题、保留天数）。
  */
+
+const props = defineProps<{ refreshToken?: number }>();
 
 // settings pane 渲染 lucide 图标，需注入子集（幂等，与工作台其它组件共用一次注入）
 useLucideSubset();
@@ -330,12 +333,18 @@ const ruleQuery = ref<DatabusAlertRuleQuery>({
   enabled: ''
 });
 
-const getRuleList = async () => {
-  await withRuleLoading(async () => {
+const getRuleList = async (silent = false) => {
+  const task = async () => {
     const res = await listAlertRule(ruleQuery.value);
     ruleList.value = res.data?.rows ?? [];
     ruleTotal.value = res.data?.total ?? 0;
-  });
+  };
+  // 静默（令牌刷新/轮询）不闪表格 loading，保留当前页数据直到新数据到达
+  if (silent) {
+    await task();
+  } else {
+    await withRuleLoading(task);
+  }
 };
 
 const handleRuleQuery = () => {
@@ -395,6 +404,9 @@ const notifyTypeLabel = (type: string) =>
 onMounted(() => {
   getRuleList();
 });
+
+// 令牌刷新：告警规则是唯一实表数据，外部改动后重取
+usePaneRefresh(props, () => getRuleList(true), { immediate: false });
 </script>
 
 <style lang="scss" scoped>

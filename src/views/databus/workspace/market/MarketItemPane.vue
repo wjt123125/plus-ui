@@ -268,18 +268,23 @@ import { MARKET_RESOURCE_TYPE, MARKET_STATUS } from '@/constants/databus';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import { useUserStore } from '@/store/modules/user';
 import { marketNavIntent, showChainInstallResult } from './useMarketData';
-import { statusMeta as itemStatusMeta, versionLabel } from './marketDisplay';
+import { itemIcon as itemIconOf, resourceTypeMeta, statusMeta as itemStatusMeta, versionLabel } from './marketDisplay';
 import MarketInstallDialog from './MarketInstallDialog.vue';
 import ConnectorCapabilityTables from './ConnectorCapabilityTables.vue';
 import ConnectorRuntimePanel from './ConnectorRuntimePanel.vue';
 import JavaCodeEditor from '@/views/databus/component/form/JavaCodeEditor.vue';
 import JsonCodeEditor from '@/views/databus/editor/components/common/JsonCodeEditor.vue';
+import { usePaneRefresh } from '../composables/usePaneRefresh';
 
 defineOptions({ name: 'MarketItemPane' });
 
 useLucideSubset();
 
-const props = defineProps<{ itemId: string }>();
+const props = defineProps<{
+  itemId: string;
+  /** 宿主刷新令牌：市场内安装/起停/审核态在他处变化后自增 */
+  refreshToken?: number;
+}>();
 
 const emit = defineEmits<{
   /** 打开本地资源：宿主按类型开画布 / 详情 tab */
@@ -421,15 +426,19 @@ function invalidateRuntime(): void {
 const installVisible = ref(false);
 const installLoading = ref(false);
 
-async function fetchItem() {
-  loading.value = true;
+async function fetchItem(silent = false) {
+  if (!silent) {
+    loading.value = true;
+  }
   try {
     const { data } = await getMarketItem(props.itemId);
     item.value = data ?? null;
   } catch {
     item.value = null;
   } finally {
-    loading.value = false;
+    if (!silent) {
+      loading.value = false;
+    }
   }
 }
 
@@ -450,18 +459,13 @@ watch(
   { immediate: true }
 );
 
+// 令牌刷新：他处装/卸/起停或审核态变化后静默重取（不打断当前内部 tab 与预览状态）
+usePaneRefresh(props, () => fetchItem(true), { immediate: false });
+
 /* ---------------- 展示辅助 ---------------- */
 
-const itemIcon = computed(() =>
-  item.value?.resourceType === MARKET_RESOURCE_TYPE.CHAIN
-    ? 'lucide:spline'
-    : item.value?.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR
-      ? item.value?.icon || 'lucide:plug'
-      : item.value?.icon || 'lucide:box'
-);
-const resourceLabel = computed(() =>
-  item.value?.resourceType === MARKET_RESOURCE_TYPE.CHAIN ? '链路' : item.value?.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR ? '连接器' : '组件'
-);
+const itemIcon = computed(() => (item.value ? itemIconOf(item.value) : 'lucide:box'));
+const resourceLabel = computed(() => resourceTypeMeta(item.value?.resourceType).label);
 
 /* ---------------- 权限判定（按权限串，admin 通配免检，对齐 MarketPane） ---------------- */
 

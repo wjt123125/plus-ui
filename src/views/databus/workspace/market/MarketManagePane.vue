@@ -231,7 +231,11 @@
 
       <!-- 视角五：物料分类（治理动作：增 / 改名 / 排序 / 删除空分类 / 合并） -->
       <template v-else-if="scope === 'category' && canGovern">
-        <MarketCategoryPane ref="categoryPaneRef" @changed="emit('installed')" />
+        <MarketCategoryPane
+          ref="categoryPaneRef"
+          :refresh-token="props.refreshToken"
+          @changed="emit('installed')"
+        />
       </template>
 
       <!-- 视角四：治理（全局运行态，与审核分开）。当前只有连接器：启停 / 废弃 / 卸载 / dev 重载。

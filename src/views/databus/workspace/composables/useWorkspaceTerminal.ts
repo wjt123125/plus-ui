@@ -6,7 +6,7 @@
  *  - 任一流 append 日志（open 置 true）即自动弹出容器并切到该流；
  *  - 头部单一开关（WorkbenchHeader panel-bottom）控制容器整体开合，关闭时两条流一并复位。
  *
- * 运行流内部再按 source 区分「链路执行 / 组件试跑」，属于同一条流的两类行，不再单开 tab。
+ * 运行流内部再按 source 区分「链路执行 / 画布试运行」，属于同一条流的两类行，不再单开 tab。
  */
 import { ref, watch } from 'vue';
 import { useRunConsole } from '@/views/databus/workbench/composables/useRunConsole';

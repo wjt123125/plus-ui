@@ -27,22 +27,30 @@ import {
 } from '@/constants/databus';
 import { useUserStore } from '@/store/modules/user';
 
-/* ---------------- 图标 ---------------- */
+/* ---------------- 类型元信息（标签 + 图标唯一口径） ---------------- */
 
-/** 物料图标：链路固定，连接器兜底电插头，组件取自带图标 */
-export function itemIcon(it: DatabusMarketItemVo): string {
-  if (it.resourceType === MARKET_RESOURCE_TYPE.CHAIN) {
-    return 'lucide:spline';
-  }
-  if (it.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR) {
-    return it.icon || 'lucide:plug';
-  }
-  return it.icon || 'lucide:box';
+/** 资源类型 → 中文标签/图标：新增类型只改这里，市场各处引用同一份 */
+export const RESOURCE_TYPE_META: Record<MarketResourceType, { label: string; icon: string }> = {
+  COMPONENT: { label: '组件', icon: 'lucide:box' },
+  CHAIN: { label: '链路', icon: 'lucide:spline' },
+  CONNECTOR: { label: '连接器', icon: 'lucide:plug' }
+};
+
+/** 取类型元信息；未知类型按组件兜底 */
+export function resourceTypeMeta(type?: MarketResourceType) {
+  return RESOURCE_TYPE_META[type ?? MARKET_RESOURCE_TYPE.COMPONENT] ?? RESOURCE_TYPE_META.COMPONENT;
 }
 
-/** 已装台账行图标：链路固定，组件/连接器取物料自带图标，缺省用盒子 */
+/** 物料图标：链路固定类型图标；组件/连接器优先物料自带图标，缺省回类型图标 */
+export function itemIcon(it: DatabusMarketItemVo): string {
+  const { icon } = resourceTypeMeta(it.resourceType);
+  return it.resourceType === MARKET_RESOURCE_TYPE.CHAIN ? icon : it.icon || icon;
+}
+
+/** 已装台账行图标：口径同 itemIcon */
 export function rowIcon(row: DatabusMarketInstallVo): string {
-  return row.resourceType === MARKET_RESOURCE_TYPE.CHAIN ? 'lucide:spline' : row.icon || 'lucide:box';
+  const { icon } = resourceTypeMeta(row.resourceType);
+  return row.resourceType === MARKET_RESOURCE_TYPE.CHAIN ? icon : row.icon || icon;
 }
 
 /* ---------------- 标签翻译 ---------------- */
@@ -197,8 +205,12 @@ export function versionLabel(version?: string | null): string {
   return `v${version}`;
 }
 
-/** 平铺分组标签与固定顺序（组件 → 链路 → 连接器） */
-export const TYPE_LABELS: Record<MarketResourceType, string> = { COMPONENT: '组件', CHAIN: '链路', CONNECTOR: '连接器' };
+/** 平铺分组标签（从类型元信息派生）与固定顺序（组件 → 链路 → 连接器） */
+export const TYPE_LABELS: Record<MarketResourceType, string> = {
+  COMPONENT: RESOURCE_TYPE_META.COMPONENT.label,
+  CHAIN: RESOURCE_TYPE_META.CHAIN.label,
+  CONNECTOR: RESOURCE_TYPE_META.CONNECTOR.label
+};
 export const TYPE_ORDER: MarketResourceType[] = [
   MARKET_RESOURCE_TYPE.COMPONENT,
   MARKET_RESOURCE_TYPE.CHAIN,
