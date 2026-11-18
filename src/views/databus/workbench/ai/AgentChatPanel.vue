@@ -213,6 +213,7 @@ import MarkdownBlock from './MarkdownBlock.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
 import { useAgentChat, type AgentChatMessage, type AgentSegment } from './useAgentChat';
 import { useAgentRefs, type AgentRefItem } from './useAgentRefs';
+import { useComposerKeys } from './useComposerKeys';
 import { refMeta } from './agentRefTypes';
 
 defineOptions({ name: 'AgentChatPanel' });
@@ -299,7 +300,8 @@ const isErrorNotice = (message: AgentChatMessage) =>
 
 const draft = ref('');
 const bodyRef = ref<HTMLElement>();
-const inputRef = ref<{ focus: () => void }>();
+/** el-input 暴露的实例会被 Vue 解包，textarea 是原生 DOM；只取本面板用到的两项 */
+const inputRef = ref<{ focus: () => void; textarea?: HTMLTextAreaElement }>();
 
 /** 把引用段拼到问题末尾再发；只有引用没打字也允许发 */
 function sendWithRefs(text: string) {
@@ -360,14 +362,13 @@ function submit() {
   sendWithRefs(draft.value);
 }
 
-/** Enter 发送、Shift+Enter 换行；输入法组词中的 Enter 不抢 */
-function onKeydown(event: KeyboardEvent) {
-  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) {
-    return;
+const { onKeydown } = useComposerKeys({
+  getEl: () => inputRef.value?.textarea,
+  send: submit,
+  setValue: (value) => {
+    draft.value = value;
   }
-  event.preventDefault();
-  submit();
-}
+});
 
 /** 消息有增改（流式追加）就贴底，保持最新一条可见 */
 watch(

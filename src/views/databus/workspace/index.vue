@@ -76,7 +76,7 @@
           @tab-action="onTabAction"
           @open-tool="onLauncherCommand"
           @dirty-change="wb.setDirty"
-          @open-chain="wb.openCanvas"
+          @open-chain="openChainCanvas"
           @open-component="handleOpenComponentRef"
           @saved="handleSaved"
           @rolled="handleRolled"
@@ -754,7 +754,7 @@ function onMarketOpen(
   title: string
 ) {
   if (resourceType === MARKET_RESOURCE_TYPE.CHAIN) {
-    wb.openCanvas(localResourceId, title);
+    openChainCanvas(localResourceId, title);
     return;
   }
   const row = rowById(localResourceId);
@@ -841,7 +841,7 @@ function onMarketOpenSource(
   title: string
 ) {
   if (resourceType === MARKET_RESOURCE_TYPE.CHAIN) {
-    wb.openCanvas(sourceId, title);
+    openChainCanvas(sourceId, title);
     return;
   }
   if (code) {
@@ -885,7 +885,7 @@ function onMarketPublishBack(tab: WorkspaceTab) {
  * 只读态由 ChainCanvasPane 按「chainOwner ≠ 当前用户」自动判定——未安装者看编排不能改。
  */
 function onMarketOpenSourceCanvas(chainId: string | number, title: string) {
-  wb.openCanvas(chainId, title);
+  openChainCanvas(chainId, title);
 }
 
 /* ---------------- 连接管理（中栏 connection tab 上抛，pane 无路由依赖） ---------------- */
@@ -924,7 +924,7 @@ async function onCreateSaved(payload: CreateSavedPayload) {
     case DATABUS_RESOURCE_TYPE_CHAIN: {
       await reloadTree();
       if (payload.chain && payload.chain.id != null) {
-        wb.openCanvas(payload.chain.id, payload.chain.chainName);
+        openChainCanvas(payload.chain.id, payload.chain.chainName);
       }
       break;
     }
@@ -1025,8 +1025,7 @@ function onAgentRefOpen(item: AgentRefItem) {
       ElMessage.warning(`链路「${item.name}」缺少 id，暂无法打开`);
       return;
     }
-    wb.openCanvas(item.id, item.name);
-    touchRecent({ type: DATABUS_RESOURCE_TYPE_CHAIN, refId: item.id, title: item.name });
+    openChainCanvas(item.id, item.name);
     return;
   }
   void openComponentRef(item);
@@ -1093,6 +1092,17 @@ const copyDialogRef = ref<InstanceType<typeof ChainCopyDialog>>();
 
 function reloadTree() {
   return treeRef.value?.reload();
+}
+
+/**
+ * 打开链路画布并记入最近访问。
+ * <p>「最近访问」是 localStorage 台账（useRecentResources），不由树接口返回；
+ * AI 推送、向导、市场、审核看源这些入口都不经过资源树，若各自调 wb.openCanvas
+ * 就会漏记，因此收口到本方法。
+ */
+function openChainCanvas(chainId: string | number, title: string) {
+  wb.openCanvas(chainId, title);
+  touchRecent({ type: DATABUS_RESOURCE_TYPE_CHAIN, refId: chainId, title });
 }
 
 /* ---------------- AI 画布事件接线（§12.4 四分支） ---------------- */
@@ -1207,7 +1217,7 @@ useAgentPush((payload) => {
   if (!target) {
     // 分支 3 的延伸：当前正看着另一条脏画布 → 在新 tab 打开目标链，绝不覆盖当前
     if (evt.operation === 'CREATE' || currentCanvas?.dirty) {
-      wb.openCanvas(evt.chainId!, evt.chainName || String(evt.chainId));
+      openChainCanvas(evt.chainId!, evt.chainName || String(evt.chainId));
     }
     return;
   }
@@ -1264,8 +1274,7 @@ function rowOfNode(node: ResourceTreeNode): ComponentRegistryRow | undefined {
 function openResourceNode(node: ResourceTreeNode) {
   const chainId = nodeChainId(node);
   if (chainId != null) {
-    wb.openCanvas(chainId, node.label);
-    touchRecent({ type: DATABUS_RESOURCE_TYPE_CHAIN, refId: chainId, title: node.label });
+    openChainCanvas(chainId, node.label);
     return;
   }
   const row = rowOfNode(node);
@@ -1460,7 +1469,7 @@ async function onChainFormSaved(payload?: ChainFormSuccessPayload) {
   if (payload.isEdit) {
     wb.refreshTitleIfOpen(payload.id, payload.chainName);
   } else {
-    wb.openCanvas(payload.id, payload.chainName);
+    openChainCanvas(payload.id, payload.chainName);
   }
 }
 
