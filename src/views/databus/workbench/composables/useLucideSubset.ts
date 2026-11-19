@@ -46,6 +46,10 @@ const LUCIDE_SUBSET: IconifyJSON = {
     'arrow-up-right': {
       body: `<g ${S}><path d="M7 7h10v10"/><path d="M7 17 17 7"/></g>`
     },
+    // AI 对话「回到最新」：向下箭头，语义是视线回到消息流末尾
+    'arrow-down': {
+      body: `<g ${S}><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></g>`
+    },
     'log-out': {
       body: `<g ${S}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17l5-5l-5-5"/><path d="M21 12H9"/></g>`
     },

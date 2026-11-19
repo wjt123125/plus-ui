@@ -1,7 +1,7 @@
 <!-- 思考过程折叠块：思考阶段自动展开，正文开始后收起，用户可手动点开 -->
 <template>
   <div class="md-think" :class="{ 'is-open': open, 'is-live': streaming }">
-    <button type="button" class="md-think__head" @click="open = !open">
+    <button type="button" class="md-think__head" @click="toggle">
       <span class="md-think__label">{{ label }}</span>
       <span class="md-think__chev" />
     </button>
@@ -21,8 +21,16 @@ const props = withDefaults(
   { streaming: false }
 );
 
+/** 展开/收起会让整条消息的高度突变，宿主据此暂停贴底跟随，避免把用户拽回底部 */
+const emit = defineEmits<{ toggle: [open: boolean] }>();
+
 const open = ref(props.streaming);
 const seconds = ref(0);
+
+function toggle() {
+  open.value = !open.value;
+  emit('toggle', open.value);
+}
 
 let startedAt = 0;
 let timer: ReturnType<typeof setInterval> | undefined;

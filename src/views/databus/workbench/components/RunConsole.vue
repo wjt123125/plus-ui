@@ -26,7 +26,8 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { ref } from 'vue';
+import { useStickToBottom } from '@/hooks/scroll/useStickToBottom';
 import ChainRunRow from './run/ChainRunRow.vue';
 import PreviewRunRow from './run/PreviewRunRow.vue';
 import { useRunConsole, type ChainRunEntry } from '../composables/useRunConsole';
@@ -42,17 +43,8 @@ const emit = defineEmits<{
 const { entries } = useRunConsole();
 
 const bodyRef = ref<HTMLElement>();
-
-// terminal 惯例：新输出滚到底部
-watch(
-  () => entries.value.length,
-  async () => {
-    await nextTick();
-    if (bodyRef.value) {
-      bodyRef.value.scrollTop = bodyRef.value.scrollHeight;
-    }
-  }
-);
+// 新输出跟随到底部（terminal 惯例）；用户上滑查看历史时自动暂停，不再被新输出拽回
+useStickToBottom(bodyRef);
 
 function onViewRecord(entry: ChainRunEntry, recordId: number | string) {
   emit('view-record', recordId, entry.code ? `执行记录 · ${entry.code}` : undefined);

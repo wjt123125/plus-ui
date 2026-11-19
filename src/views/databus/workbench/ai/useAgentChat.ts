@@ -39,10 +39,15 @@ import {
   AGENT_SSE_THINKING
 } from '@/constants/databus-agent';
 import { AGENT_RUN_STATUS } from '@/constants/databus';
-import { usePersisted } from '../composables/usePersisted';
 import type { AiSession, AiSessionGroup } from './ai.types';
 import type { AgentContextItem } from './contextTypes';
 import { parseRefsText, type AgentRefItem } from './useAgentRefs';
+import {
+  activeConversationId,
+  clearDraft,
+  currentDraft,
+  UNSAVED_CONVERSATION_KEY
+} from './agentSession';
 
 export type AgentChatRole = 'user' | 'assistant' | 'system';
 
@@ -81,8 +86,8 @@ interface AgentSessionState {
 /** 旧的单例会话 key，迁移到多会话后仅在新 key 为空时读一次 */
 const LEGACY_CONVERSATION_KEY = 'databus.agent.conversationId';
 
-/** 当前激活会话 id（多会话切换只改这一个值） */
-const activeId = usePersisted('databus.agent.activeConversationId', '');
+/** 当前激活会话 id（多会话切换只改这一个值）；草稿/引用按同一 key 归档 */
+const activeId = activeConversationId;
 
 migrateLegacyConversationId();
 
@@ -124,7 +129,10 @@ function migrateLegacyConversationId() {
 
 /** 会话 id 必须满足后端白名单 ^[A-Za-z0-9_-]{8,64}$（UUID 带连字符也符合） */
 function newConversationId(): string {
-  return crypto.randomUUID();
+  // 内网 http 非安全上下文没有 crypto.randomUUID，退化成时间戳 + 随机串
+  return typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `conv_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function ensureSession(conversationId: string): AgentSessionState {
@@ -251,6 +259,57 @@ function findCardSegment(state: AgentSessionState, cardId: string) {
   return undefined;
 }
 
+/**
+ * 流式增量批处理。
+ *
+ * SSE 每个 chunk 直接改响应式状态的话，渲染、Markdown 解析、贴底滚动都会按 token 频率跑，
+ * 既浪费也让滚动看起来在「抢」。这里把同一会话同一类型的增量攒到下一帧再落一次，
+ * 落库口径不变：done 仍以服务端 fullText 整体替换。
+ */
+interface PendingDelta {
+  conversationId: string;
+  kind: 'text' | 'thinking';
+  text: string;
+}
+
+const pendingDeltas = new Map<string, PendingDelta>();
+let flushFrame = 0;
+
+function flushDeltas() {
+  if (flushFrame) {
+    cancelAnimationFrame(flushFrame);
+    flushFrame = 0;
+  }
+  if (!pendingDeltas.size) {
+    return;
+  }
+  const batch = [...pendingDeltas.values()];
+  pendingDeltas.clear();
+  for (const delta of batch) {
+    const state = sessions[delta.conversationId];
+    const target = state ? streamingMessage(state) : undefined;
+    if (target) {
+      appendSegment(target, { kind: delta.kind, text: delta.text });
+    }
+  }
+}
+
+function queueDelta(conversationId: string, kind: 'text' | 'thinking', text: string) {
+  const key = `${conversationId}|${kind}`;
+  const pending = pendingDeltas.get(key);
+  if (pending) {
+    pending.text += text;
+  } else {
+    pendingDeltas.set(key, { conversationId, kind, text });
+  }
+  if (!flushFrame) {
+    flushFrame = requestAnimationFrame(() => {
+      flushFrame = 0;
+      flushDeltas();
+    });
+  }
+}
+
 /** 流事件全部按会话定位，不依赖全局 streamingId */
 function handleEvent(conversationId: string, type: string, data: string) {
   const state = sessions[conversationId];
@@ -260,17 +319,19 @@ function handleEvent(conversationId: string, type: string, data: string) {
   const target = streamingMessage(state);
   switch (type) {
     case AGENT_SSE_TEXT:
-      if (target) {
-        appendSegment(target, { kind: 'text', text: data });
+      if (target && data) {
+        queueDelta(conversationId, 'text', data);
       }
       break;
     case AGENT_SSE_THINKING:
       // 空分片不建段，否则会留一个没有内容的「思考」壳
       if (target && data.trim()) {
-        appendSegment(target, { kind: 'thinking', text: data });
+        queueDelta(conversationId, 'thinking', data);
       }
       break;
     case AGENT_SSE_DONE: {
+      // 先把攒着的正文落地，done 的 fullText 随后整体替换，保证不丢最后一批
+      flushDeltas();
       const done = parseJson<{ conversationId?: string; fullText?: string }>(data);
       if (target) {
         // done 的 data 就是整轮最终正文（JSON 取 fullText，纯文本直接用 raw）。
@@ -294,6 +355,8 @@ function handleEvent(conversationId: string, type: string, data: string) {
       break;
     }
     case AGENT_SSE_ERROR: {
+      // 半截正文也是用户已经看到的，先落地再挂错误
+      flushDeltas();
       const err = parseJson<{ message?: string }>(data);
       failStreaming(conversationId, err?.message || 'AI 服务异常，请稍后重试');
       break;
@@ -395,8 +458,13 @@ async function send(content: string, refs?: AgentRefItem[], cardReply?: AgentCar
   if (!text && !refList.length && !contextList.length) {
     return;
   }
-  const conversationId = activeId.value || newConversationId();
+  const previous = activeId.value;
+  const conversationId = previous || newConversationId();
   activeId.value = conversationId;
+  if (!previous) {
+    // 空白态发出的首条消息：草稿已随发送消费掉，占位槽一起清掉
+    clearDraft(UNSAVED_CONVERSATION_KEY);
+  }
   const state = ensureSession(conversationId);
   if (state.running) {
     return;
@@ -463,6 +531,7 @@ async function stop() {
   }
   const state = ensureSession(conversationId);
   const runId = state.runId;
+  flushDeltas();
   const target = streamingMessage(state);
   if (target) {
     if (!textOf(target)) {
@@ -625,15 +694,18 @@ async function retryReply(messageId: string) {
   void refreshSessions();
 }
 
-/** 新建会话：换一个空桶并切过去，不打断其它会话正在跑的 run */
+/**
+ * 新建会话 = 把侧边栏切到空白流：不建会话桶、不落 id、不进历史栏，
+ * 首条消息发出时才生成真实 conversationId。
+ */
 function createSession(): string {
-  const conversationId = newConversationId();
-  ensureSession(conversationId).loaded = true;
-  activeId.value = conversationId;
-  return conversationId;
+  // 空白态自身携带的草稿也一并清掉，保证每次点新建都是干净的空状态
+  clearDraft(UNSAVED_CONVERSATION_KEY);
+  activeId.value = '';
+  return '';
 }
 
-/** 兼容旧调用名（面板 defineExpose({ newSession }) 保持不变） */
+/** 面板 defineExpose 对外暴露的新建入口 */
 const newSession = createSession;
 
 /** 切换会话：切过去按需拉历史（已加载的会话不重复请求） */
@@ -985,9 +1057,15 @@ const sessionList = computed<AiSession[]>(() => {
   const remoteIds = new Set(remote.map((item) => item.conversationId));
   const list: AiSession[] = [];
   for (const id of Object.keys(sessions).toReversed()) {
-    if (!remoteIds.has(id)) {
-      list.push(localSessionItem(id));
+    if (remoteIds.has(id)) {
+      continue;
     }
+    // 空白态（尚未发出任何用户消息）不进历史栏，避免一堆废会话 item
+    const state = sessions[id];
+    if (!state?.messages.some((m) => m.role === 'user')) {
+      continue;
+    }
+    list.push(localSessionItem(id));
   }
   for (const item of remote) {
     list.push(remoteSessionItem(item));
@@ -1048,6 +1126,7 @@ export function useAgentChat() {
     conversationId,
     messages,
     running,
+    draft: currentDraft,
     sessionList,
     sessionGroups,
     ensureSession,

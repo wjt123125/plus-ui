@@ -52,16 +52,19 @@
             :message="m"
             :question="m"
             :reply="turnReply(i)"
-            :last-turn="isLastTurn(i)"
+            :last-turn="lastTurnIndex === i"
             :running="running"
             :deps="messageActionDeps"
           />
         </div>
         <!-- AI 消息：上方是身份行，正文按段渲染。text 段走 Markdown，thinking 折叠，notice 独立成块 -->
         <div v-else class="agent-chat__col">
-          <div class="agent-chat__who">
-            <SvgIcon class="agent-chat__who-icon" icon-class="lucide:sparkle-filled" />
+          <div class="agent-chat__who" :class="{ 'is-streaming': m.status === 'streaming' }">
+            <span class="agent-chat__who-spark">
+              <SvgIcon class="agent-chat__who-icon" icon-class="lucide:sparkle-filled" />
+            </span>
             <span>DB Copilot</span>
+            <span v-if="m.status === 'streaming'" class="agent-chat__who-live" aria-hidden="true" />
           </div>
           <div
             class="agent-chat__bubble"
@@ -75,6 +78,7 @@
                 v-if="seg.kind === 'thinking'"
                 :text="seg.text"
                 :streaming="m.status === 'streaming' && !hasText(m)"
+                @toggle="pauseFollowing"
               />
               <p v-else-if="seg.kind === 'notice'" class="agent-chat__notice">{{ seg.text }}</p>
               <AgentCardBlock
@@ -101,7 +105,7 @@
             :message="m"
             :question="turnQuestion(i)"
             :reply="m"
-            :last-turn="isLastTurn(i)"
+            :last-turn="lastTurnIndex === i"
             :running="running"
             :deps="messageActionDeps"
           />
@@ -125,6 +129,28 @@
 
     <!-- 输入区：整块灰底无边框，底部一行工具（工作区 / 审批模式 / 回滚）+ 发送按钮 -->
     <div class="agent-chat__input">
+      <!--
+        「回到最新」：只有用户自己上滑（或主动折叠内容）暂停跟随时才出现。
+        浮在输入区上方，出现/消失不改变消息区高度，避免它自己又触发一次滚动。
+      -->
+      <Transition name="agent-chat-latest">
+        <button
+          v-if="!following"
+          type="button"
+          class="agent-chat__latest"
+          :class="{ 'is-fresh': hasNew, 'is-flowing': running }"
+          @click="toLatest(!running)"
+        >
+          <span class="agent-chat__latest-arrow" aria-hidden="true">
+            <span class="agent-chat__latest-queue">
+              <SvgIcon icon-class="lucide:arrow-down" />
+              <SvgIcon icon-class="lucide:arrow-down" />
+              <SvgIcon icon-class="lucide:arrow-down" />
+            </span>
+          </span>
+          <span class="agent-chat__latest-text">{{ hasNew ? '有新内容，回到最新' : '回到最新' }}</span>
+        </button>
+      </Transition>
       <div class="agent-chat__composer">
         <!-- 卡片与文字同处一条行内流：卡片能挨着文字落行，不再各占一行 -->
         <AgentComposer
@@ -225,11 +251,13 @@
 /**
  * AI 助手对话面板（工作台侧栏薄壳）：消息流 + 输入区 + 卡片点选回执。
  *
- * 会话状态在 useAgentChat、附件暂存在 useAgentContext（均为模块级单例，收起侧栏不丢）。
+ * 会话状态在 useAgentChat、附件暂存在 useAgentContext（按 conversationId 分桶，
+ * 收起侧栏不丢，切会话各看各的）。
  * SnailAI 不可达或流断开时，错误以系统行呈现。
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { useStickToBottom } from '@/hooks/scroll/useStickToBottom';
 import { getAgentApprovalMode, listAgentHistory, rollbackRun, updateAgentApprovalMode } from '@/api/databus/agent';
 import type { AgentApprovalMode, AgentCard, AgentCardOption } from '@/api/databus/agent/types';
 import { useLucideSubset } from '../composables/useLucideSubset';
@@ -279,6 +307,7 @@ const {
   conversationId,
   messages,
   running,
+  draft,
   send,
   answerCard,
   stop,
@@ -294,7 +323,7 @@ const {
 const { refs, removeRef, clearRefs } = useAgentRefs();
 
 /** 上下文附件：划字摘录与画布资源共用一份暂存，发送时整批带出去 */
-const { contexts, removeContext, clearContexts } = useAgentContext();
+const { contexts, removeContext, clearContexts, clearBadges } = useAgentContext();
 
 /** 输入区已有卡片/引用时不再提示「@ 添加上下文」——它们本身就是已输入的内容 */
 const inputPlaceholder = computed(() =>
@@ -407,7 +436,20 @@ function segmentText(message: AgentChatMessage, kind: 'text' | 'thinking' | 'not
     .join('');
 }
 
-const textOf = (message: AgentChatMessage) => segmentText(message, 'text');
+/**
+ * 每条消息的正文纯文本。
+ * 模板里每条消息每次渲染都要读它，逐次 filter+join 会让流式期间的渲染成本翻倍，
+ * 这里一次算完，模板只做查表。
+ */
+const textMap = computed(() => {
+  const map = new Map<string, string>();
+  for (const message of messages.value) {
+    map.set(message.id, segmentText(message, 'text'));
+  }
+  return map;
+});
+
+const textOf = (message: AgentChatMessage) => textMap.value.get(message.id) ?? '';
 const noticeText = (message: AgentChatMessage) => segmentText(message, 'notice');
 const hasText = (message: AgentChatMessage) => textOf(message).length > 0;
 /** 系统行里的错误提示（连接断开等）单独用警示色，与普通提示区分 */
@@ -428,13 +470,23 @@ function turnQuestion(index: number): AgentChatMessage | undefined {
   return prev?.role === 'user' ? prev : undefined;
 }
 
-/** 后面没有新的问答了才算最后一轮：重试只对这一轮开放 */
-function isLastTurn(index: number): boolean {
-  return !messages.value.slice(index + 1).some((m) => m.role !== 'system');
-}
+/** 最后一条非系统消息的下标：重试只对这一轮开放，模板逐条问一次即可 */
+const lastTurnIndex = computed(() => {
+  for (let i = messages.value.length - 1; i >= 0; i -= 1) {
+    if (messages.value[i].role !== 'system') {
+      return i;
+    }
+  }
+  return -1;
+});
 
-const draft = ref('');
 const bodyRef = ref<HTMLElement>();
+/**
+ * 贴底跟随：只在这里写 scrollTop。
+ * 用户上滑即暂停跟随，回到最新由按钮或自己滚回底部恢复——
+ * 流式输出只负责长高，不负责抢滚动条。
+ */
+const { following, hasNew, toLatest, pause: pauseFollowing } = useStickToBottom(bodyRef);
 /** 输入框实例：contenteditable 只对外暴露 focus，宿主发完消息后把光标交回去 */
 const inputRef = ref<{ focus: () => void }>();
 
@@ -467,6 +519,8 @@ async function onCardPick(cardId: string, option: AgentCardOption, scope?: CardP
     }
   }
   await answerCard(cardId, option.key, option.label);
+  // 点卡是对新回复的显式索取：即便之前在看历史，也回到最新
+  toLatest();
 }
 
 /** 只在「最后一条是已结束的 AI 回答」时给建议：跑的过程中和用户刚说完都不打扰 */
@@ -488,6 +542,8 @@ function pickSuggestion(text: string) {
     return;
   }
   sendWithRefs(text);
+  // 发出去就是要看最新，显式恢复跟随（与上滑暂停区分开）
+  toLatest();
   // 点完建议把光标交回输入框，接着打字不用再点一次
   void nextTick(() => inputRef.value?.focus());
 }
@@ -497,21 +553,11 @@ function submit() {
     return;
   }
   sendWithRefs(draft.value);
+  toLatest();
 }
 
-/** 消息有增改（流式追加）就贴底，保持最新一条可见 */
-watch(
-  messages,
-  () => {
-    void nextTick(() => {
-      const el = bodyRef.value;
-      if (el) {
-        el.scrollTop = el.scrollHeight;
-      }
-    });
-  },
-  { deep: true }
-);
+// 贴底只由 useStickToBottom 负责（按「内容长高」和「用户意图」分别处理）。
+// 不要在消息更新时写 scrollTop：那会和用户上滑抢控制权。
 
 // 画布/草稿推送不在这里回显：它们由工作台按四分支处理（弹窗确认、重画、开 tab），
 // 而 payload.message 是推送中心用的短文案（「画布已更新：xxx」），
@@ -695,6 +741,10 @@ watch(
   conversationId,
   (id) => {
     void loadApprovalMode(id);
+    // 角标绑的是上一会话的 DOM 选区，切走后不能留在新会话上
+    clearBadges();
+    // 换会话后回到最新：DOM 元素没变，滚动状态得手动归位
+    void nextTick(() => toLatest());
   },
   { immediate: true }
 );
@@ -718,6 +768,17 @@ defineExpose({ newSession });
   min-height: 0;
   overflow-y: auto;
   padding: 16px;
+
+  /*
+   * 滚动行为全部交给 useStickToBottom：
+   * - scroll-behavior 必须是 auto，平滑动画会被流式批次反复重定向，只会更抖；
+   * - overflow-anchor 保持 auto：暂停跟随时由浏览器锚定保住阅读位置（思考块收起也不会跳）；
+   * - scrollbar-gutter 预留滚动条宽度，首次出现滚动条时正文不会因重排而抖一下。
+   */
+  scroll-behavior: auto;
+  overflow-anchor: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 
   /* 默认滚动条在这类窄侧栏里最显廉价，收细到 6px */
   &::-webkit-scrollbar {
@@ -815,24 +876,161 @@ defineExpose({ newSession });
 
 /* 身份行：小胶囊托住图标和名字，比纯文字更有「发言人」感 */
 .agent-chat__who {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   margin-bottom: 6px;
-  padding: 2px 8px 2px 6px;
-  border-radius: 6px;
+  padding: 3px 9px 3px 7px;
+  border-radius: 7px;
   background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
-  font-size: 11.5px;
+  font-size: 12.5px;
   font-weight: 500;
   line-height: 1.6;
   color: var(--db-ink-muted, #6e6e73);
 }
 
+/* 星芒外层：动画落在本组件自己的元素上，避免子组件根节点选择器不命中 */
+.agent-chat__who-spark {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  transform-origin: 50% 50%;
+}
+
+/* 软光晕：径向渐变自然衰减，边界柔和 */
+.agent-chat__who-spark::before {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(10, 132, 255, 0.26) 0%,
+    rgba(10, 132, 255, 0.1) 38%,
+    rgba(10, 132, 255, 0) 72%
+  );
+  opacity: 0;
+  transform: scale(0.75);
+  pointer-events: none;
+  will-change: opacity, transform;
+}
+
 .agent-chat__who-icon {
   flex: none;
-  font-size: 12px;
-  color: var(--db-blue, #007aff);
+  font-size: 13.5px;
+  color: #0a84ff;
 }
+
+/* 回复中：胶囊底色微渐变，不加描边 */
+.agent-chat__who.is-streaming {
+  background: linear-gradient(180deg, rgba(10, 132, 255, 0.07), rgba(10, 132, 255, 0.02));
+}
+
+.agent-chat__who.is-streaming .agent-chat__who-spark {
+  animation: agent-spark-breathe 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.agent-chat__who.is-streaming .agent-chat__who-spark::before {
+  animation: agent-spark-halo 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* 缓慢扫过的微光：覆盖整枚胶囊（星芒 + 文字），背景按胶囊圆角裁切 */
+.agent-chat__who.is-streaming::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 38%,
+    rgba(255, 255, 255, 0.85) 50%,
+    rgba(255, 255, 255, 0) 62%
+  );
+  background-size: 240% 100%;
+  background-position: 135% 0;
+  mix-blend-mode: screen;
+  opacity: 0;
+  pointer-events: none;
+  animation: agent-who-sweep 3.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* 常驻可见的状态点：即使系统关闭动效，也能看出这条正在回复 */
+.agent-chat__who-live {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  margin-left: 3px;
+  border-radius: 50%;
+  background: #0a84ff;
+  box-shadow: 0 0 6px rgba(10, 132, 255, 0.45);
+  animation: agent-live-dot 1.6s ease-in-out infinite;
+}
+
+/* 只让透明度起伏，不缩放，避免小圆点抖动出颗粒感 */
+@keyframes agent-live-dot {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+/* 轻微呼吸（1 → 1.12），实心小图标不会被拉出像素感 */
+@keyframes agent-spark-breathe {
+  0%,
+  100% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+@keyframes agent-spark-halo {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+
+  50% {
+    opacity: 0.75;
+    transform: scale(1.15);
+  }
+}
+
+/* 3.2s 一轮：前段静默，随后一道微光自右向左扫过整枚胶囊，扫完再静默 */
+@keyframes agent-who-sweep {
+  0%,
+  50% {
+    opacity: 0;
+    background-position: 135% 0;
+  }
+
+  58% {
+    opacity: 0.85;
+  }
+
+  82% {
+    opacity: 0;
+    background-position: -45% 0;
+  }
+
+  100% {
+    opacity: 0;
+    background-position: -45% 0;
+  }
+}
+
+/* 说明：状态指示是“正在回复”的唯一反馈，这里不做 prefers-reduced-motion 关闭，
+   否则系统开启“减少动画”时会完全看不到运行状态（仅剩一颗静态蓝点）。 */
 
 .agent-chat__bubble {
   max-width: 86%;
@@ -920,6 +1118,129 @@ defineExpose({ newSession });
   position: relative;
   flex-shrink: 0;
   padding: 8px 12px 12px;
+}
+
+/* 「回到最新」：浮在输入区上沿，不参与消息区布局，出现/消失不会再次触发滚动 */
+.agent-chat__latest {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  z-index: 1;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 3px 10px 3px 3px;
+  /* 与选区评论气泡（.ctx-bubble / .ctx-act）同一套：白底 + 1px 浅边 + 柔和大投影 */
+  border: 1px solid var(--el-border-color-lighter, #ebeef5);
+  border-radius: 999px;
+  background: var(--el-bg-color-overlay, #fff);
+  box-shadow: var(--el-box-shadow-light, 0 6px 24px rgba(0, 0, 0, 0.12));
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--el-text-color-primary, #303133);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+
+  &:hover {
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+  }
+}
+
+/* 左端黑圆：与评论输入框那个对勾按钮同一种墨色；圆形裁切让箭头端点自然被“吃掉” */
+.agent-chat__latest-arrow {
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--el-text-color-primary, #303133);
+  color: #fff;
+  overflow: hidden;
+  transition: background-color 0.15s;
+}
+
+/*
+ * 三条相同箭头首尾相接成一条带子，每轮只下移一个「箭头高 + 间距」，
+ * 复位瞬间图案与起点完全重合，所以接缝看不出来，视觉上是一直在往下排队。
+ * 默认停在居中位置：流式结束后箭头就静静待着，不空转。
+ */
+.agent-chat__latest-queue {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transform: translateY(6.5px);
+}
+
+.agent-chat__latest-queue :deep(svg) {
+  display: block;
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+
+/* 只有真的还在出字时才流动 */
+.agent-chat__latest.is-flowing .agent-chat__latest-queue {
+  animation: agent-chat-latest-queue 1.2s linear infinite;
+}
+
+@keyframes agent-chat-latest-queue {
+  from {
+    transform: translateY(-12px);
+  }
+
+  to {
+    transform: translateY(7px);
+  }
+}
+
+.agent-chat__latest-text {
+  font-size: 12px;
+  color: var(--el-text-color-regular, #606266);
+  transition: color 0.15s;
+}
+
+.agent-chat__latest:hover .agent-chat__latest-arrow {
+  background: #1f1f1f;
+}
+
+.agent-chat__latest:hover .agent-chat__latest-text {
+  color: var(--el-text-color-primary, #303133);
+}
+
+/* 有新内容：文字压成纯黑并加重，与默认的次级灰字拉开一档 */
+.agent-chat__latest.is-fresh .agent-chat__latest-text {
+  color: var(--el-text-color-primary, #303133);
+  font-weight: 500;
+}
+
+/* 浮层进出：只做透明度和 4px 位移，绝对定位不参与布局，不会触发二次滚动 */
+.agent-chat-latest-enter-active,
+.agent-chat-latest-leave-active {
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease;
+}
+
+.agent-chat-latest-enter-from,
+.agent-chat-latest-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-chat-latest-enter-active,
+  .agent-chat-latest-leave-active {
+    transition: none;
+  }
 }
 
 /* 建议 pill：贴在最后一条回答下方，点一下直接发下一句 */

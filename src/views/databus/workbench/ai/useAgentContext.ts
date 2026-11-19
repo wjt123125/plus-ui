@@ -1,11 +1,14 @@
 /**
- * 会话上下文附件（§22）：暂存区 + 来源角标（模块级单例，与 useAgentRefs 同策略：
- * 收起侧栏、切面板都不丢，刷新才清空）。
+ * 会话上下文附件（§22）：暂存区 + 来源角标。
+ *
+ * 暂存区按 conversationId 分桶（与 useAgentRefs 同策略）：切会话各看各的，切回来还在；
+ * 收起侧栏只是销毁 DOM，模块级状态不丢；刷新后暂存区清空，只保留消息里的 attachments。
  *
  * 选中文字只进暂存区，不立即发送；真正发出去由 AgentChatPanel 把整批 contexts
  * 作为 attachments 交给后端。来源角标只管当次会话，DOM 被重建（Range 断开）后自动隐藏。
  */
-import { ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
+import { currentConversationKey } from './agentSession';
 import { contextMeta, type AgentContextItem } from './contextTypes';
 
 /** 角标定位用的视口矩形；只留数值，避免把 DOMRect 塞进响应式代理 */
@@ -36,8 +39,20 @@ export interface ResourceContextInput {
   note?: string;
 }
 
-const contexts = ref<AgentContextItem[]>([]);
+/** conversationId → 该会话暂存的上下文附件 */
+const contextsByConversation = reactive<Record<string, AgentContextItem[]>>({});
+const contexts = computed<AgentContextItem[]>(
+  () => contextsByConversation[currentConversationKey()] ?? []
+);
 const badges = ref<ContextBadge[]>([]);
+
+function currentList(): AgentContextItem[] {
+  const key = currentConversationKey();
+  if (!contextsByConversation[key]) {
+    contextsByConversation[key] = [];
+  }
+  return contextsByConversation[key];
+}
 
 /** CSS Custom Highlight 的注册名，样式在 ContextSelectionBubble 的非 scoped 块里 */
 const HIGHLIGHT_KEY = 'databus-context';
@@ -109,18 +124,23 @@ function uniqueTitle(base: string): string {
  * @return 真正留在暂存区里的条目（重复时是之前那条，id 可能与入参不同）
  */
 function addContext(item: AgentContextItem): AgentContextItem {
-  const exist = contexts.value.find((c) => c.fingerprint === item.fingerprint);
+  const list = currentList();
+  const exist = list.find((c) => c.fingerprint === item.fingerprint);
   if (exist) {
     return exist;
   }
   const stored: AgentContextItem = { ...item, title: uniqueTitle(item.title) };
-  contexts.value.push(stored);
+  list.push(stored);
   return stored;
 }
 
 function removeContext(item: AgentContextItem | string): void {
+  const key = currentConversationKey();
   const id = typeof item === 'string' ? item : item.id;
-  contexts.value = contexts.value.filter((c) => c.id !== id);
+  const list = contextsByConversation[key];
+  if (list) {
+    contextsByConversation[key] = list.filter((c) => c.id !== id);
+  }
   removeBadge(id);
 }
 
@@ -129,13 +149,13 @@ function removeContext(item: AgentContextItem | string): void {
  * 卡片已落在消息里，留着角标会指向一个暂存区里不存在的条目。
  */
 function clearContexts(): void {
-  contexts.value = [];
+  delete contextsByConversation[currentConversationKey()];
   clearBadges();
 }
 
 function updateNote(item: AgentContextItem | string, note: string): void {
   const id = typeof item === 'string' ? item : item.id;
-  const target = contexts.value.find((c) => c.id === id);
+  const target = currentList().find((c) => c.id === id);
   if (target) {
     target.note = note;
   }
@@ -203,6 +223,7 @@ export function useAgentContext() {
     updateNote,
     resourceContext,
     addBadge,
+    clearBadges,
     refreshBadges
   };
 }

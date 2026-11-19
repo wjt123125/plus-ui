@@ -327,7 +327,8 @@ async function onMore(session: AiSession, command: string) {
     }
   }
 
-  /* 快捷键提示：贴按钮右侧，字号与字重都弱于主文案，不抢「新建会话」 */
+  /* 快捷键提示：贴按钮右侧，字号与字重都弱于主文案，不抢「新建会话」。
+     常态隐藏，hover 按钮时才淡入，避免一直占位抢注意力 */
   &__kbd {
     margin-left: auto;
     flex-shrink: 0;
@@ -337,6 +338,13 @@ async function onMore(session: AiSession, command: string) {
     letter-spacing: 0.2px;
     color: var(--el-text-color-placeholder);
     font-variant-numeric: tabular-nums;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  &__new:hover &__kbd,
+  &__new:focus-visible &__kbd {
+    opacity: 1;
   }
 
   /* 工具行：搜索框（展开时）+ 搜索 / 视图切换两个按钮，整体右对齐。

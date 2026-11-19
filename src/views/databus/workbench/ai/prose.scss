@@ -32,8 +32,8 @@
   line-height: var(--md-line);
   word-break: break-word;
 
-  /* 首个元素不留上边距，气泡顶部才不会空一块 */
-  > :first-child {
+  /* 首个排版元素要清掉上边距，气泡顶部才不会空一块；它在块容器里，要往里一层 */
+  > .md-chunk:first-child > :first-child {
     margin-top: 0;
   }
 

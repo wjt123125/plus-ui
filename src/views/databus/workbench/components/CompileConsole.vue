@@ -58,8 +58,9 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { ref } from 'vue';
 import type { ScriptDiagnostic } from '@/api/databus/component/types';
+import { useStickToBottom } from '@/hooks/scroll/useStickToBottom';
 import { useLucideSubset } from '../composables/useLucideSubset';
 import { useCompileConsole, type CompileLogEntry } from '../composables/useCompileConsole';
 
@@ -71,19 +72,10 @@ withDefaults(defineProps<{ bare?: boolean }>(), { bare: false });
 const { open, entries, errorCount, clear, requestReveal } = useCompileConsole();
 
 const bodyRef = ref<HTMLElement>();
+// 新日志到达跟随到底部（terminal 惯例：尾部是最新输出）；用户上滑查看历史时自动暂停
+useStickToBottom(bodyRef);
 
 useLucideSubset();
-
-// 新日志到达自动滚到底部（terminal 惯例：尾部是最新输出）
-watch(
-  () => entries.value.length,
-  async () => {
-    await nextTick();
-    if (bodyRef.value) {
-      bodyRef.value.scrollTop = bodyRef.value.scrollHeight;
-    }
-  }
-);
 
 function onReveal(entry: CompileLogEntry, d: ScriptDiagnostic) {
   if (d.line <= 0) {
