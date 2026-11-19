@@ -27,10 +27,14 @@
         暂无编译输出——发布脚本后，编译结果会显示在这里
       </div>
       <div
-        v-for="entry in entries"
+        v-for="(entry, index) in entries"
         :key="entry.id"
         class="cc-console__entry"
         :class="`is-${entry.level}`"
+        :data-context-type="entry.level === 'error' ? 'compile-error' : undefined"
+        :data-context-anchor="`compile-${index}`"
+        :data-context-asset-id="entry.level === 'error' ? entry.componentId : undefined"
+        :data-context-asset-name="entry.level === 'error' ? entry.code || undefined : undefined"
       >
         <span class="cc-console__time">{{ entry.time }}</span>
         <span class="cc-console__code">{{ entry.code || `#${entry.componentId}` }}</span>

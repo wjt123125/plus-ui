@@ -1,20 +1,20 @@
 /**
  * AI 会话「引用类型」注册表：以后要支持新的可引用资源，只改这一个文件。
  *
- * 元信息（标签 / 图标 / 类型色 / 引用段里的 id 字段名）集中定义，
- * 芯片渲染、发给模型的引用段文案、去重与资源映射都从这里读，
- * 避免各处散落「type === 'chain' ? ... : ...」。
+ * 元信息（标签 / 图标 / 类型色 / 主键字段名）集中定义：输入框芯片与已发气泡的引用卡
+ * 按它渲染；新消息的引用走 attachments，只有旧历史才需要靠标签与 idKey 从正文还原。
+ * 这样各处不用散落「type === 'chain' ? ... : ...」。
  */
 export type AgentRefType = 'chain' | 'component';
 
 export interface AgentRefMeta {
-  /** 引用段里对模型可见的类型名，如「链路」 */
+  /** 芯片与旧历史引用段里显示的中文类型名，如「链路」 */
   label: string;
   /** lucide 图标名，直接传给 SvgIcon 的 icon-class */
   icon: string;
   /** 类型色 CSS 变量：芯片以 --ref-color 注入，图标着色、底色由 color-mix 派生 */
   color: string;
-  /** 引用段里主键的字段名，模型据此调工具，如 chainId / componentId */
+  /** 旧历史引用段里的主键字段名，parseRefsText 据此还原 id，如 chainId / componentId */
   idKey: string;
 }
 

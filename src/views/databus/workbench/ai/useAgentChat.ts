@@ -17,12 +17,15 @@ import { ElMessage } from 'element-plus';
 import {
   buildAgentStreamUrl,
   deleteAgentConversation,
+  deleteAgentRun,
   getActiveAgentRun,
   listAgentConversations,
   listAgentHistory,
   pinAgentConversation,
   renameAgentConversation,
   restoreAgentConversation,
+  retryAgentRun,
+  revertAgentRun,
   searchAgentConversations,
   startAgentChat,
   stopAgentRun
@@ -38,7 +41,8 @@ import {
 import { AGENT_RUN_STATUS } from '@/constants/databus';
 import { usePersisted } from '../composables/usePersisted';
 import type { AiSession, AiSessionGroup } from './ai.types';
-import { buildRefsText, parseRefsText, type AgentRefItem } from './useAgentRefs';
+import type { AgentContextItem } from './contextTypes';
+import { parseRefsText, type AgentRefItem } from './useAgentRefs';
 
 export type AgentChatRole = 'user' | 'assistant' | 'system';
 
@@ -52,10 +56,14 @@ export interface AgentChatMessage {
   id: string;
   role: AgentChatRole;
   segments: AgentSegment[];
-  /** 用户消息携带的引用卡；发出去的文本里另有等价引用段，气泡里只渲染芯片 */
+  /** 用户消息携带的引用卡；发送时另转成 resource 附件，气泡里只渲染芯片 */
   refs?: AgentRefItem[];
+  /** 用户消息携带的上下文附件（划字摘录 / 资源）；正文里不再拼等价的引用段 */
+  contexts?: AgentContextItem[];
   /** assistant 气泡状态 */
   status?: 'streaming' | 'done' | 'error';
+  /** 这一轮对应的后端 run 句柄（重试 / 删除 / 回退按轮定位用；未落库的本地消息为空） */
+  runId?: string;
 }
 
 /** 单个会话的全部前端状态 */
@@ -147,7 +155,7 @@ function appendSegment(
   message.segments.push(segment);
 }
 
-function textOf(message: AgentChatMessage): string {
+export function textOf(message: AgentChatMessage): string {
   return message.segments
     .filter((s): s is Extract<AgentSegment, { kind: 'text' }> => s.kind === 'text')
     .map((s) => s.text)
@@ -328,16 +336,63 @@ function openStream(conversationId: string, runId: string) {
 }
 
 /**
+ * 引用卡转成统一附件：refs 与划字摘录走同一个 attachments 字段，
+ * 后端不用区分两套结构，刷新回放也只认这一份。
+ */
+function refToContext(ref: AgentRefItem): AgentContextItem {
+  return {
+    id: `ref_${ref.type}_${ref.id ?? ref.code ?? ''}`,
+    kind: 'resource',
+    type: ref.type,
+    title: ref.name,
+    note: '',
+    payload: { id: ref.id, code: ref.code },
+    fingerprint: `${ref.type}|${ref.id ?? ref.code ?? ''}`
+  };
+}
+
+/** 附件里「resource 且没有评论」的就是引用卡；refs 卡目前只认链路与组件 */
+function isRefContext(item: AgentContextItem): boolean {
+  return item.kind === 'resource' && !item.note && (item.type === 'chain' || item.type === 'component');
+}
+
+function contextToRef(item: AgentContextItem): AgentRefItem {
+  return {
+    type: item.type as AgentRefItem['type'],
+    name: item.title,
+    id: item.payload?.id,
+    code: item.payload?.code
+  };
+}
+
+/** 后端 attachments 是 JSON 字符串；解析失败返回 null，交给正文兜底，不打断历史恢复 */
+function parseAttachments(raw?: string): AgentContextItem[] | null {
+  if (!raw) {
+    return null;
+  }
+  const parsed = parseJson<unknown>(raw);
+  if (!Array.isArray(parsed)) {
+    return null;
+  }
+  return parsed.filter(
+    (item): item is AgentContextItem =>
+      !!item && typeof item === 'object' && typeof (item as AgentContextItem).fingerprint === 'string'
+  );
+}
+
+/**
  * 发一句话：本地先定会话 id，把用户气泡与流式 assistant 气泡写进该会话桶，再建 run 拉流。
  *
  * @param content    用户原话（卡片点选时是选项文案）
- * @param refs       引用卡（随问题拼成引用段发出去）
+ * @param refs       引用卡（转成 resource 附件，不再拼进正文）
  * @param cardReply  卡片回执：点了哪张卡的哪一项，由后端校验后才认 userConfirmed
+ * @param contexts   上下文暂存区（划字摘录 + 资源），与正文分开走 attachments
  */
-async function send(content: string, refs?: AgentRefItem[], cardReply?: AgentCardReply) {
+async function send(content: string, refs?: AgentRefItem[], cardReply?: AgentCardReply, contexts?: AgentContextItem[]) {
   const text = content.trim();
   const refList = refs ?? [];
-  if (!text && !refList.length) {
+  const contextList = contexts ?? [];
+  if (!text && !refList.length && !contextList.length) {
     return;
   }
   const conversationId = activeId.value || newConversationId();
@@ -348,12 +403,14 @@ async function send(content: string, refs?: AgentRefItem[], cardReply?: AgentCar
   }
   disablePendingCards(state);
   state.loaded = true;
-  state.messages.push({
+  const question: AgentChatMessage = {
     id: nextId(),
     role: 'user',
     segments: text ? [{ kind: 'text', text }] : [],
-    refs: refList.length ? refList : undefined
-  });
+    refs: refList.length ? refList : undefined,
+    contexts: contextList.length ? contextList : undefined
+  };
+  state.messages.push(question);
   const assistant: AgentChatMessage = {
     id: nextId(),
     role: 'assistant',
@@ -364,15 +421,21 @@ async function send(content: string, refs?: AgentRefItem[], cardReply?: AgentCar
   state.messages.push(assistant);
   state.running = true;
   try {
+    // 正文只放用户敲的字；引用与摘录全部走 attachments，后端拼接时不会污染气泡
+    const attachments = [...refList.map(refToContext), ...contextList];
     const { data } = await startAgentChat({
-      content: `${text}${buildRefsText(refList)}`,
+      content: text,
       conversationId,
-      cardReply
+      cardReply,
+      attachments: attachments.length ? attachments : undefined
     });
     if (!data?.runId) {
       failStreaming(conversationId, '发起对话失败，请稍后重试');
       return;
     }
+    // 两条气泡都挂上 run：工具栏按轮重试 / 删除 / 回退都靠它定位
+    question.runId = data.runId;
+    assistant.runId = data.runId;
     // 后端若解析出不同的会话 id，整桶迁过去，后续按最终 id 收流
     const runConversationId = data.conversationId || conversationId;
     if (runConversationId !== conversationId) {
@@ -416,6 +479,149 @@ async function stop() {
       /* run 可能已自然结束，忽略 */
     }
   }
+  void refreshSessions();
+}
+
+/** 一轮对话在消息列表里的位置：以提问为锚点，回复是紧随其后的 assistant */
+interface AgentTurn {
+  question: AgentChatMessage;
+  questionIndex: number;
+  reply?: AgentChatMessage;
+}
+
+/** 按消息 id 定位它所属的一轮：AI 消息向前找提问，用户消息本身就是锚点 */
+function locateTurn(state: AgentSessionState, messageId: string): AgentTurn | null {
+  const index = state.messages.findIndex((m) => m.id === messageId);
+  if (index < 0) {
+    return null;
+  }
+  const message = state.messages[index];
+  const questionIndex = message.role === 'user' ? index : index - 1;
+  const question = state.messages[questionIndex];
+  if (!question || question.role !== 'user') {
+    return null;
+  }
+  const next = state.messages[questionIndex + 1];
+  return {
+    question,
+    questionIndex,
+    reply: next?.role === 'assistant' ? next : undefined
+  };
+}
+
+/** 当前会话里定位一轮；运行中不允许删改历史 */
+function resolveTurn(messageId: string): { state: AgentSessionState; turn: AgentTurn } | null {
+  const conversationId = activeId.value;
+  const state = conversationId ? sessions[conversationId] : undefined;
+  if (!state || state.running) {
+    return null;
+  }
+  const turn = locateTurn(state, messageId);
+  return turn ? { state, turn } : null;
+}
+
+/**
+ * 删除一轮对话：后端逻辑删除该 run，本地把提问与紧随的回复一起拿掉。
+ *
+ * @param messageId 这一轮里任意一条消息 id
+ */
+async function removeTurn(messageId: string) {
+  const conversationId = activeId.value;
+  const resolved = resolveTurn(messageId);
+  if (!resolved) {
+    return;
+  }
+  const { state, turn } = resolved;
+  if (turn.question.runId) {
+    await deleteAgentRun(turn.question.runId);
+  }
+  const drop = new Set([turn.question.id]);
+  if (turn.reply) {
+    drop.add(turn.reply.id);
+  }
+  state.messages = state.messages.filter((m) => !drop.has(m.id));
+  await pruneEmptySession(conversationId);
+}
+
+/**
+ * 会话被删空后的收尾：服务端已不再返回这个会话时，本地桶也要丢弃，
+ * 否则 sessionList 会把它当成「本地新会话」重新排到列表最前。
+ *
+ * @param conversationId 会话 id
+ */
+async function pruneEmptySession(conversationId: string) {
+  if (!conversationId) {
+    return;
+  }
+  await refreshSessions();
+  if (remoteSessions.value.some((item) => item.conversationId === conversationId)) {
+    return;
+  }
+  const state = sessions[conversationId];
+  if (!state || state.messages.some((m) => m.role === 'user')) {
+    return;
+  }
+  delete sessions[conversationId];
+  if (activeId.value === conversationId) {
+    activeId.value = '';
+  }
+}
+
+/**
+ * 回退到本轮对话发起前：撤销该轮及之后各轮的链路改动，本地同步截断消息。
+ *
+ * @param messageId 这一轮里任意一条消息 id
+ * @return 被回滚的链路（deleted=true 表示整条已删除）
+ */
+async function revertTurn(messageId: string): Promise<{ chainId: number | string; deleted: boolean }[]> {
+  const conversationId = activeId.value;
+  const resolved = resolveTurn(messageId);
+  if (!resolved) {
+    return [];
+  }
+  const { state, turn } = resolved;
+  const runId = turn.question.runId;
+  if (!runId) {
+    throw new Error('这一轮还没有落库，无法回退');
+  }
+  const { data } = await revertAgentRun(runId);
+  state.messages = state.messages.slice(0, turn.questionIndex);
+  await pruneEmptySession(conversationId);
+  return data ?? [];
+}
+
+/**
+ * 原地重试一条 AI 回复：后端隐藏旧 run 并沿用原问题重建，前端只重置这一条回复。
+ * 只允许重试最后一轮，否则新一轮会排到历史末尾、与看到的顺序错位。
+ *
+ * @param messageId 要重试的 assistant 消息 id
+ */
+async function retryReply(messageId: string) {
+  const conversationId = activeId.value;
+  const resolved = resolveTurn(messageId);
+  if (!conversationId || !resolved) {
+    return;
+  }
+  const { state, turn } = resolved;
+  const { question, reply } = turn;
+  if (!reply || !question.runId) {
+    throw new Error('这一轮还没有落库，无法重试');
+  }
+  const hasLaterTurn = state.messages.slice(turn.questionIndex + 2).some((m) => m.role !== 'system');
+  if (hasLaterTurn) {
+    throw new Error('只能重试最后一轮回复');
+  }
+  const { data } = await retryAgentRun(question.runId);
+  if (!data?.runId) {
+    throw new Error('重试失败，请稍后重试');
+  }
+  question.runId = data.runId;
+  reply.runId = data.runId;
+  reply.segments = [];
+  reply.status = 'streaming';
+  state.streamingId = reply.id;
+  state.running = true;
+  openStream(conversationId, data.runId);
   void refreshSessions();
 }
 
@@ -496,16 +702,31 @@ async function restore(conversationId?: string) {
     }
     runs.forEach((run, index) => {
       const intent = (run.intent ?? '').trim();
-      if (!intent) {
+      // 新 run：正文就是用户原话，附件单独在 attachments 里；
+      // 老 run 没有 attachments，才需要从正文尾部拆「【引用】」段还原引用卡
+      const stored = parseAttachments(run.attachments);
+      let text = intent;
+      let refs: AgentRefItem[] = [];
+      let contexts: AgentContextItem[] = [];
+      if (stored) {
+        contexts = stored.filter((item) => !isRefContext(item));
+        refs = stored.filter(isRefContext).map(contextToRef);
+      } else {
+        const parsed = parseRefsText(intent);
+        text = parsed.text;
+        refs = parsed.refs;
+      }
+      // 只有附件没有正文的轮次也要还原，否则刷新后丢卡片
+      if (!text && !refs.length && !contexts.length) {
         return;
       }
-      // 引用段是随问题一起发出去的纯文本，恢复时拆回结构化引用，卡片不退化
-      const parsed = parseRefsText(intent);
       restored.push({
         id: nextId(),
         role: 'user',
-        segments: parsed.text ? [{ kind: 'text', text: parsed.text }] : [],
-        refs: parsed.refs.length ? parsed.refs : undefined
+        segments: text ? [{ kind: 'text', text }] : [],
+        refs: refs.length ? refs : undefined,
+        contexts: contexts.length ? contexts : undefined,
+        runId: run.runId
       });
       const answer = reportText(run.report);
       const segments: AgentSegment[] = answer ? [{ kind: 'text', text: answer }] : [];
@@ -525,7 +746,7 @@ async function restore(conversationId?: string) {
         });
       }
       if (segments.length) {
-        restored.push({ id: nextId(), role: 'assistant', segments, status: 'done' });
+        restored.push({ id: nextId(), role: 'assistant', segments, status: 'done', runId: run.runId });
       }
     });
     // 拉历史期间用户可能已经开问，此时以新消息为准，不能把刚才的对话覆盖掉
@@ -836,6 +1057,9 @@ export function useAgentChat() {
     send,
     answerCard,
     stop,
+    retryReply,
+    removeTurn,
+    revertTurn,
     appendSystem,
     restore,
     refreshSessions,

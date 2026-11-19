@@ -172,9 +172,18 @@ const LUCIDE_SUBSET: IconifyJSON = {
     history: {
       body: `<g ${S}><path d="M3 12a9 9 0 1 0 9-9a9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></g>`
     },
+    // 上下文卡前置图标：气泡里带三点，比空气泡更明确是「消息」
+    'message-square-more': {
+      body: `<g ${S}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h.01"/><path d="M12 10h.01"/><path d="M16 10h.01"/></g>`
+    },
     'message-square-plus': {
       body: `<g ${S}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v6M9 10h6"/></g>`
     },
+    // 上下文气泡的后缀动作：丢弃 / 确认
+    'trash-2': {
+      body: `<g ${S}><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></g>`
+    },
+    check: { body: `<path ${S} d="M20 6L9 17l-5-5"/>` },
     'chevron-right': { body: `<path ${S} d="m9 18l6-6l-6-6"/>` },
     'chevron-left': { body: `<path ${S} d="m15 18l-6-6l6-6"/>` },
     // 工作台 tab 右键「窗口」族（databus-workspace-tabs.md §6.4）：新窗体（external-link）、浏览器全屏（maximize）、专注收栏（focus）
@@ -259,6 +268,10 @@ const LUCIDE_SUBSET: IconifyJSON = {
     // 物料治理「停用」（与 play 的三角暂停语义成对）
     pause: {
       body: `<g ${S}><rect width="4" height="16" x="14" y="4" rx="1"/><rect width="4" height="16" x="6" y="4" rx="1"/></g>`
+    },
+    // 消息工具栏：回退到本轮对话发起前
+    'undo-2': {
+      body: `<g ${S}><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></g>`
     },
     // 试运行结果 tab（终端行「详情」开 tab）：终端提示符，与底部终端的执行语义同源
     terminal: {

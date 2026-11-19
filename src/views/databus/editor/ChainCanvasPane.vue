@@ -85,12 +85,9 @@
       :result="previewResult"
       :resolve-step-title="stepTitle"
       :request-json="previewRequest"
+      :context-source="previewContextSource"
       @reopen="reopenPreview"
-      @open-step="openStepDetail"
     />
-
-    <!-- 步骤明细抽屉：点击步骤表「执行结果」文本滑出 -->
-    <StepDetailDrawer v-model:visible="stepDetailVisible" :step="currentStep" />
 
     <!-- 入参登记：左右双栏联动，保存后随链路持久化 -->
     <InputParamsDialog
@@ -118,7 +115,6 @@ import ElResultDialog from './components/dialogs/ElResultDialog.vue';
 import InputParamsDialog from './components/dialogs/InputParamsDialog.vue';
 import PreviewInputDialog from './components/dialogs/PreviewInputDialog.vue';
 import PreviewResultDialog from './components/dialogs/PreviewResultDialog.vue';
-import StepDetailDrawer from './components/dialogs/StepDetailDrawer.vue';
 import { type CmpNodeData } from './composables/useElTreeModel';
 import { useFlowHistory } from './composables/useFlowHistory';
 import { provideCanvasController } from './composables/useCanvasController';
@@ -481,12 +477,20 @@ const { switchTab } = useWorkspaceTerminal();
 const previewRunTitle = ref('');
 const previewRunCode = ref('');
 
+/** 步骤明细「加入会话」的来源资源：编辑态取当前链路；草稿预览没有链路主键时留空 */
+const previewContextSource = computed(() =>
+  chainId.value == null
+    ? undefined
+    : { assetType: 'chain', assetId: chainId.value, assetName: chainName.value || undefined }
+);
+
 function onPreviewResult(payload: PreviewRunPayload) {
   const steps = payload.result.steps ?? [];
   const costMs = steps.reduce((sum, s) => sum + (s.timeSpent ?? 0), 0);
   runConsole.appendPreview({
     title: previewRunTitle.value || chainName.value || '试运行',
     code: previewRunCode.value || chainId.value || '',
+    chainId: editingId.value ?? undefined,
     level: payload.result.success ? 'success' : 'error',
     text: payload.result.success ? '' : payload.result.errorMessage || payload.result.message || '试运行失败',
     costMs: costMs || null,
@@ -507,9 +511,6 @@ const {
   openPreview,
   runPreview,
   reopenPreview,
-  stepDetailVisible,
-  currentStep,
-  openStepDetail,
   stepTitle
 } = usePreviewRun({
   treeModel,

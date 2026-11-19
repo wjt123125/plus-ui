@@ -106,10 +106,9 @@ import type { CmpNodeData } from '../../composables/useElTreeModel';
 import type { PickerMode } from '../../composables/useCanvasController';
 import { useCanvasController } from '../../composables/useCanvasController';
 import { useEditorActions } from '../../composables/useEditorActions';
-import { ElMessage } from 'element-plus';
-import { useAgentRefs } from '@/views/databus/workbench/ai/useAgentRefs';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { useAgentContext } from '@/views/databus/workbench/ai/useAgentContext';
 import { getDef } from '../../cmp-defs';
-import { DATABUS_RESOURCE_TYPE_COMPONENT } from '@/constants/databus-common';
 
 defineOptions({ name: 'CmpContextMenu' });
 
@@ -117,8 +116,8 @@ const ctrl = useCanvasController();
 /** 文档级动作（撤销/保存/试运行…）由 ChainCanvasPane 装配注入 */
 const act = useEditorActions();
 const { onPaneContextMenu, onNodeContextMenu, onEdgeContextMenu, getNodes } = useVueFlow();
-/** 引用卡：画布节点右键「加入会话」只暂存引用 */
-const { addRef } = useAgentRefs();
+/** 上下文附件：画布右键「加入会话」只往暂存区塞一条，不发消息 */
+const { addContext, resourceContext } = useAgentContext();
 
 /** 当前右键的节点是否是一个真实业务组件（起止/网关/占位节点不算） */
 const canAddToAgent = computed(() => {
@@ -183,16 +182,31 @@ function onDeleteNode() {
   void ctrl.requestDeleteNode(nodeId);
 }
 
-/** 把当前节点对应的组件塞进 AI 对话引用卡（虚拟起止节点没有组件，忽略） */
-function onAddToAgent() {
+/** 把当前节点对应的组件作为上下文附件加入 AI 对话（虚拟起止节点没有组件，忽略） */
+async function onAddToAgent() {
   const nodeId = ctrl.menu.nodeId;
   ctrl.closeMenu();
   const data = getNodes.value.find((n) => n.id === nodeId)?.data as CmpNodeData | undefined;
   if (!data || data.virtual || !data.defType) {
     return;
   }
-  addRef({ type: DATABUS_RESOURCE_TYPE_COMPONENT, code: data.defType, name: data.title || data.label });
-  ElMessage.success(`已加入会话引用：${data.title || data.label}`);
+  const name = data.title || data.label;
+  let note = '';
+  try {
+    const { value } = await ElMessageBox.prompt(`把「${name}」加入会话上下文`, '加入会话', {
+      confirmButtonText: '加入',
+      cancelButtonText: '取消',
+      inputType: 'textarea',
+      inputPlaceholder: '可写一句评论，也可留空',
+      inputValue: ''
+    });
+    note = value ?? '';
+  } catch {
+    // 取消：不加入
+    return;
+  }
+  addContext(resourceContext({ type: 'component', code: data.defType, name, note }));
+  ElMessage.success(`已加入会话：${name}`);
 }
 
 function onSelectAll() {

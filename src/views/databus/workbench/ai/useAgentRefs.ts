@@ -2,7 +2,7 @@
  * AI 对话「引用卡」暂存（模块级单例，与 useAgentChat 同策略：收起侧栏不丢）。
  *
  * 资源树 / 画布右键「加入会话」只往这里塞一条引用，不发消息；
- * 真正发出去时由 AgentChatPanel 把引用拼成一段文本附在用户问题后面，
+ * 真正发出去时由 AgentChatPanel 交给 useAgentChat，转成 resource 附件随消息带出，
  * 让模型拿到确定的 chainId / componentId，不用靠名称猜。
  */
 import { ref } from 'vue';
@@ -45,26 +45,8 @@ function clearRefs(): void {
 }
 
 /**
- * 拼成问题尾部的引用段；没有任何引用时返回空串。
- * 格式固定成「类型 + 名称 + code + id」，模型按 id 调工具、按名称对上人话。
- */
-export function buildRefsText(list: AgentRefItem[]): string {
-  if (!list.length) {
-    return '';
-  }
-  const lines = list.map((r) => {
-    const meta = refMeta(r.type);
-    const code = r.code ? `，code=${r.code}` : '';
-    // 系统内置件没有主键，只给 code，让模型用 componentCode 查
-    const id = r.id != null ? `，${meta.idKey}=${r.id}` : '';
-    return `- ${meta.label}「${r.name}」${code}${id}`;
-  });
-  return ['', '【引用】', ...lines].join('\n');
-}
-
-/**
  * 把消息文本尾部的引用段拆出来。
- * 发出去的消息只存这份文本，刷新恢复时靠它还原引用卡，避免退化成一段文字。
+ * 仅用于读旧历史（新消息的引用走 attachments）；刷新恢复时靠它还原引用卡，避免退化成一段文字。
  */
 export function parseRefsText(text: string): { text: string; refs: AgentRefItem[] } {
   const marker = '【引用】';

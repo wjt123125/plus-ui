@@ -29,7 +29,7 @@
       </div>
       <pre class="pr__error-body" :class="{ 'is-folded': issueFolded }">{{ issue }}</pre>
       <button v-if="issueFoldable" type="button" class="pr__error-toggle" @click="issueExpanded = !issueExpanded">
-        {{ issueExpanded ? '收起' : `展开（${issueLines} 行）` }}
+        {{ issueExpanded ? '收起' : issueLines > 1 ? `展开（${issueLines} 行）` : '展开全文' }}
       </button>
     </div>
 
@@ -76,31 +76,87 @@
         <li
           v-for="(row, i) in steps"
           :key="`${row.nodeId}-${i}`"
-          class="pr__step"
+          class="pr__step-wrap"
           :style="{ paddingLeft: depthPx(row) }"
-          @click="emit('openStep', row)"
         >
-          <span class="pr__step-dot" :class="{ 'is-fail': !row.success }" />
-          <span class="pr__step-main">
-            <span class="pr__step-title">{{ resolveStepTitle(row) }}</span>
-            <span v-if="row.tag" class="pr__step-chip">{{ row.tag }}</span>
-          </span>
-          <span class="pr__step-result" :class="{ 'is-error': !row.success }" :title="stepResultText(row)">
-            {{ stepResultText(row) }}
-          </span>
-          <span class="pr__step-tail">
-            <span class="pr__step-time">{{ row.timeSpent }} ms</span>
-            <!-- 失败行 hover 才浮现：复制完整原文（行内文本是省略号截断的） -->
-            <button
-              v-if="!row.success"
-              type="button"
-              class="pr__step-copy"
-              title="复制错误原文"
-              @click.stop="copyError(stepResultText(row))"
-            >
-              <el-icon><CopyDocument /></el-icon>
-            </button>
-          </span>
+          <div class="pr__step" :class="{ 'is-open': isStepOpen(i) }" @click="toggleStep(i)">
+            <el-icon class="pr__step-caret"><ArrowRight /></el-icon>
+            <span class="pr__step-dot" :class="{ 'is-fail': !row.success }" />
+            <span class="pr__step-main">
+              <span class="pr__step-title">{{ resolveStepTitle(row) }}</span>
+              <span v-if="row.tag" class="pr__step-chip">{{ row.tag }}</span>
+            </span>
+            <span class="pr__step-result" :class="{ 'is-error': !row.success }" :title="stepResultText(row)">
+              {{ stepResultText(row) }}
+            </span>
+            <span class="pr__step-tail">
+              <span class="pr__step-time">{{ row.timeSpent }} ms</span>
+              <!-- 失败行 hover 才浮现：复制完整原文（行内文本是省略号截断的） -->
+              <button
+                v-if="!row.success"
+                type="button"
+                class="pr__step-copy"
+                title="复制错误原文"
+                @click.stop="copyError(stepResultText(row))"
+              >
+                <el-icon><CopyDocument /></el-icon>
+              </button>
+            </span>
+          </div>
+
+          <!-- 步骤明细：就地展开在行下方，不再滑出抽屉；复制/加入会话收在右上角 -->
+          <section
+            v-if="isStepOpen(i)"
+            class="pr__step-detail"
+            :data-context-anchor="`preview-step-${row.nodeId}-${row.tag ?? ''}`"
+          >
+            <header class="pr__step-detail-head">
+              <span class="pr__step-detail-title">步骤明细</span>
+              <div class="pr__step-detail-actions">
+                <button type="button" class="pr__step-action" title="复制明细" @click.stop="copyStepDetail(row)">
+                  <el-icon><CopyDocument /></el-icon>
+                </button>
+                <button
+                  v-if="chatEnabled"
+                  type="button"
+                  class="pr__step-action"
+                  title="加入会话"
+                  @click.stop="addStepToChat(row)"
+                >
+                  <SvgIcon icon-class="lucide:sparkles" />
+                </button>
+              </div>
+            </header>
+
+            <dl class="pr__step-meta">
+              <div><dt>数据空间</dt><dd>{{ row.tag || '本步' }}</dd></div>
+              <div><dt>组件</dt><dd>{{ row.nodeName || row.nodeId || '-' }}</dd></div>
+              <div><dt>结果</dt><dd :class="{ 'is-error': !row.success }">{{ row.success ? '成功' : '失败' }}</dd></div>
+              <div><dt>耗时</dt><dd>{{ row.timeSpent ?? '-' }} ms</dd></div>
+              <div>
+                <dt>开始</dt>
+                <dd :title="row.startTime || ''">{{ formatStepTime(row.startTime) }}</dd>
+              </div>
+              <div>
+                <dt>结束</dt>
+                <dd :title="row.endTime || ''">{{ formatStepTime(row.endTime) }}</dd>
+              </div>
+            </dl>
+
+            <div v-if="!row.success && row.errorMessage" class="pr__step-detail-error">
+              <FoldableErrorText :text="row.errorMessage" />
+            </div>
+
+            <JsonCodeEditor
+              v-if="stepDetailText(row)"
+              :model-value="stepDetailText(row)"
+              readonly
+              plain
+              height="240px"
+            />
+            <!-- 失败时错误就是全部信息，再补一句「没有明细」只会添噪 -->
+            <p v-else-if="row.success" class="pr__step-detail-empty">本步未产出数据明细</p>
+          </section>
         </li>
       </ol>
     </details>
@@ -123,6 +179,8 @@ import { ArrowRight, CircleCheckFilled, CircleCloseFilled, CopyDocument, RemoveF
 import { ElMessage } from 'element-plus';
 import type { NodeStep, PreviewRunVo } from '@/api/databus/el/types';
 import JsonCodeEditor from '@/views/databus/editor/components/common/JsonCodeEditor.vue';
+import FoldableErrorText from '@/views/databus/components/FoldableErrorText.vue';
+import { nextContextId, useAgentContext } from '@/views/databus/workbench/ai/useAgentContext';
 
 const props = defineProps<{
   result: PreviewRunVo | null;
@@ -132,10 +190,10 @@ const props = defineProps<{
   requestJson?: string;
   /** 运行时刻（并入结论行，避免页头与正文重复同一条信息） */
   time?: string;
-}>();
-
-const emit = defineEmits<{
-  openStep: [row: NodeStep];
+  /** 步骤明细「加入会话」的来源资源（链路/组件）；缺失时只带步骤文本 */
+  contextSource?: { assetType?: string; assetId?: number | string; assetName?: string };
+  /** 宿主是否有 AI 会话面板：编辑器独立路由没有，传 false 不渲染按钮，避免点了无处可去 */
+  chatEnabled?: boolean;
 }>();
 
 const steps = computed<NodeStep[]>(() => props.result?.steps ?? []);
@@ -200,14 +258,18 @@ const issue = computed(() => {
 /** 失败原因卡：有失败步骤时原文已由步骤行承载，不再重复一张卡 */
 const showIssueCard = computed(() => !!issue.value && failedCount.value === 0);
 
-/** 失败原因折叠：超过 6 行收起，避免长堆栈把入参/出参卡挤出屏 */
+/** 失败原因折叠：超 6 行或单行过长（驱动原文常常一行几百字）就收起，避免把入参/出参卡挤出屏 */
 const ISSUE_FOLD_LINES = 6;
+
+const ISSUE_FOLD_CHARS = 200;
 
 const issueExpanded = ref(false);
 
 const issueLines = computed(() => (issue.value ? issue.value.split('\n').length : 0));
 
-const issueFoldable = computed(() => issueLines.value > ISSUE_FOLD_LINES);
+const issueFoldable = computed(
+  () => issueLines.value > ISSUE_FOLD_LINES || issue.value.length > ISSUE_FOLD_CHARS
+);
 
 const issueFolded = computed(() => issueFoldable.value && !issueExpanded.value);
 
@@ -222,6 +284,105 @@ async function copyError(text: string) {
   } catch {
     ElMessage.warning('复制失败，请手动选中复制');
   }
+}
+
+/** 展开中的步骤：键是列表下标（与 v-for 一致），允许多行同时展开 */
+const openSteps = ref<Record<number, boolean>>({});
+
+function isStepOpen(index: number): boolean {
+  return !!openSteps.value[index];
+}
+
+function toggleStep(index: number): void {
+  openSteps.value = { ...openSteps.value, [index]: !openSteps.value[index] };
+}
+
+/** 步骤时间：ISO 原文带时区毫秒，直接展示会被列宽截断，只留「MM-DD HH:mm:ss.SSS」 */
+function formatStepTime(value?: string): string {
+  if (!value) {
+    return '-';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  const pad = (n: number, width = 2) => String(n).padStart(width, '0');
+  return (
+    `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`
+  );
+}
+
+/** 步骤数据明细：2 空格缩进；不是合法 JSON 时原样展示 */
+function stepDetailText(row: NodeStep): string {
+  const raw = row.detailJson;
+  if (!raw) {
+    return '';
+  }
+  return prettyJson(raw) || raw;
+}
+
+/** 复制步骤明细：优先数据明细，没有则退回错误原文 */
+async function copyStepDetail(row: NodeStep): Promise<void> {
+  const text = stepDetailText(row) || row.errorMessage || '';
+  if (!text) {
+    ElMessage.warning('本步没有可复制的数据明细');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    ElMessage.success('已复制步骤明细');
+  } catch {
+    ElMessage.warning('复制失败，请手动选中复制');
+  }
+}
+
+const { addContext } = useAgentContext();
+
+/** 附件正文：步骤标识与耗时在前、明细在后，模型才知道这段输出来自哪一步 */
+function buildStepAttachmentText(row: NodeStep, body: string): string {
+  const meta = [
+    `数据空间：${row.tag || '本步'}`,
+    `组件：${row.nodeName || row.nodeId || '-'}`,
+    `结果：${row.success ? '成功' : '失败'}`,
+    `耗时：${row.timeSpent ?? '-'} ms`,
+    `开始：${row.startTime || '-'}`,
+    `结束：${row.endTime || '-'}`
+  ];
+  return `${meta.join('\n')}\n\n${body}`;
+}
+
+/** 加入会话：本步明细作为「试跑结果明细」附件进输入区暂存，由现有引用卡 UI 渲染 */
+function addStepToChat(row: NodeStep): void {
+  const body = stepDetailText(row) || row.errorMessage || '';
+  if (!body) {
+    ElMessage.warning('本步没有可加入会话的数据明细');
+    return;
+  }
+  const text = buildStepAttachmentText(row, body);
+  const source = props.contextSource;
+  const title = props.resolveStepTitle(row);
+  addContext({
+    id: nextContextId(),
+    kind: 'excerpt',
+    type: 'preview-result',
+    // 状态写进标题：note 在服务端渲染成「我的评论」，自动填「失败」会冒充用户的话
+    title: `步骤明细 · ${title}${row.success ? '' : '（失败）'}`,
+    preview: text.replace(/\s+/g, ' ').trim().slice(0, 120),
+    payload: { text },
+    source: {
+      assetType: source?.assetType,
+      assetId: source?.assetId,
+      assetName: source?.assetName,
+      nodeName: title,
+      anchor: `preview-step-${row.nodeId}-${row.tag ?? ''}`,
+      capturedAt: new Date().toISOString()
+    },
+    fingerprint: `preview-result|${source?.assetId ?? source?.assetName ?? ''}|${row.nodeId}|${row.tag ?? ''}`
+  });
+  // 工作区默认收起 AI 栏：不展开的话暂存区里的新卡片看不见，会像「点了没反应」
+  window.dispatchEvent(new Event('databus:reveal-ai'));
+  ElMessage.success(`已加入会话：${title}`);
 }
 
 /** 入参：JSON 美化（缺省 {}） */
@@ -593,7 +754,7 @@ function depthPx(row: NodeStep): string {
 
 .pr__step {
   display: grid;
-  grid-template-columns: 6px minmax(0, 1fr) auto auto;
+  grid-template-columns: 12px 6px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   min-height: 34px;
@@ -604,12 +765,140 @@ function depthPx(row: NodeStep): string {
 }
 
 /* 行间细分隔线：靠内阴影画，不增加盒子边框 */
-.pr__step + .pr__step {
+.pr__step-wrap + .pr__step-wrap {
   box-shadow: inset 0 1px 0 var(--el-border-color-lighter, #ebeef5);
 }
 
-.pr__step:hover {
+.pr__step:hover,
+.pr__step.is-open {
   background: var(--el-fill-color-lighter, #fafafa);
+}
+
+/* 展开箭头：收起时朝右，展开后转 90°，与卡片折叠同一节奏 */
+.pr__step-caret {
+  font-size: 11px;
+  color: var(--db-ink-muted, #6e6e73);
+  transition: transform 0.18s ease;
+}
+
+.pr__step.is-open .pr__step-caret {
+  transform: rotate(90deg);
+}
+
+/* ---------- 步骤明细：行内展开，白底细描边，与正文卡片同口径 ---------- */
+.pr__step-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 8px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color-lighter, #ebeef5);
+  border-radius: var(--app-radius-md, 10px);
+  background: var(--el-bg-color, #fff);
+}
+
+.pr__step-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pr__step-detail-title {
+  color: var(--db-ink, #1c1c1e);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.pr__step-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.pr__step-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--db-ink-secondary, #3a3a3c);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.pr__step-action:hover {
+  background: var(--el-fill-color-light, #f5f7fa);
+  color: var(--el-color-primary);
+}
+
+.pr__step-action :deep(svg) {
+  width: 15px;
+  height: 15px;
+}
+
+/* 元信息：按容器宽度自适应列数，窄面板自动落成两列，避免时间被截断 */
+.pr__step-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 6px 16px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.pr__step-meta div {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pr__step-meta dt {
+  flex: none;
+  color: var(--db-ink-muted, #6e6e73);
+}
+
+.pr__step-meta dd {
+  margin: 0;
+  overflow: hidden;
+  color: var(--db-ink-secondary, #3a3a3c);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.pr__step-meta dd.is-error {
+  color: var(--el-color-danger, #f56c6c);
+}
+
+/* 错误块：小号等宽字 + 细红边，读起来像「日志片段」而不是一条大红横幅 */
+.pr__step-detail-error {
+  padding: 8px 10px;
+  border: 1px solid var(--el-color-danger-light-7, #fab6b6);
+  border-radius: var(--app-radius-sm, 6px);
+  background: var(--el-color-danger-light-9, #fef0f0);
+  color: var(--el-color-danger-dark-2, #c45656);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* 折叠箭头跟随错误色，避免红块里出现一个蓝色图标 */
+.pr__step-detail-error :deep(.fe__caret) {
+  color: var(--el-color-danger, #f56c6c);
+}
+
+.pr__step-detail-empty {
+  margin: 0;
+  color: var(--db-ink-muted, #6e6e73);
+  font-size: 11px;
+  line-height: 18px;
 }
 
 /* 失败行只靠红点 + 红字标识，不上底色（避免和错误卡抢焦点） */

@@ -163,6 +163,39 @@ export function rollbackRun(runId: string): AxiosPromise<AgentRollbackVo[]> {
 }
 
 /**
+ * 删除一轮对话（逻辑删除该 run，历史回放不再出现）。
+ * DELETE /databus/agent/run/{runId}
+ */
+export function deleteAgentRun(runId: string) {
+  return request({
+    url: `/databus/agent/run/${runId}`,
+    method: 'delete'
+  });
+}
+
+/**
+ * 原地重试：隐藏旧 run，沿用原意图重新发起，返回新 run 句柄。
+ * POST /databus/agent/run/{runId}/retry
+ */
+export function retryAgentRun(runId: string): AxiosPromise<AgentChatStartVo> {
+  return request({
+    url: `/databus/agent/run/${runId}/retry`,
+    method: 'post'
+  });
+}
+
+/**
+ * 回退到本轮对话发起前：撤销该轮及之后各轮的链路改动，并截断这些轮次的历史。
+ * POST /databus/agent/run/{runId}/revert
+ */
+export function revertAgentRun(runId: string): AxiosPromise<AgentRollbackVo[]> {
+  return request({
+    url: `/databus/agent/run/${runId}/revert`,
+    method: 'post'
+  });
+}
+
+/**
  * 读取会话级操作审批模式与部署的完全访问开关。
  * GET /databus/agent/conversation/{conversationId}/approval-mode
  */

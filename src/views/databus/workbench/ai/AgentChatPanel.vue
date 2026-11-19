@@ -10,27 +10,52 @@
         </p>
       </div>
 
-      <div v-for="m in messages" :key="m.id" class="agent-chat__row" :class="`is-${m.role}`">
+      <div v-for="(m, i) in messages" :key="m.id" class="agent-chat__row" :class="`is-${m.role}`">
         <!-- 系统行：错误提示、画布更新被丢弃等结论性提示 -->
         <div v-if="m.role === 'system'" class="agent-chat__system" :class="{ 'is-error': isErrorNotice(m) }">
           <span class="agent-chat__system-text">{{ noticeText(m) }}</span>
         </div>
         <!-- 用户消息：原样纯文本，不解析 Markdown -->
-        <div v-else-if="m.role === 'user'" class="agent-chat__bubble">
-          <div v-if="m.refs?.length" class="agent-chat__refs is-bubble">
-            <span
-              v-for="r in m.refs"
-              :key="`${r.type}-${r.id ?? r.code}`"
-              class="agent-chat__ref"
-              :style="{ '--ref-color': refMeta(r.type).color }"
-              :title="`打开${refMeta(r.type).label}：${r.name}`"
-              @click="openRef(r)"
-            >
-              <SvgIcon class="agent-chat__ref-icon" :icon-class="refMeta(r.type).icon" />
-              <span class="agent-chat__ref-name">{{ r.name }}</span>
-            </span>
+        <div v-else-if="m.role === 'user'" class="agent-chat__col agent-chat__col--user">
+          <div
+            class="agent-chat__bubble"
+            data-context-type="chat"
+            :data-context-anchor="`msg-${m.id}`"
+          >
+            <div v-if="m.refs?.length" class="agent-chat__refs is-bubble">
+              <span
+                v-for="r in m.refs"
+                :key="`${r.type}-${r.id ?? r.code}`"
+                class="agent-chat__ref"
+                :style="{ '--ref-color': refMeta(r.type).color }"
+                :title="`打开${refMeta(r.type).label}：${r.name}`"
+                @click="openRef(r)"
+              >
+                <SvgIcon class="agent-chat__ref-icon" :icon-class="refMeta(r.type).icon" />
+                <span class="agent-chat__ref-name">{{ r.name }}</span>
+              </span>
+            </div>
+            <!-- 上下文卡与正文同处一行内流：像 span 一样挨着文字，不单独占一行 -->
+            <p v-if="textOf(m) || m.contexts?.length" class="agent-chat__text">
+              <AgentContextCard
+                v-for="(c, ci) in m.contexts || []"
+                :key="c.id"
+                :item="c"
+                :index="ci + 1"
+                class="agent-chat__ctx-inline"
+                @open="openContext(c, $event)"
+              />
+              <span v-if="textOf(m)">{{ textOf(m) }}</span>
+            </p>
           </div>
-          <p v-if="textOf(m)" class="agent-chat__text">{{ textOf(m) }}</p>
+          <MessageActionBar
+            :message="m"
+            :question="m"
+            :reply="turnReply(i)"
+            :last-turn="isLastTurn(i)"
+            :running="running"
+            :deps="messageActionDeps"
+          />
         </div>
         <!-- AI 消息：上方是身份行，正文按段渲染。text 段走 Markdown，thinking 折叠，notice 独立成块 -->
         <div v-else class="agent-chat__col">
@@ -38,7 +63,12 @@
             <SvgIcon class="agent-chat__who-icon" icon-class="lucide:sparkle-filled" />
             <span>DB Copilot</span>
           </div>
-          <div class="agent-chat__bubble" :class="{ 'is-error': m.status === 'error' }">
+          <div
+            class="agent-chat__bubble"
+            :class="{ 'is-error': m.status === 'error' }"
+            data-context-type="chat"
+            :data-context-anchor="`msg-${m.id}`"
+          >
             <template v-for="(seg, i) in m.segments" :key="i">
               <!-- 正文开始后思考就收起：展开的是过程，不是结果 -->
               <ThinkingBlock
@@ -65,6 +95,16 @@
               <span class="agent-chat__cursor" />
             </p>
           </div>
+          <!-- 流式中先不给工具栏：这一条还在写，重试/复制都没有确定的对象 -->
+          <MessageActionBar
+            v-if="m.status !== 'streaming'"
+            :message="m"
+            :question="turnQuestion(i)"
+            :reply="m"
+            :last-turn="isLastTurn(i)"
+            :running="running"
+            :deps="messageActionDeps"
+          />
         </div>
       </div>
 
@@ -83,42 +123,21 @@
       </div>
     </div>
 
-    <!-- 输入区：整块灰底无边框，底部一行快捷键提示 + 单颗圆形动作按钮 -->
+    <!-- 输入区：整块灰底无边框，底部一行工具（工作区 / 审批模式 / 回滚）+ 发送按钮 -->
     <div class="agent-chat__input">
       <div class="agent-chat__composer">
-        <!-- 引用卡：资源树/画布右键加入的链路或组件，随这条问题一起发出去 -->
-        <div v-if="refs.length" class="agent-chat__refs">
-          <span
-            v-for="r in refs"
-            :key="`${r.type}-${r.id ?? r.code}`"
-            class="agent-chat__ref"
-            :style="{ '--ref-color': refMeta(r.type).color }"
-            :title="`打开${refMeta(r.type).label}：${r.name}`"
-            @click="openRef(r)"
-          >
-            <SvgIcon class="agent-chat__ref-icon" :icon-class="refMeta(r.type).icon" />
-            <span class="agent-chat__ref-name">{{ r.name }}</span>
-            <button
-              type="button"
-              class="agent-chat__ref-close"
-              title="移除引用"
-              @click.stop="removeRef(r)"
-            >
-              <SvgIcon icon-class="lucide:x" />
-            </button>
-          </span>
-        </div>
-        <el-input
+        <!-- 卡片与文字同处一条行内流：卡片能挨着文字落行，不再各占一行 -->
+        <AgentComposer
           ref="inputRef"
-          v-model="draft"
-          type="textarea"
-          :rows="2"
-          resize="none"
+          v-model:text="draft"
+          :chips="composerChips"
           :placeholder="inputPlaceholder"
-          @keydown="onKeydown"
+          @send="submit"
+          @chip-open="onChipOpen"
+          @chip-remove="onChipRemove"
         />
         <div class="agent-chat__toolbar">
-          <!-- 左侧工具区：会话归属工作区（本轮只有默认工作区）+ 回到这次对话前 -->
+          <!-- 左侧工具区：工作区、操作审批模式、回到这次对话前 -->
           <div class="agent-chat__tools">
             <el-dropdown trigger="click" placement="top-start" popper-class="db-menu-popper">
               <button type="button" class="agent-chat__tool" title="选择会话工作区">
@@ -183,7 +202,7 @@
             v-else
             type="button"
             class="agent-chat__send"
-            :disabled="!draft.trim() && !refs.length"
+            :disabled="!draft.trim() && !refs.length && !contexts.length"
             @click="submit"
           >
             <SvgIcon icon-class="lucide:send-filled" />
@@ -191,14 +210,22 @@
         </div>
       </div>
     </div>
+
+    <!-- 卡片详情：引文 / 改评论 / 跳回原处（定位与闪烁由全局选区浮层承接） -->
+    <ContextDetailDialog
+      v-model:visible="detailVisible"
+      :item="detailItem"
+      :anchor="detailAnchor"
+      @reveal="revealContext"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 /**
- * AI 助手对话面板（工作台侧栏薄壳，v1 切片 1：说话）。
+ * AI 助手对话面板（工作台侧栏薄壳）：消息流 + 输入区 + 卡片点选回执。
  *
- * 只做消息流 + 输入框，不吃会话历史；状态在 useAgentChat（模块级单例，收起侧栏不丢）。
+ * 会话状态在 useAgentChat、附件暂存在 useAgentContext（均为模块级单例，收起侧栏不丢）。
  * SnailAI 不可达或流断开时，错误以系统行呈现。
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
@@ -209,12 +236,18 @@ import { useLucideSubset } from '../composables/useLucideSubset';
 import { AGENT_APPROVAL_MODE, AGENT_RUN_STATUS } from '@/constants/databus';
 import { DATABUS_CARD_KIND_REF } from '@/constants/databus-common';
 import AgentCardBlock from './AgentCardBlock.vue';
+import AgentContextCard from './AgentContextCard.vue';
+import ContextDetailDialog from './ContextDetailDialog.vue';
 import MarkdownBlock from './MarkdownBlock.vue';
+import MessageActionBar from './MessageActionBar.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
-import { useAgentChat, type AgentChatMessage, type AgentSegment } from './useAgentChat';
+import type { MessageActionDeps } from './messageActions';
+import { useAgentChat, type AgentChatMessage } from './useAgentChat';
+import { useAgentContext } from './useAgentContext';
 import { useAgentRefs, type AgentRefItem } from './useAgentRefs';
-import { useComposerKeys } from './useComposerKeys';
+import AgentComposer, { type ComposerChip } from './AgentComposer.vue';
 import { refMeta } from './agentRefTypes';
+import type { AgentContextItem, AgentContextSource } from './contextTypes';
 
 defineOptions({ name: 'AgentChatPanel' });
 
@@ -234,8 +267,6 @@ const emit = defineEmits<{
   'ref-preview': [ref: AgentRefItem];
 }>();
 
-const inputPlaceholder = '@ 添加上下文，/ 使用命令和技能';
-
 /** 聚焦浮层的示例问题：v1 本地写死，后续换后端下发只替数据源 */
 const suggestions = [
   '这条链路为什么跑不通？',
@@ -244,11 +275,96 @@ const suggestions = [
   '这个连接器的参数该怎么填？'
 ];
 
-const { conversationId, messages, running, send, answerCard, stop, newSession, appendSystem, restore } =
-  useAgentChat();
+const {
+  conversationId,
+  messages,
+  running,
+  send,
+  answerCard,
+  stop,
+  newSession,
+  appendSystem,
+  restore,
+  retryReply,
+  removeTurn,
+  revertTurn
+} = useAgentChat();
 
 /** 引用卡：只暂存在本面板，发出去即清空 */
 const { refs, removeRef, clearRefs } = useAgentRefs();
+
+/** 上下文附件：划字摘录与画布资源共用一份暂存，发送时整批带出去 */
+const { contexts, removeContext, clearContexts } = useAgentContext();
+
+/** 输入区已有卡片/引用时不再提示「@ 添加上下文」——它们本身就是已输入的内容 */
+const inputPlaceholder = computed(() =>
+  contexts.value.length || refs.value.length ? '' : '@ 添加上下文，/ 使用命令和技能'
+);
+
+/** 引用卡与上下文卡统一成行内 token；顺序即输入框里的显示顺序 */
+const composerChips = computed<ComposerChip[]>(() => [
+  ...refs.value.map((r) => ({
+    key: `ref:${r.type}:${r.id ?? r.code ?? r.name}`,
+    kind: 'ref' as const,
+    label: `@${r.name}`,
+    title: `打开${refMeta(r.type).label}：${r.name}`
+  })),
+  ...contexts.value.map((c, ci) => ({
+    key: `ctx:${c.id}`,
+    kind: 'ctx' as const,
+    // 标题和评论分开传：卡片整体仍是一个长度上限，但会优先保证评论露出开头
+    label: `${ci + 1}. ${c.title}`,
+    note: c.note || undefined,
+    title: c.note ? `${c.title}\n评论：${c.note}` : c.title
+  }))
+]);
+
+/** 卡片删除：key 反查回源数组，refs 与 contexts 各清各的 */
+function onChipRemove(key: string) {
+  if (key.startsWith('ref:')) {
+    const ref = refs.value.find((r) => `ref:${r.type}:${r.id ?? r.code ?? r.name}` === key);
+    if (ref) {
+      removeRef(ref);
+    }
+    return;
+  }
+  const context = contexts.value.find((c) => `ctx:${c.id}` === key);
+  if (context) {
+    removeContext(context);
+  }
+}
+
+/** 点卡片本体：引用卡交给宿主跳转，上下文卡就地开详情浮层（锚点用卡片自身） */
+function onChipOpen({ key, anchor }: { key: string; anchor: HTMLElement }) {
+  if (key.startsWith('ref:')) {
+    const ref = refs.value.find((r) => `ref:${r.type}:${r.id ?? r.code ?? r.name}` === key);
+    if (ref) {
+      openRef(ref);
+    }
+    return;
+  }
+  const context = contexts.value.find((c) => `ctx:${c.id}` === key);
+  if (context) {
+    openContext(context, anchor);
+  }
+}
+
+const detailVisible = ref(false);
+const detailItem = ref<AgentContextItem | null>(null);
+/** 浮层贴着被点的那张卡片冒出来，所以要把触发元素一起记下来 */
+const detailAnchor = ref<HTMLElement | null>(null);
+
+/** 点卡片看评论与引文；浮层就近弹出，不做居中弹窗 */
+function openContext(item: AgentContextItem, anchor?: HTMLElement) {
+  detailItem.value = item;
+  detailAnchor.value = anchor ?? null;
+  detailVisible.value = true;
+}
+
+/** 「去看来处」交给全局选区浮层：它知道怎么按 anchor 定位、滚动并只闪选中那一段 */
+function revealContext(source: AgentContextSource, text: string) {
+  window.dispatchEvent(new CustomEvent('databus:context:reveal', { detail: { ...source, text } }));
+}
 
 /** 点引用卡：交给宿主决定开画布还是开详情 */
 function openRef(item: AgentRefItem) {
@@ -298,17 +414,38 @@ const hasText = (message: AgentChatMessage) => textOf(message).length > 0;
 const isErrorNotice = (message: AgentChatMessage) =>
   message.segments.some((s) => s.kind === 'notice' && s.eventCode === 'error');
 
+/* ---------------- 消息工具栏：按轮定位 ---------------- */
+
+/** 同一轮的回复：提问后紧跟的 AI 消息 */
+function turnReply(index: number): AgentChatMessage | undefined {
+  const next = messages.value[index + 1];
+  return next?.role === 'assistant' ? next : undefined;
+}
+
+/** 同一轮的提问：AI 消息前紧邻的用户消息 */
+function turnQuestion(index: number): AgentChatMessage | undefined {
+  const prev = messages.value[index - 1];
+  return prev?.role === 'user' ? prev : undefined;
+}
+
+/** 后面没有新的问答了才算最后一轮：重试只对这一轮开放 */
+function isLastTurn(index: number): boolean {
+  return !messages.value.slice(index + 1).some((m) => m.role !== 'system');
+}
+
 const draft = ref('');
 const bodyRef = ref<HTMLElement>();
-/** el-input 暴露的实例会被 Vue 解包，textarea 是原生 DOM；只取本面板用到的两项 */
-const inputRef = ref<{ focus: () => void; textarea?: HTMLTextAreaElement }>();
+/** 输入框实例：contenteditable 只对外暴露 focus，宿主发完消息后把光标交回去 */
+const inputRef = ref<{ focus: () => void }>();
 
-/** 把引用段拼到问题末尾再发；只有引用没打字也允许发 */
+/** 把引用与上下文整批带出去；只选附件不打字也允许发 */
 function sendWithRefs(text: string) {
   const picked = [...refs.value];
+  const pickedContexts = [...contexts.value];
   draft.value = '';
   clearRefs();
-  void send(text.trim(), picked);
+  clearContexts();
+  void send(text.trim(), picked, undefined, pickedContexts);
 }
 
 /** 拆分按钮的作用域：本次执行不切档，另两档先改会话审批再放行 */
@@ -356,19 +493,11 @@ function pickSuggestion(text: string) {
 }
 
 function submit() {
-  if (running.value || (!draft.value.trim() && !refs.value.length)) {
+  if (running.value || (!draft.value.trim() && !refs.value.length && !contexts.value.length)) {
     return;
   }
   sendWithRefs(draft.value);
 }
-
-const { onKeydown } = useComposerKeys({
-  getEl: () => inputRef.value?.textarea,
-  send: submit,
-  setValue: (value) => {
-    draft.value = value;
-  }
-});
 
 /** 消息有增改（流式追加）就贴底，保持最新一条可见 */
 watch(
@@ -438,6 +567,59 @@ async function backToBeforeConversation() {
     rollbackRunning.value = false;
   }
 }
+
+/* ---------------- 消息工具栏动作（删除 / 重试 / 回退） ---------------- */
+
+/** 破坏性动作先确认；取消时返回 false */
+async function confirmDestructive(message: string, title: string, confirmText: string): Promise<boolean> {
+  try {
+    await ElMessageBox.confirm(message, title, {
+      confirmButtonText: confirmText,
+      cancelButtonText: '取消',
+      type: 'warning'
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 注入给工具栏的能力实现。
+ * 具体有哪些按钮由 messageActions.ts 注册，这里只补「需要面板上下文」的部分：
+ * 二次确认、系统行提示与回滚结果抛给宿主重建画布。
+ */
+const messageActionDeps: MessageActionDeps = {
+  retryReply: (messageId) => retryReply(messageId),
+  async removeTurn(messageId) {
+    const confirmed = await confirmDestructive(
+      '将删除这一轮提问与回答，历史里不再出现。是否继续？',
+      '删除对话',
+      '删除'
+    );
+    if (confirmed) {
+      await removeTurn(messageId);
+    }
+  },
+  async revertTurn(messageId) {
+    const confirmed = await confirmDestructive(
+      '将撤销这一轮及之后各轮的链路改动，并删除这些对话记录。是否继续？',
+      '回退到本轮对话发起前',
+      '回退'
+    );
+    if (!confirmed) {
+      return [];
+    }
+    const chains = await revertTurn(messageId);
+    if (!chains.length) {
+      appendSystem('这一轮没有改动任何链路。', 'agent:revert');
+      return chains;
+    }
+    ElMessage.success('已回退到本轮对话发起前');
+    emit('agent-rolled-back', chains);
+    return chains;
+  }
+};
 
 /* ---------------- 操作审批模式（会话级，只影响链路试跑） ---------------- */
 
@@ -608,6 +790,27 @@ defineExpose({ newSession });
 .agent-chat__col {
   min-width: 0;
   max-width: 100%;
+}
+
+/* 用户列：气泡与工具条竖直排布并右对齐，工具条落在气泡下方而不是气泡内 */
+.agent-chat__col--user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 86%;
+}
+
+/* 消息工具栏：整行悬停或键盘聚焦才出现，平时不抢注意力 */
+.agent-chat__row .msg-actions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--db-dur-fast, 0.14s) var(--db-ease, ease);
+}
+
+.agent-chat__row:hover .msg-actions,
+.agent-chat__row:focus-within .msg-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* 身份行：小胶囊托住图标和名字，比纯文字更有「发言人」感 */
@@ -783,20 +986,16 @@ defineExpose({ newSession });
   }
 }
 
-/* 引用卡条：单行横排，多了横向滚，别把输入区顶高 */
-.agent-chat__refs {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 8px;
-  overflow-x: auto;
-  scrollbar-width: none;
+/* 已发消息：卡片与正文同行，靠右外边距和文字隔开，而不是让卡片独占一行 */
+.agent-chat__ctx-inline {
+  margin-right: 4px;
 }
 
-/* 已发出的气泡：引用卡换行铺开，去掉描边、底色更淡，让正文占主导 */
-.agent-chat__refs.is-bubble {
+/* 引用卡条：已发气泡里换行铺开，多了往下折，不占横向滚动 */
+.agent-chat__refs {
+  display: flex;
   flex-wrap: wrap;
-  overflow: visible;
-  margin: 0;
+  gap: 6px;
 }
 
 /* 间距只加在「有正文跟在后面」时，纯引用消息里的卡片才在气泡中垂直居中 */
@@ -804,6 +1003,7 @@ defineExpose({ newSession });
   margin-top: 6px;
 }
 
+/* 已发气泡里去掉描边、底色更淡，让正文占主导 */
 .agent-chat__refs.is-bubble .agent-chat__ref {
   padding: 0 8px;
   background: color-mix(in srgb, var(--ref-color, var(--db-ink-muted, #6e6e73)) 6%, transparent);
@@ -856,45 +1056,6 @@ defineExpose({ newSession });
   white-space: nowrap;
 }
 
-.agent-chat__ref-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  font-size: 11px;
-  color: var(--db-ink-muted, #6e6e73);
-  cursor: pointer;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-}
-
-.agent-chat__ref-close:hover {
-  color: var(--db-ink-primary, #1d1d1f);
-  background: var(--db-bg-hover, rgba(120, 120, 128, 0.12));
-}
-
-.agent-chat__composer :deep(.el-textarea__inner) {
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  background: transparent;
-  font-size: 13px;
-  line-height: 1.75;
-  color: var(--db-ink-secondary, #3a3a3c);
-
-  &::placeholder {
-    color: var(--db-ink-muted, #6e6e73);
-  }
-
-  &:focus {
-    box-shadow: none;
-  }
-}
-
 .agent-chat__toolbar {
   display: flex;
   align-items: center;
@@ -903,7 +1064,7 @@ defineExpose({ newSession });
   margin-top: 4px;
 }
 
-/* 左侧工具区：留白占位，后续放上传附件等图标按钮 */
+/* 左侧工具区：工作区是稳定入口，不随栏宽收缩；右侧按钮可退化成省略号 */
 .agent-chat__tools {
   flex: 1;
   min-width: 0;
@@ -917,7 +1078,7 @@ defineExpose({ newSession });
   }
 }
 
-/* 「回到 AI 动手前」：低调文字钮，hover 才显底色 */
+/* 工具钮：低调文字钮，hover 才显底色 */
 .agent-chat__tool {
   display: inline-flex;
   align-items: center;

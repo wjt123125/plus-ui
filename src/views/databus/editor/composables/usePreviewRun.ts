@@ -9,7 +9,7 @@ import { getDef } from '../cmp-defs';
 import type { ElNode, ElTreeModel } from './useElTreeModel';
 
 /**
- * 试运行（1C：生成 EL → 校验 → 真执行，不落库）。
+ * 试运行：生成 EL → 校验 → 真执行，结果只回前端、不落库。
  * 持有：入参弹窗/结果弹窗/步骤抽屉三态、必填即时拦截、结果步骤的标题推断。
  * 结果 banner / 上下文快照等纯展示派生由 PreviewResultBody 内部计算。
  */
@@ -119,15 +119,6 @@ export function usePreviewRun(store: PreviewRunStore) {
     previewVisible.value = true;
   }
 
-  /** 步骤明细抽屉状态：当前选中步骤（$.<tag> 快照文本由抽屉组件自行格式化） */
-  const stepDetailVisible = ref(false);
-  const currentStep = ref<NodeStep | null>(null);
-
-  function openStepDetail(row: NodeStep) {
-    currentStep.value = row;
-    stepDetailVisible.value = true;
-  }
-
   /**
    * 画布业务叶子按数据空间名（tag）索引：tag → {组件注册名, 解析后的 cfg}。
    * 后端 NodeStep.title 只透传用户正本（未填为 null），步骤表再用当前画布 cfg 推断默认。
@@ -185,9 +176,6 @@ export function usePreviewRun(store: PreviewRunStore) {
     openPreview,
     runPreview,
     reopenPreview,
-    stepDetailVisible,
-    currentStep,
-    openStepDetail,
     stepTitle
   };
 }

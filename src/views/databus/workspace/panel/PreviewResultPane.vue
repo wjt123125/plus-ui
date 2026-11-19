@@ -3,7 +3,14 @@
   结果本体不落库（在内存 useRunConsole，与终端同生命周期），所以刷新后 tab 只剩空态。
 -->
 <template>
-  <div class="preview-pane">
+  <div
+    class="preview-pane"
+    :data-context-type="entry ? 'preview-result' : undefined"
+    :data-context-anchor="entry ? `preview-result-${entry.id}` : undefined"
+    :data-context-asset-type="entry ? 'chain' : undefined"
+    :data-context-asset-id="entry?.chainId ?? undefined"
+    :data-context-asset-name="entry?.title"
+  >
     <el-empty
       v-if="!entry"
       description="试运行结果不跨刷新保留，请回到画布重新运行"
@@ -20,20 +27,18 @@
             :resolve-step-title="resolveStepTitle"
             :request-json="entry.requestJson"
             :time="entry.time"
-            @open-step="openStep"
+            :context-source="contextSource"
+            chat-enabled
           />
         </div>
       </div>
     </template>
-
-    <StepDetailDrawer v-model:visible="stepVisible" :step="currentStep" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import type { NodeStep } from '@/api/databus/el/types';
-import StepDetailDrawer from '@/views/databus/editor/components/dialogs/StepDetailDrawer.vue';
 import PreviewResultBody from '@/views/databus/editor/components/dialogs/PreviewResultBody.vue';
 import { useRunConsole } from '@/views/databus/workbench/composables/useRunConsole';
 
@@ -52,13 +57,11 @@ const entry = computed(() => {
   return hit && hit.source === 'preview' ? hit : null;
 });
 
-const stepVisible = ref(false);
-const currentStep = ref<NodeStep | null>(null);
-
-function openStep(row: NodeStep) {
-  currentStep.value = row;
-  stepVisible.value = true;
-}
+/** 步骤明细「加入会话」的来源资源：本次运行的链路 */
+const contextSource = computed(() => {
+  const hit = entry.value;
+  return hit ? { assetType: 'chain', assetId: hit.chainId ?? undefined, assetName: hit.title } : undefined;
+});
 
 /** 标题快照优先（运行时的组件名），快照缺失再退 nodeId */
 function resolveStepTitle(row: NodeStep): string {

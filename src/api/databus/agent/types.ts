@@ -42,6 +42,50 @@ export interface AgentCardReply {
   action: string;
 }
 
+/** 附件来源锚点；画布/日志面板按 dataset 约定填入 */
+export interface AgentContextSource {
+  assetType?: string;
+  assetId?: number | string;
+  assetName?: string;
+  nodeName?: string;
+  recordId?: number | string;
+  runId?: number | string;
+  anchor?: string;
+  route?: string;
+  offset?: number;
+  length?: number;
+  capturedAt?: string;
+}
+
+/** excerpt 带原文；resource 只带主键与编码 */
+export interface AgentContextPayload {
+  text?: string;
+  fullText?: string;
+  offset?: number;
+  length?: number;
+  chars?: number;
+  truncated?: boolean;
+  id?: number | string;
+  code?: string;
+}
+
+/**
+ * 会话上下文附件（§22）。与视图侧 AgentContextItem 同构，
+ * api 层单独声明一份，避免从 views 反向 import。
+ */
+export interface AgentContextItem {
+  id: string;
+  kind: 'excerpt' | 'resource';
+  /** terminal-run / preview-run / compile-error / chain / component */
+  type: string;
+  title: string;
+  preview?: string;
+  note?: string;
+  payload?: AgentContextPayload;
+  source?: AgentContextSource;
+  fingerprint: string;
+}
+
 /** AI 助手对话入参 */
 export interface AgentChatBo {
   /** 用户原话 */
@@ -50,6 +94,8 @@ export interface AgentChatBo {
   conversationId?: string;
   /** 卡片回执：用户在确认 / 选择卡片上点了哪一项 */
   cardReply?: AgentCardReply;
+  /** 本轮附带的上下文（划字摘录 + 资源引用），与正文分开传 */
+  attachments?: AgentContextItem[];
 }
 
 /** 发起对话的返回：run 句柄与会话 id */
@@ -74,6 +120,8 @@ export interface AgentRunVo {
   cards?: string[];
   /** 本轮收到的卡片回执 JSON，按 seq 升序；回执落在点选后新建的 run 上，需按 cardId 跨 run 归位 */
   cardReplies?: string[];
+  /** 本轮附件 JSON 字符串（AgentContextItem[]），刷新后据此还原上下文卡 */
+  attachments?: string;
   round?: number;
   expireTime?: string;
   createTime?: string;

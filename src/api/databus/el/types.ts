@@ -79,6 +79,10 @@ export interface NodeStep {
  */
 export interface PreviewRunVo {
   elStr?: string;
+  /** 本次执行 id（串联日志用） */
+  executionId?: string;
+  /** 端到端耗时（毫秒），executed=true 时有值 */
+  costTime?: number | null;
   valid?: boolean;
   message?: string;
   executed?: boolean;

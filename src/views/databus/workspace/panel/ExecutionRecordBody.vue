@@ -43,7 +43,7 @@
             <span class="mono">{{ detail.execution.id }}</span>
           </el-descriptions-item>
           <el-descriptions-item v-if="detail.execution.errorMsg" label="错误信息" :span="3">
-            <span class="error-text">{{ detail.execution.errorMsg }}</span>
+            <FoldableErrorText class="error-text" :text="detail.execution.errorMsg" />
           </el-descriptions-item>
         </el-descriptions>
 
@@ -100,7 +100,10 @@
                   <JsonCodeEditor :model-value="pretty(row.outputJson)" height="200px" readonly />
                 </div>
               </div>
-              <div v-if="row.errorMsg" class="node-error">错误：{{ row.errorMsg }}</div>
+              <div v-if="row.errorMsg" class="node-error">
+                <span class="node-error__label">错误：</span>
+                <FoldableErrorText :text="row.errorMsg" />
+              </div>
             </template>
           </el-table-column>
           <el-table-column label="#" type="index" width="44" align="center" />
@@ -145,6 +148,7 @@ import { ElMessage } from 'element-plus';
 import { getExecution, rerunExecution } from '@/api/databus/execution';
 import type { DatabusExecutionResult, ExecutionDetailVo } from '@/api/databus/execution/types';
 import JsonCodeEditor from '@/views/databus/editor/components/common/JsonCodeEditor.vue';
+import FoldableErrorText from '@/views/databus/components/FoldableErrorText.vue';
 import { EXECUTION_STATUS } from '@/constants/databus';
 import { usePaneRefresh } from '../composables/usePaneRefresh';
 
@@ -327,11 +331,18 @@ const ownerTip = (row: { depth?: number | null; ownerChain?: string | null }) =>
 .node-error {
   margin-top: 8px;
   padding: 6px 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
   font-size: 12px;
   color: var(--el-color-danger);
   background: var(--el-color-danger-light-9);
   border-radius: 4px;
   word-break: break-all;
+}
+
+.node-error__label {
+  flex: none;
 }
 
 .text-muted {

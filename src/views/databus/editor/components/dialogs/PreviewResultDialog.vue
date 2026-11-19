@@ -15,7 +15,8 @@
       :result="result"
       :resolve-step-title="resolveStepTitle"
       :request-json="requestJson"
-      @open-step="(row) => emit('openStep', row)"
+      :context-source="contextSource"
+      :chat-enabled="chatEnabled"
     />
     <template #footer>
       <el-button @click="emit('update:visible', false)">关闭</el-button>
@@ -35,11 +36,14 @@ defineProps<{
   resolveStepTitle: (row: NodeStep) => string;
   /** 本次实际发出的入参（画布宿主持有 previewRequest） */
   requestJson?: string;
+  /** 步骤明细「加入会话」的来源资源 */
+  contextSource?: { assetType?: string; assetId?: number | string; assetName?: string };
+  /** 编辑器独立路由没有 AI 会话面板，默认不渲染「加入会话」 */
+  chatEnabled?: boolean;
 }>();
 
 const emit = defineEmits<{
   'update:visible': [value: boolean];
   reopen: [];
-  openStep: [row: NodeStep];
 }>();
 </script>

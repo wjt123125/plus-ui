@@ -163,6 +163,8 @@
       :locked-chain-id="executeCtx?.chainId"
       @executed="onExecuted"
     />
+    <!-- 划字冒泡 + 角标：挂在页面根，AI 栏收起时也能用（§22.2） -->
+    <ContextSelectionBubble />
   </div>
 </template>
 
@@ -204,6 +206,7 @@ import WorkbenchHeader from '@/views/databus/workbench/components/WorkbenchHeade
 import WorkbenchUserBar from '@/views/databus/workbench/components/WorkbenchUserBar.vue';
 import AiAssistantRail from '@/views/databus/workbench/ai/AiAssistantRail.vue';
 import AgentChatPanel from '@/views/databus/workbench/ai/AgentChatPanel.vue';
+import ContextSelectionBubble from '@/views/databus/workbench/ai/ContextSelectionBubble.vue';
 import AiHistoryRail from '@/views/databus/workbench/ai/AiHistoryRail.vue';
 import { useAiSessionHistory } from '@/views/databus/workbench/ai/useAiSessionHistory';
 import { useAgentRefs, type AgentRefItem } from '@/views/databus/workbench/ai/useAgentRefs';
@@ -407,6 +410,13 @@ const aiCollapsed = usePersisted('databus.ws.aiCollapsed', true);
 const aiWidth = usePersisted('databus.ws.aiWidth', 300);
 /** AI 栏最小宽度：再窄对话区无可用宽度，同时作为「拖到最窄=收起历史栏」的阈值 */
 const AI_MIN_WIDTH = 220;
+
+/** 结果页「加入会话」的跨组件信号：附件加进暂存区后把 AI 栏展开，让新卡片当场可见 */
+const REVEAL_AI_EVENT = 'databus:reveal-ai';
+
+function onRevealAiRail(): void {
+  aiCollapsed.value = false;
+}
 /** 会话历史栏：与其它工作台共享同一单例，AI 收起/拖到最窄时单向连带收起 */
 const { collapsed: historyCollapsed, width: historyWidth, bindHistoryToAi } = useAiSessionHistory();
 bindHistoryToAi(aiCollapsed, aiWidth, AI_MIN_WIDTH);
@@ -1179,9 +1189,18 @@ function redrawAgentCanvas(evt: AgentCanvasEvent) {
 useAgentPush((payload) => {
   const evt = payload.data as AgentCanvasEvent | undefined;
   const code = evt?.eventCode;
-  // chain:draft:saved：只刷新链树（新链路/改名/草稿态）
+  // chain:draft:saved：刷新链树（新链路/改名/草稿态）
   if (code === AGENT_EVENT.CHAIN_DRAFT_SAVED) {
     void reloadTree();
+    // 兜底重拉画布：canvas:updated 那份整棵快照可能没生效（SSE 断连/多窗口未订阅/脏画布被跳过），
+    // 只刷链树会让已打开的画布停在旧结构；试运行是拿本地画布生成 EL 的，就会一直复现旧错误，
+    // 直到用户刷新页面才从库里重拉。这里按库里内容重拉一次，有未保存改动时不覆盖。
+    if (evt?.chainId != null) {
+      const target = tabs.value.find((t) => t.key === canvasKey(evt.chainId!));
+      if (target && !target.dirty) {
+        void workPanelRef.value?.reloadCanvas(evt.chainId);
+      }
+    }
     return;
   }
   // component:draft:saved：AI 落了组件草稿 → 草稿要能进树，同时把审阅 tab 顶出来，
@@ -1667,10 +1686,12 @@ onMounted(() => {
   void loadBrandIcons();
   getList();
   window.addEventListener('keydown', onKeydown);
+  window.addEventListener(REVEAL_AI_EVENT, onRevealAiRail);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener(REVEAL_AI_EVENT, onRevealAiRail);
 });
 </script>
 

@@ -36,6 +36,8 @@ export interface PreviewRunEntry extends RunLogBase {
   source: 'preview';
   /** 来源链路名（预览链路为「预览 · xxx」） */
   title: string;
+  /** 来源链路主键：结果卡挂上下文标识用；试跑本身不落执行记录，故没有运行记录 id */
+  chainId?: number | string | null;
   result: PreviewRunVo;
   /** 步骤标题快照（tag → 组件名）：结果 tab 不再依赖画布模型树 */
   titleByTag: Record<string, string>;
