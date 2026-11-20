@@ -44,3 +44,6 @@ export const DATABUS_CARD_KIND_CONFIRM = 'confirm';
 export const DATABUS_CARD_KIND_CHOICE = 'choice';
 
 export const DATABUS_CARD_KIND_REF = 'ref';
+
+/** 卡片回执里的「取消」保留动作：不对应任何选项，后端据此判定用户放弃这张卡 */
+export const DATABUS_CARD_ACTION_CANCEL = 'cancel';

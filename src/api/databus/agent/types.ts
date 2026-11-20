@@ -9,7 +9,7 @@ export interface AgentCardOption {
   style?: 'primary' | 'default';
 }
 
-/** 通用交互卡片（运行时 §16）：confirm 为审批确认，choice 为后续选择卡，ref 为资源跳转卡 */
+/** 通用交互卡片（运行时 §16）：confirm 为审批确认，choice 为用户拍板，ref 为资源跳转卡 */
 export interface AgentCard {
   /** run 内唯一，点选后原样回传 */
   cardId: string;
@@ -21,7 +21,12 @@ export interface AgentCard {
   options: AgentCardOption[];
   /** 仅 choice 使用 */
   multiSelect?: boolean;
+  /** 仅 choice：是否允许用户自由输入（相当于 E 选项） */
+  allowFreeText?: boolean;
+  /** inline 留在消息流；dialog 浮起来等回执（选择卡固定 dialog） */
   presentation?: 'inline' | 'dialog';
+  /** 协议版本，缺省按 1 处理 */
+  v?: number;
   /** 仅 ref 使用：点击由宿主开对应 tab（如草稿审阅页） */
   resource?: AgentCardResource;
 }
@@ -36,10 +41,15 @@ export interface AgentCardResource {
   draft?: boolean;
 }
 
-/** 卡片回执：用户点了哪一项 */
+/** 卡片回执：用户点了哪些项、补充了什么 */
 export interface AgentCardReply {
   cardId: string;
-  action: string;
+  /** 选中的动作键：单选一项，多选多项 */
+  actions: string[];
+  /** 自由输入内容，仅 allowFreeText 卡片允许 */
+  text?: string;
+  /** 服务端写入的用户可见文案；回传时带上会被服务端覆盖，只用于历史回放 */
+  display?: string;
 }
 
 /** 附件来源锚点；画布/日志面板按 dataset 约定填入 */
@@ -86,16 +96,25 @@ export interface AgentContextItem {
   fingerprint: string;
 }
 
-/** AI 助手对话入参 */
+/** 系统事件：前端只报「发生了什么」，展示文案与模型指令都由后端目录生成 */
+export interface AgentSystemEvent {
+  /** 事件码，如 component.draft.rejected */
+  code: string;
+  /** 事件事实（组件编码、名称、版本等） */
+  payload?: Record<string, unknown>;
+}
+
 export interface AgentChatBo {
   /** 用户原话 */
   content: string;
   /** 会话 id，为空则新开会话 */
   conversationId?: string;
-  /** 卡片回执：用户在确认 / 选择卡片上点了哪一项 */
+  /** 卡片回执：用户在确认 / 选择卡片上点了哪些项、补充了什么 */
   cardReply?: AgentCardReply;
   /** 本轮附带的上下文（划字摘录 + 资源引用），与正文分开传 */
   attachments?: AgentContextItem[];
+  /** 系统事件：草稿采纳 / 拒绝等，可替代正文单独成一轮 */
+  systemEvent?: AgentSystemEvent;
 }
 
 /** 发起对话的返回：run 句柄与会话 id */
@@ -104,6 +123,10 @@ export interface AgentChatStartVo {
   runId: string;
   /** SnailAI 会话 id，前端持久化用于刷新恢复 */
   conversationId: string;
+  /** 本轮展示文案（只带系统事件时由后端生成，前端气泡直接展示） */
+  intent?: string;
+  /** 用户可见的回执文案（卡片轮次才有，由服务端按选项翻译，前端不自己拼） */
+  display?: string;
 }
 
 /** run 状态 */

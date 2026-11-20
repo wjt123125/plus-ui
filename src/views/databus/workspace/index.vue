@@ -641,16 +641,25 @@ function continueAfterDraftAdopted(payload: {
     return;
   }
   agentDraftConversations.delete(draftId);
-  const text = `【系统】组件「${payload.componentName}」（${payload.componentCode}）已在审阅页采纳，版本 ${payload.version ?? '当前版本'}。请继续：用组件引用写链路草稿、选好 connectionId，然后试跑。`;
+  // 只上报事实：展示文案与给模型的指令都由后端事件目录生成，前端不再拼中文提示词
+  const systemEvent = {
+    code: 'component.draft.adopted',
+    payload: {
+      componentCode: payload.componentCode,
+      componentName: payload.componentName,
+      ...(payload.version != null ? { version: payload.version } : {})
+    }
+  };
+  const awayText = `组件「${payload.componentName}」已采纳；回到该会话后助手会继续。`;
   if (ownerConversationId !== conversationId.value) {
-    appendSystem(text, undefined, ownerConversationId);
+    appendSystem(awayText, undefined, ownerConversationId);
     return;
   }
   if (agentRunning.value) {
-    appendSystem(`组件「${payload.componentName}」已采纳；本轮结束后再让助手继续。`, undefined, ownerConversationId);
+    appendSystem(awayText, undefined, ownerConversationId);
     return;
   }
-  void send(text);
+  void send('', undefined, undefined, undefined, systemEvent);
 }
 
 /** 草稿采纳成功：关审阅 tab、刷台账/树，再开该组件详情 tab 看生效结果（Pane 已提示成功） */
@@ -684,12 +693,15 @@ function continueAfterDraftRejected(payload: { id: number | string; componentCod
     return;
   }
   agentDraftConversations.delete(draftId);
-  const text = `【系统】组件草稿「${payload.componentCode}」已在审阅页被拒绝并销毁，未生效、链路里不能引用。请先问用户：改源码重做，还是换现成组件。`;
+  const systemEvent = {
+    code: 'component.draft.rejected',
+    payload: { componentCode: payload.componentCode }
+  };
   if (ownerConversationId !== conversationId.value || agentRunning.value) {
-    appendSystem(text, undefined, ownerConversationId);
+    appendSystem(`组件草稿「${payload.componentCode}」已被拒绝；回到该会话后助手会继续。`, undefined, ownerConversationId);
     return;
   }
-  void send(text);
+  void send('', undefined, undefined, undefined, systemEvent);
 }
 
 /** 草稿拒绝成功：草稿行已物理删除，关 tab、清最近访问并刷台账/树（Pane 已提示成功） */

@@ -81,14 +81,19 @@
                 @toggle="pauseFollowing"
               />
               <p v-else-if="seg.kind === 'notice'" class="agent-chat__notice">{{ seg.text }}</p>
-              <AgentCardBlock
-                v-else-if="seg.kind === 'card'"
+              <component
+                :is="cardViewOf(seg.card.kind)"
+                v-else-if="seg.kind === 'card' && seg.card.cardId !== floatingCard?.card.cardId"
                 :card="seg.card"
                 :status="seg.status"
                 :picked="seg.picked"
+                :card-text="seg.cardText"
                 :allow-full-access="allowFullAccess"
+                :approval-mode="approvalMode"
                 :draft-codes="draftCodes"
                 @pick="(option, scope) => onCardPick(seg.card.cardId, option, scope)"
+                @submit="(actions, text, label) => onCardSubmit(seg.card.cardId, actions, text, label)"
+                @cancel="onCardCancel(seg.card.cardId)"
                 @open="onCardOpen(seg.card)"
                 @preview="onCardPreview(seg.card)"
               />
@@ -127,8 +132,27 @@
       </div>
     </div>
 
-    <!-- 输入区：整块灰底无边框，底部一行工具（工作区 / 审批模式 / 回滚）+ 发送按钮 -->
-    <div class="agent-chat__input">
+    <!-- 悬浮选择卡：待选的选择卡整块顶替输入区，选完/取消后才把输入框还回来 -->
+    <div v-if="floatingCard" class="agent-chat__ask">
+      <component
+        :is="cardViewOf(floatingCard.card.kind)"
+        :card="floatingCard.card"
+        :status="floatingCard.status"
+        :picked="floatingCard.picked"
+        :card-text="floatingCard.cardText"
+        :allow-full-access="allowFullAccess"
+        :approval-mode="approvalMode"
+        :draft-codes="draftCodes"
+        auto-focus
+        @pick="onFloatingPick"
+        @submit="onFloatingSubmit"
+        @cancel="onFloatingCancel"
+      />
+    </div>
+
+    <!-- 输入区：整块灰底无边框，底部一行工具（工作区 / 审批模式 / 回滚）+ 发送按钮
+         有待选卡片时整块收起，不给用户绕开卡片继续说话的机会 -->
+    <div v-else class="agent-chat__input">
       <!--
         「回到最新」：只有用户自己上滑（或主动折叠内容）暂停跟随时才出现。
         浮在输入区上方，出现/消失不改变消息区高度，避免它自己又触发一次滚动。
@@ -262,8 +286,8 @@ import { getAgentApprovalMode, listAgentHistory, rollbackRun, updateAgentApprova
 import type { AgentApprovalMode, AgentCard, AgentCardOption } from '@/api/databus/agent/types';
 import { useLucideSubset } from '../composables/useLucideSubset';
 import { AGENT_APPROVAL_MODE, AGENT_RUN_STATUS } from '@/constants/databus';
-import { DATABUS_CARD_KIND_REF } from '@/constants/databus-common';
-import AgentCardBlock from './AgentCardBlock.vue';
+import { DATABUS_CARD_ACTION_CANCEL, DATABUS_CARD_KIND_CHOICE, DATABUS_CARD_KIND_REF } from '@/constants/databus-common';
+import { cardViewOf } from './agentCardRegistry';
 import AgentContextCard from './AgentContextCard.vue';
 import ContextDetailDialog from './ContextDetailDialog.vue';
 import MarkdownBlock from './MarkdownBlock.vue';
@@ -319,16 +343,35 @@ const {
   revertTurn
 } = useAgentChat();
 
-/** 引用卡：只暂存在本面板，发出去即清空 */
-const { refs, removeRef, clearRefs } = useAgentRefs();
+/** 引用卡：只暂存在本面板，发出去即清空；回退时把该轮提问带的卡放回暂存区 */
+const { refs, addRef, removeRef, clearRefs } = useAgentRefs();
 
 /** 上下文附件：划字摘录与画布资源共用一份暂存，发送时整批带出去 */
-const { contexts, removeContext, clearContexts, clearBadges } = useAgentContext();
+const { contexts, addContext, removeContext, clearContexts, clearBadges } = useAgentContext();
 
 /** 输入区已有卡片/引用时不再提示「@ 添加上下文」——它们本身就是已输入的内容 */
 const inputPlaceholder = computed(() =>
   contexts.value.length || refs.value.length ? '' : '@ 添加上下文，/ 使用命令和技能'
 );
+
+/**
+ * 悬浮选择卡：待选的选择卡从消息流抽出来，整块顶替输入区。
+ * <p>
+ * 只认 kind=choice：它是「等用户拍板」的唯一语义，处理成浮层才能打断；
+ * 历史里 presentation=inline 的旧卡片同样按 kind 判定，不受落库版本影响。
+ */
+const floatingCard = computed(() => {
+  for (let mi = messages.value.length - 1; mi >= 0; mi -= 1) {
+    const segments = messages.value[mi].segments;
+    for (let si = segments.length - 1; si >= 0; si -= 1) {
+      const seg = segments[si];
+      if (seg.kind === 'card' && seg.status === 'pending' && seg.card.kind === DATABUS_CARD_KIND_CHOICE) {
+        return seg;
+      }
+    }
+  }
+  return null;
+});
 
 /** 引用卡与上下文卡统一成行内 token；顺序即输入框里的显示顺序 */
 const composerChips = computed<ComposerChip[]>(() => [
@@ -470,6 +513,19 @@ function turnQuestion(index: number): AgentChatMessage | undefined {
   return prev?.role === 'user' ? prev : undefined;
 }
 
+/** 按消息 id 找它所属这一轮的提问：用户消息本身即锚点，AI 消息向前找一位 */
+function questionById(messageId: string): AgentChatMessage | undefined {
+  const index = messages.value.findIndex((m) => m.id === messageId);
+  if (index < 0) {
+    return undefined;
+  }
+  const message = messages.value[index];
+  if (message.role === 'user') {
+    return message;
+  }
+  return turnQuestion(index);
+}
+
 /** 最后一条非系统消息的下标：重试只对这一轮开放，模板逐条问一次即可 */
 const lastTurnIndex = computed(() => {
   for (let i = messages.value.length - 1; i >= 0; i -= 1) {
@@ -489,6 +545,13 @@ const bodyRef = ref<HTMLElement>();
 const { following, hasNew, toLatest, pause: pauseFollowing } = useStickToBottom(bodyRef);
 /** 输入框实例：contenteditable 只对外暴露 focus，宿主发完消息后把光标交回去 */
 const inputRef = ref<{ focus: () => void }>();
+
+/** 卡片顶替输入区会改变消息区高度：始终贴到最新，别让待选卡把最后一条回答顶出视野 */
+watch(floatingCard, (card) => {
+  if (card) {
+    toLatest();
+  }
+});
 
 /** 把引用与上下文整批带出去；只选附件不打字也允许发 */
 function sendWithRefs(text: string) {
@@ -518,9 +581,58 @@ async function onCardPick(cardId: string, option: AgentCardOption, scope?: CardP
       return;
     }
   }
-  await answerCard(cardId, option.key, option.label);
+  await answerCard(cardId, [option.key], option.label);
   // 点卡是对新回复的显式索取：即便之前在看历史，也回到最新
   toLatest();
+}
+
+/**
+ * 多选 / 自由输入提交：选项集合与文字一起回传，文字可为空。
+ *
+ * @param cardId  卡片 id
+ * @param actions 选中的动作键
+ * @param text    自由输入内容
+ * @param label   用户气泡文案
+ */
+async function onCardSubmit(cardId: string, actions: string[], text: string | undefined, label: string) {
+  if (running.value) {
+    return;
+  }
+  await answerCard(cardId, actions, label, text);
+  toLatest();
+}
+
+/** 取消这张卡：回执一个保留动作，后端据此让模型停手，不替用户做选择 */
+async function onCardCancel(cardId: string) {
+  if (running.value) {
+    return;
+  }
+  await answerCard(cardId, [DATABUS_CARD_ACTION_CANCEL], '取消这次选择');
+  toLatest();
+}
+
+/** 悬浮卡片的点选：卡片已被抽出消息流，这里按当前浮层定位 cardId 再复用原处理 */
+function onFloatingPick(option: AgentCardOption, scope?: CardPickScope) {
+  const seg = floatingCard.value;
+  if (seg) {
+    void onCardPick(seg.card.cardId, option, scope);
+  }
+}
+
+/** 悬浮卡片的提交：多选 / 自由输入合并发送 */
+function onFloatingSubmit(actions: string[], text: string | undefined, label: string) {
+  const seg = floatingCard.value;
+  if (seg) {
+    void onCardSubmit(seg.card.cardId, actions, text, label);
+  }
+}
+
+/** 悬浮卡片的取消：整块卡放弃，输入区随即还回来 */
+function onFloatingCancel() {
+  const seg = floatingCard.value;
+  if (seg) {
+    void onCardCancel(seg.card.cardId);
+  }
 }
 
 /** 只在「最后一条是已结束的 AI 回答」时给建议：跑的过程中和用户刚说完都不打扰 */
@@ -631,6 +743,20 @@ async function confirmDestructive(message: string, title: string, confirmText: s
 }
 
 /**
+ * 回退成功后把这一轮提问原样放回输入框：
+ * 正文回填、引用卡与上下文卡回到暂存区。已有输入不覆盖，避免冲掉用户正在写的字。
+ */
+function restorePrompt(question: AgentChatMessage) {
+  const text = segmentText(question, 'text');
+  if (text && !draft.value.trim()) {
+    draft.value = text;
+  }
+  question.refs?.forEach((ref) => addRef(ref));
+  question.contexts?.forEach((item) => addContext(item));
+  void nextTick(() => inputRef.value?.focus());
+}
+
+/**
  * 注入给工具栏的能力实现。
  * 具体有哪些按钮由 messageActions.ts 注册，这里只补「需要面板上下文」的部分：
  * 二次确认、系统行提示与回滚结果抛给宿主重建画布。
@@ -656,7 +782,12 @@ const messageActionDeps: MessageActionDeps = {
     if (!confirmed) {
       return [];
     }
+    // 提问随后会被截断，先留一份原样，回退成功后放回输入框
+    const question = questionById(messageId);
     const chains = await revertTurn(messageId);
+    if (question) {
+      restorePrompt(question);
+    }
     if (!chains.length) {
       appendSystem('这一轮没有改动任何链路。', 'agent:revert');
       return chains;
@@ -851,6 +982,11 @@ defineExpose({ newSession });
 .agent-chat__col {
   min-width: 0;
   max-width: 100%;
+}
+
+/* AI 列占满整行：卡片、代码块要和正文同一宽度，不能按内容长短忽宽忽窄 */
+.agent-chat__row.is-assistant .agent-chat__col {
+  flex: 1 1 auto;
 }
 
 /* 用户列：气泡与工具条竖直排布并右对齐，工具条落在气泡下方而不是气泡内 */
@@ -1085,6 +1221,40 @@ defineExpose({ newSession });
 @keyframes agent-cursor-blink {
   50% {
     opacity: 0;
+  }
+}
+
+/* 悬浮选择卡：待选时整块顶替输入区，白底大圆角 + 大投影，不做成消息流里的一段 */
+.agent-chat__ask {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  max-height: 100%;
+  margin: 0 12px 12px;
+  padding: 14px 14px 12px;
+  overflow-y: auto;
+  border-radius: 16px;
+  background: var(--db-bg-solid, #fff);
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.14),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+  animation: agent-chat-ask-in 0.18s ease-out;
+}
+
+/* 卡片自带外边距，浮层里由容器控制留白 */
+.agent-chat__ask :deep(.agent-card) {
+  margin: 0;
+}
+
+@keyframes agent-chat-ask-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -1465,8 +1635,9 @@ defineExpose({ newSession });
   padding: 0;
   border: none;
   border-radius: var(--db-r-control, 10px);
-  background: rgba(0, 122, 255, 0.12);
-  color: var(--db-blue, #007aff);
+  /* 黑白：墨底 + 反相字色，深色模式下 --db-ink 自动翻成亮色，不用另写一套 */
+  background: var(--db-ink, #1c1c1e);
+  color: var(--db-bg-solid, #ffffff);
   font-size: 17px;
   cursor: pointer;
   transition:
@@ -1474,7 +1645,7 @@ defineExpose({ newSession });
     transform 0.1s;
 
   &:hover:not(:disabled) {
-    background: rgba(0, 122, 255, 0.22);
+    background: var(--db-ink-secondary, #3a3a3c);
   }
 
   &:active:not(:disabled) {
@@ -1488,10 +1659,13 @@ defineExpose({ newSession });
   }
 
   &.is-stop {
-    background: transparent;
+    /* 运行中必须留住实底，否则只剩一个孤立方块，看起来像按钮"淡掉了" */
+    background: var(--db-ink, #1c1c1e);
+    /* 内描边取 currentColor：明暗主题共用一条规则 */
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 48%, transparent);
 
     &:hover {
-      background: rgba(0, 122, 255, 0.12);
+      background: var(--db-ink-secondary, #3a3a3c);
     }
   }
 }

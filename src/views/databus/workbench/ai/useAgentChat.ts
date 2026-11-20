@@ -6,8 +6,7 @@
  * run 状态全归后端，前端只存会话 id，刷新后继续同一会话。
  *
  * 消息按「段」存（不是一整块字符串）：`text` 段走 Markdown，`thinking` 段折叠展示，
- * `notice` 段是系统提示。切片 3 的画布变更卡、切片 5 的授权卡后续作为新段类型插入，
- * 不需要推翻消息模型。
+ * `notice` 段是系统提示，`card` 段是交互卡片（确认 / 选择 / 资源），新类型只需加一个段类型。
  *
  * 状态是**模块级单例、按会话分桶**：AI 栏收起时面板组件会整栏销毁，消息不能跟着丢；
  * 每个 conversationId 一份消息 / 运行态 / SSE 连接，切换会话不重复拉历史，多会话可并行。
@@ -30,7 +29,7 @@ import {
   startAgentChat,
   stopAgentRun
 } from '@/api/databus/agent';
-import type { AgentCard, AgentCardReply, AgentConversationVo } from '@/api/databus/agent/types';
+import type { AgentCard, AgentCardReply, AgentConversationVo, AgentSystemEvent } from '@/api/databus/agent/types';
 import {
   AGENT_SSE_CARD,
   AGENT_SSE_DONE,
@@ -39,6 +38,7 @@ import {
   AGENT_SSE_THINKING
 } from '@/constants/databus-agent';
 import { AGENT_RUN_STATUS } from '@/constants/databus';
+import { DATABUS_CARD_ACTION_CANCEL } from '@/constants/databus-common';
 import type { AiSession, AiSessionGroup } from './ai.types';
 import type { AgentContextItem } from './contextTypes';
 import { parseRefsText, type AgentRefItem } from './useAgentRefs';
@@ -55,7 +55,7 @@ export type AgentSegment =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; text: string }
   | { kind: 'notice'; text: string; eventCode?: string }
-  | { kind: 'card'; card: AgentCard; status: 'pending' | 'answered' | 'disabled'; picked?: string };
+  | { kind: 'card'; card: AgentCard; status: 'pending' | 'answered' | 'disabled'; picked?: string[]; cardText?: string };
 
 export interface AgentChatMessage {
   id: string;
@@ -65,6 +65,8 @@ export interface AgentChatMessage {
   refs?: AgentRefItem[];
   /** 用户消息携带的上下文附件（划字摘录 / 资源）；正文里不再拼等价的引用段 */
   contexts?: AgentContextItem[];
+  /** 这条提问来自卡片点选时的回执；回退时据此把原卡片恢复成可点 */
+  cardReply?: AgentCardReply;
   /** assistant 气泡状态 */
   status?: 'streaming' | 'done' | 'error';
   /** 这一轮对应的后端 run 句柄（重试 / 删除 / 回退按轮定位用；未落库的本地消息为空） */
@@ -446,16 +448,17 @@ function parseAttachments(raw?: string): AgentContextItem[] | null {
 /**
  * 发一句话：本地先定会话 id，把用户气泡与流式 assistant 气泡写进该会话桶，再建 run 拉流。
  *
- * @param content    用户原话（卡片点选时是选项文案）
+ * @param content    用户原话（卡片点选时是选项文案；系统事件发起时为空）
  * @param refs       引用卡（转成 resource 附件，不再拼进正文）
  * @param cardReply  卡片回执：点了哪张卡的哪一项，由后端校验后才认 userConfirmed
  * @param contexts   上下文暂存区（划字摘录 + 资源），与正文分开走 attachments
+ * @param systemEvent 系统事件：用户界面之外发生的事实，只上报 code + payload，文案由后端生成
  */
-async function send(content: string, refs?: AgentRefItem[], cardReply?: AgentCardReply, contexts?: AgentContextItem[]) {
+async function send(content: string, refs?: AgentRefItem[], cardReply?: AgentCardReply, contexts?: AgentContextItem[], systemEvent?: AgentSystemEvent) {
   const text = content.trim();
   const refList = refs ?? [];
   const contextList = contexts ?? [];
-  if (!text && !refList.length && !contextList.length) {
+  if (!text && !refList.length && !contextList.length && !systemEvent) {
     return;
   }
   const previous = activeId.value;
@@ -476,7 +479,8 @@ async function send(content: string, refs?: AgentRefItem[], cardReply?: AgentCar
     role: 'user',
     segments: text ? [{ kind: 'text', text }] : [],
     refs: refList.length ? refList : undefined,
-    contexts: contextList.length ? contextList : undefined
+    contexts: contextList.length ? contextList : undefined,
+    cardReply
   };
   state.messages.push(question);
   const assistant: AgentChatMessage = {
@@ -495,11 +499,19 @@ async function send(content: string, refs?: AgentRefItem[], cardReply?: AgentCar
       content: text,
       conversationId,
       cardReply,
-      attachments: attachments.length ? attachments : undefined
+      attachments: attachments.length ? attachments : undefined,
+      systemEvent
     });
     if (!data?.runId) {
       failStreaming(conversationId, '发起对话失败，请稍后重试');
       return;
+    }
+    // 卡片回执：气泡文案以服务端随回执落库的那句为准，覆盖点选时的本地乐观文案
+    if (cardReply && data.display) {
+      question.segments = [{ kind: 'text', text: data.display }];
+    } else if (!text && data.intent) {
+      // 事件发起时本地没有正文：气泡文案用后端目录生成的那句，前端不维护业务中文
+      question.segments = [{ kind: 'text', text: data.intent }];
     }
     // 两条气泡都挂上 run：工具栏按轮重试 / 删除 / 回退都靠它定位
     question.runId = data.runId;
@@ -655,6 +667,16 @@ async function revertTurn(messageId: string): Promise<{ chainId: number | string
   }
   const { data } = await revertAgentRun(runId);
   state.messages = state.messages.slice(0, turn.questionIndex);
+  // 这条提问若是点卡片发出的，把原卡片恢复成待点：否则用户重发时缺 cardReply，后端不认
+  const cardReply = turn.question.cardReply;
+  if (cardReply) {
+    const segment = findCardSegment(state, cardReply.cardId);
+    if (segment && segment.status !== 'pending') {
+      segment.status = 'pending';
+      segment.picked = undefined;
+      segment.cardText = undefined;
+    }
+  }
   await pruneEmptySession(conversationId);
   return data ?? [];
 }
@@ -742,6 +764,50 @@ function reportText(report?: string): string {
   return (typeof parsed?.fullText === 'string' ? parsed.fullText : report).trim();
 }
 
+/** 历史回执（旧数据只有 action，新数据是 actions + text） */
+type StoredCardReply = Partial<AgentCardReply> & { action?: string };
+
+/**
+ * 回执归一：兼容旧 action 字段，空选择且无输入时视为无回执。
+ *
+ * @param raw 已解析的回执 JSON
+ * @returns 归一后的回执；无效返回 null
+ */
+function normalizeCardReply(raw?: StoredCardReply | null): AgentCardReply | null {
+  if (!raw?.cardId) {
+    return null;
+  }
+  const actions = raw.actions?.length ? raw.actions : raw.action ? [raw.action] : [];
+  const text = raw.text?.trim() || undefined;
+  if (!actions.length && !text) {
+    return null;
+  }
+  return { cardId: raw.cardId, actions, text, display: raw.display };
+}
+
+/**
+ * 老回执的兜底翻译：这些记录落库时还没有 display 字段，只能按原卡片选项反推文案。
+ * 新记录一律直接读 reply.display。
+ */
+function cardReplyLabel(card: AgentCard | undefined, reply: AgentCardReply): string | undefined {
+  const actions = reply.actions ?? [];
+  if (actions.length === 1 && actions[0] === DATABUS_CARD_ACTION_CANCEL) {
+    return '取消这次选择';
+  }
+  const labels = actions
+    .map((key) => card?.options?.find((option) => option.key === key)?.label ?? key)
+    .filter(Boolean);
+  const parts: string[] = [];
+  if (labels.length) {
+    // 单选就是那一个选项文案；多选沿用提交时的「已选「A、B」」
+    parts.push(labels.length > 1 ? `已选「${labels.join('、')}」` : labels[0]);
+  }
+  if (reply.text) {
+    parts.push(reply.text);
+  }
+  return parts.join('；') || undefined;
+}
+
 /**
  * 刷新后恢复：先按会话把后端已落库的历史轮次拉回来重建消息，再问一句有没有还在跑的 run。
  *
@@ -763,12 +829,20 @@ async function restore(conversationId?: string) {
     const restored: AgentChatMessage[] = [];
     const runs = data ?? [];
     // 回执落在点选后新建的 run 上，先按 cardId 汇总，才能把「选了哪项」贴回原卡片
-    const replies = new Map<string, string>();
+    const replies = new Map<string, AgentCardReply>();
+    /** 卡片本体也按 cardId 收一份：只有老回执缺 display 时才需要它来翻译文案 */
+    const cards = new Map<string, AgentCard>();
     for (const run of runs) {
+      for (const raw of run.cards ?? []) {
+        const card = parseJson<AgentCard>(raw);
+        if (card?.cardId) {
+          cards.set(card.cardId, card);
+        }
+      }
       for (const raw of run.cardReplies ?? []) {
-        const reply = parseJson<AgentCardReply>(raw);
-        if (reply?.cardId && reply.action) {
-          replies.set(reply.cardId, reply.action);
+        const reply = normalizeCardReply(parseJson<StoredCardReply>(raw));
+        if (reply) {
+          replies.set(reply.cardId, reply);
         }
       }
     }
@@ -788,6 +862,18 @@ async function restore(conversationId?: string) {
         text = parsed.text;
         refs = parsed.refs;
       }
+      // 该 run 若由点卡发起，回执记在它身上；带上才能在刷新后回退时把原卡片恢复成可点
+      const ownReply = (run.cardReplies ?? [])
+        .map((raw) => normalizeCardReply(parseJson<StoredCardReply>(raw)))
+        .find((reply): reply is AgentCardReply => !!reply);
+      // 点卡发起的轮次：气泡显示选项文案（取消 / 确认执行 / A、B），
+      // intent 里「【卡片回执】用户已在卡片上选择…（cardId=…）」是给模型看的，不能原样上屏
+      if (ownReply) {
+        // 优先用服务端随回执一起落库的展示文案；老数据没有 display 时才按选项翻译兜底
+        const label = ownReply.display ?? cardReplyLabel(cards.get(ownReply.cardId), ownReply);
+        // 卡片本体也拉不到时至少剥掉回执措辞，绝不把 cardId 露给用户
+        text = label ?? text.replace(/【卡片回执】[^。]*。/g, '').trim();
+      }
       // 只有附件没有正文的轮次也要还原，否则刷新后丢卡片
       if (!text && !refs.length && !contexts.length) {
         return;
@@ -798,6 +884,7 @@ async function restore(conversationId?: string) {
         segments: text ? [{ kind: 'text', text }] : [],
         refs: refs.length ? refs : undefined,
         contexts: contexts.length ? contexts : undefined,
+        cardReply: ownReply,
         runId: run.runId
       });
       const answer = reportText(run.report);
@@ -814,7 +901,8 @@ async function restore(conversationId?: string) {
           kind: 'card',
           card,
           status: picked ? 'answered' : latest ? 'pending' : 'disabled',
-          picked
+          picked: picked?.actions,
+          cardText: picked?.text
         });
       }
       if (segments.length) {
@@ -1002,11 +1090,12 @@ function localSessionItem(conversationId: string): AiSession {
 /**
  * 卡片点选：把该卡置为已答并回传 cardReply，后端据此认 userConfirmed。
  *
- * @param cardId 卡片 id
- * @param action 选项 key（确认卡为 confirm / cancel）
- * @param label  选项文案，作为用户气泡发出的那句话
+ * @param cardId  卡片 id
+ * @param actions 选中的动作键集合：单选一项，多选多项；只填自由输入时为空数组
+ * @param label   点选瞬间的乐观文案；服务端返回 display 后会覆盖成库里那句
+ * @param text    自由输入内容，仅 allowFreeText 卡片传
  */
-async function answerCard(cardId: string, action: string, label: string) {
+async function answerCard(cardId: string, actions: string[], label: string, text?: string) {
   const id = activeId.value;
   if (!id) {
     return;
@@ -1020,8 +1109,9 @@ async function answerCard(cardId: string, action: string, label: string) {
     return;
   }
   segment.status = 'answered';
-  segment.picked = action;
-  await send(label || segment.card.title, undefined, { cardId, action });
+  segment.picked = actions;
+  segment.cardText = text;
+  await send(label || segment.card.title, undefined, { cardId, actions, text });
 }
 
 /** 后端会话摘要 → 历史栏行（时间在这里格式化，组件只渲染） */
