@@ -11,10 +11,10 @@
       :title="expanded ? '收起' : '展开全文'"
       @click.stop="expanded = !expanded"
     >
-      <el-icon>
-        <CaretBottom v-if="expanded" />
-        <CaretRight v-else />
-      </el-icon>
+      <SvgIcon
+        class="fe__caret-icon"
+        :icon-class="expanded ? 'lucide:chevron-down' : 'lucide:chevron-right'"
+      />
     </button>
     <span v-else class="fe__caret fe__caret--ghost" aria-hidden="true" />
     <pre class="fe__text">{{ expanded ? content : firstLine }}</pre>
@@ -23,9 +23,11 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { CaretBottom, CaretRight } from '@element-plus/icons-vue';
+import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 
 defineOptions({ name: 'FoldableErrorText' });
+
+useLucideSubset();
 
 const props = withDefaults(
   defineProps<{
@@ -73,11 +75,15 @@ const foldable = computed(() => {
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--el-color-primary);
+  color: var(--db-ink-muted);
   cursor: pointer;
 
-  .el-icon {
-    font-size: 12px;
+  &:hover {
+    color: var(--db-ink);
+  }
+
+  &-icon {
+    font-size: 13px;
   }
 }
 

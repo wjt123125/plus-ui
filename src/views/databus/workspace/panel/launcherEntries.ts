@@ -24,16 +24,16 @@ export const LAUNCHER_ENTRIES: LauncherEntry[] = [
   {
     key: 'new',
     label: '新建',
-    icon: 'lucide:file-plus',
+    icon: 'lucide:square-plus',
     color: '#2DD288',
     perm: ['databus:editor:add', 'databus:component:add', 'databus:directory:add', 'databus:connection:add']
   },
   { key: 'market', label: '物料市场', icon: 'lucide:store', color: '#4F8EF7' },
   // 物料管理（2026-11-01 补入口）：已装管理/我的上架/待审核三视角，审核人与上传人一键直达；
-  // 图标色独立一档——管理 tab 旧用 settings 绿与「设置」入口同屏撞色，菜单里两者必同屏故错开
-  { key: 'market-manage', label: '物料管理', icon: 'lucide:boxes', color: '#F59E0B' },
+  // 图标用 2×2 网格而不是「箱堆」，减少内部细节
+  { key: 'market-manage', label: '物料管理', icon: 'lucide:layout-grid', color: '#F59E0B' },
   // 管理类：与上面创作/市场族隔一条分隔线（对齐 Trae 菜单的创作/工具分段）
-  { key: 'admin-connection', label: '连接管理', icon: 'lucide:inbox', color: '#22B8CF', dividerBefore: true },
+  { key: 'admin-connection', label: '连接管理', icon: 'lucide:database', color: '#22B8CF', dividerBefore: true },
   { key: 'admin-execution', label: '执行记录', icon: 'lucide:clock', color: '#4F8EF7' },
   { key: 'admin-monitor', label: '监控大盘', icon: 'lucide:layout-grid', color: '#A371F7' },
   { key: 'admin-alert', label: '告警记录', icon: 'lucide:circle-alert', color: '#FF8A5B' },

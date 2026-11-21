@@ -1,7 +1,9 @@
 /**
  * Markdown 排版层（与解析库无关）。
  *
- * 命名空间：.md-prose
+ * 命名空间：.db-markdown
+ * - 刻意避开 "md-prose"：UnoCSS 会把它拆成 md: 断点变体 + prose 工具类，
+ *   于是 typography 的 pre/code 样式会直接落到容器上（代码块被二次上色）；
  * - 只描述"一段 Markdown 长什么样"，谁解析出来的都行；
  * - 颜色统一取 databus 的 --db-* 令牌（见 assets/styles/databus/_tokens.scss），
  *   不再用 Element Plus 的 --el-* 灰蓝体系——那套是给表单页设计的；
@@ -9,9 +11,9 @@
  *
  * 档位：
  * - 默认（侧栏气泡）：13.5px 正文
- * - .md-prose--roomy（全屏对话 / 文档预览）：15px 正文
+ * - .db-markdown--roomy（全屏对话 / 文档预览）：15px 正文
  */
-.md-prose {
+.db-markdown {
   --md-body: 13.5px;
   --md-line: 1.75;
   --md-gap: 10px;
@@ -19,18 +21,16 @@
   --md-h2: 15.5px;
   --md-h3: 14px;
   --md-code: 12px;
+  --md-code-block: 13px;
   --md-table: 12.5px;
 
-  /* 代码块固定深色，作为整屏唯一的深色锚点；两种主题下都不跟随 */
-  --md-code-bg: #282c34;
-  --md-code-head: rgba(255, 255, 255, 0.04);
-  --md-code-dim: #8b93a3;
-  --md-code-ink: #e6e6e6;
-
+  /* 代码块不再自带一套纸面色：直接沿用输入卡的下沉灰面（--db-bg-sunken），
+     深浅主题各自跟随令牌，语法色在文件末尾单独覆写 */
   color: var(--db-ink, #1c1c1e);
   font-size: var(--md-body);
   line-height: var(--md-line);
   word-break: break-word;
+  font-variant-numeric: tabular-nums;
 
   /* 首个排版元素要清掉上边距，气泡顶部才不会空一块；它在块容器里，要往里一层 */
   > .md-chunk:first-child > :first-child {
@@ -119,8 +119,10 @@
     padding: 1px 4px;
     border-radius: 4px;
     background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
-    font-family: var(--el-font-family-mono, ui-monospace, monospace);
+    font-family: var(--db-font-mono, ui-monospace, monospace);
     font-size: var(--md-code);
+    /* 代码里连字会把 != / -> 连成一个字形，读代码时反而难辨 */
+    font-variant-ligatures: none;
   }
 
   /* 行内代码里只允许出现真实文本：清空伪元素，任何外部样式（第三方库的图标字体、
@@ -130,12 +132,12 @@
     content: none;
   }
 
-  /* ---------- 代码块：深色 + 顶部语言/复制栏 ---------- */
+  /* ---------- 代码块：与输入卡同色的灰纸面，顶栏不另起一层 ---------- */
   .md-code-block {
     margin: 0 0 var(--md-gap);
-    border-radius: var(--db-r-control, 10px);
+    border-radius: var(--db-r-card, 14px);
     overflow: hidden;
-    background: var(--md-code-bg);
+    background: var(--db-bg-sunken, #f4f4f5);
   }
 
   .md-code-head {
@@ -143,45 +145,140 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 4px 6px 4px 12px;
-    background: var(--md-code-head);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 10px 10px 0 8px;
   }
 
+  /* 语言标识：普通灰字 + 下拉箭头，点击切换高亮语言 */
   .md-code-lang {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    min-width: 0;
+    padding: 3px 6px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--db-ink-muted, #6e6e73);
+    font-family: var(--db-font, inherit);
+    font-size: var(--db-fs-sm, 12px);
+    line-height: 1.4;
+    cursor: pointer;
+    transition:
+      background-color 0.15s,
+      color 0.15s;
+  }
+
+  .md-code-lang:hover,
+  .md-code-lang:focus-visible {
+    background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
+    color: var(--db-ink, #1c1c1e);
+  }
+
+  .md-code-lang-text {
     overflow: hidden;
-    color: var(--md-code-dim);
-    font-family: var(--el-font-family-mono, ui-monospace, monospace);
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
     white-space: nowrap;
     text-overflow: ellipsis;
   }
 
-  .md-copy {
+  .md-code-lang-caret {
     flex: none;
-    padding: 2px 6px;
-    border: 0;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--md-code-dim);
-    font-size: 11px;
-    line-height: 18px;
-    cursor: pointer;
+    width: 12px;
+    height: 12px;
+    opacity: 0.7;
   }
 
-  .md-copy:hover,
-  .md-copy:focus-visible {
-    background: rgba(255, 255, 255, 0.08);
-    color: var(--md-code-ink);
+  /* 右侧动作：复制常显，格式化只在悬停/聚焦代码块时浮现 */
+  .md-code-actions {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .md-format {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+  }
+
+  .md-code-block:hover .md-format,
+  .md-code-block:focus-within .md-format {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .md-code-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--db-ink-muted, #6e6e73);
+    cursor: pointer;
+    transition:
+      background-color 0.15s,
+      color 0.15s;
+  }
+
+  /* hidden 要压过上面的 display，否则按钮藏不住 */
+  .md-code-btn[hidden] {
+    display: none;
+  }
+
+  .md-code-btn svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .md-code-btn:hover,
+  .md-code-btn:focus-visible {
+    background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
+    color: var(--db-ink, #1c1c1e);
+  }
+
+  .md-copy.is-done {
+    color: var(--db-green, #34c759);
+  }
+
+  .md-copy.is-error,
+  .md-format.is-error {
+    color: var(--db-red, #ff3b30);
+  }
+
+  .md-copy .md-icon-check,
+  .md-copy.is-done .md-icon-copy {
+    display: none;
+  }
+
+  .md-copy.is-done .md-icon-check {
+    display: block;
   }
 
   pre.md-code {
     margin: 0;
-    padding: 10px 12px;
-    max-height: 220px;
+    padding: 6px 14px 14px;
+    max-height: 400px;
     overflow: auto;
+    background: transparent;
+    scrollbar-width: thin;
+  }
+
+  /* 横竖滚动条都收细：长 SQL / 长日志不再顶着系统粗条 */
+  pre.md-code::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  pre.md-code::-webkit-scrollbar-thumb {
+    border-radius: 3px;
+    background: rgba(60, 60, 67, 0.18);
+  }
+
+  pre.md-code::-webkit-scrollbar-track {
     background: transparent;
   }
 
@@ -191,8 +288,8 @@
     padding: 0;
     border-radius: 0;
     background: none;
-    font-size: var(--md-code);
-    line-height: 1.65;
+    font-size: var(--md-code-block);
+    line-height: 1.8;
     white-space: pre;
   }
 
@@ -200,7 +297,23 @@
   .md-table-wrap {
     margin: 0 0 var(--md-gap);
     overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
     border-radius: var(--db-r-control, 10px);
+  }
+
+  /* 横向滚动条同样收细，长表格不再顶着系统粗条 */
+  .md-table-wrap::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .md-table-wrap::-webkit-scrollbar-thumb {
+    border-radius: 3px;
+    background: rgba(60, 60, 67, 0.18);
+  }
+
+  .md-table-wrap::-webkit-scrollbar-track {
+    background: transparent;
   }
 
   .md-table-wrap > table {
@@ -288,7 +401,7 @@
 }
 
 /* 全屏对话 / 文档预览档位：只改尺寸变量，结构不变 */
-.md-prose--roomy {
+.db-markdown--roomy {
   --md-body: 15px;
   --md-line: 1.7;
   --md-gap: 12px;
@@ -296,6 +409,7 @@
   --md-h2: 19px;
   --md-h3: 16px;
   --md-code: 13px;
+  --md-code-block: 13.5px;
   --md-table: 13px;
 }
 
@@ -316,4 +430,148 @@
   max-width: 100%;
   max-height: 100%;
   border-radius: 10px;
+}
+
+/* ============================================================
+   代码块语法色：浅色走 GitHub Light 的收敛色板；
+   深色沿用 atom-one-dark 的 token 色，但底色跟着下沉灰面走，
+   所以这里把 hljs 自带的深蓝底统一去掉。
+   ------------------------------------------------------------ */
+.db-markdown .hljs {
+  background: transparent;
+}
+
+html.dark .db-markdown pre.md-code::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+html:not(.dark) .db-markdown .hljs {
+  color: #24292f;
+  background: transparent;
+}
+
+html:not(.dark) .db-markdown .hljs-comment,
+html:not(.dark) .db-markdown .hljs-quote {
+  color: #6e7781;
+  font-style: italic;
+}
+
+html:not(.dark) .db-markdown .hljs-keyword,
+html:not(.dark) .db-markdown .hljs-type,
+html:not(.dark) .db-markdown .hljs-literal,
+html:not(.dark) .db-markdown .hljs-selector-tag {
+  color: #a626a4;
+}
+
+html:not(.dark) .db-markdown .hljs-string,
+html:not(.dark) .db-markdown .hljs-regexp,
+html:not(.dark) .db-markdown .hljs-addition,
+html:not(.dark) .db-markdown .hljs-char.escape {
+  color: #116329;
+}
+
+html:not(.dark) .db-markdown .hljs-number,
+html:not(.dark) .db-markdown .hljs-symbol,
+html:not(.dark) .db-markdown .hljs-bullet {
+  color: #0550ae;
+}
+
+html:not(.dark) .db-markdown .hljs-title,
+html:not(.dark) .db-markdown .hljs-title.function_,
+html:not(.dark) .db-markdown .hljs-section,
+html:not(.dark) .db-markdown .hljs-selector-class,
+html:not(.dark) .db-markdown .hljs-selector-id {
+  color: #8250df;
+}
+
+html:not(.dark) .db-markdown .hljs-attr,
+html:not(.dark) .db-markdown .hljs-attribute,
+html:not(.dark) .db-markdown .hljs-variable,
+html:not(.dark) .db-markdown .hljs-template-variable,
+html:not(.dark) .db-markdown .hljs-params {
+  color: #953800;
+}
+
+html:not(.dark) .db-markdown .hljs-built_in,
+html:not(.dark) .db-markdown .hljs-meta,
+html:not(.dark) .db-markdown .hljs-name,
+html:not(.dark) .db-markdown .hljs-tag {
+  color: #0550ae;
+}
+
+html:not(.dark) .db-markdown .hljs-deletion {
+  color: #82071e;
+  background: #ffebe9;
+}
+
+html:not(.dark) .db-markdown .hljs-addition {
+  background: #dafbe1;
+}
+
+/* ============================================================
+   代码块语言切换浮层（el-popover，popper 挂在 body）
+   ------------------------------------------------------------
+   浮层在 .db-app 之外，拿不到 --db-* 令牌，改用 Element Plus 的
+   全局变量，深浅主题都能自动跟随；定位与滚动重定位交给 popper。 */
+.md-lang-popper.el-popover {
+  padding: 5px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--el-bg-color-overlay, #fff);
+  box-shadow:
+    var(--el-box-shadow-light, 0 12px 32px rgba(0, 0, 0, 0.12)),
+    inset 0 0 0 0.5px var(--el-border-color-lighter, rgba(60, 60, 67, 0.12));
+}
+
+.md-lang-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 300px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.md-lang-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.md-lang-list::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(60, 60, 67, 0.18);
+}
+
+.md-lang-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.md-lang-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--el-text-color-regular, #606266);
+  font-family: var(--db-font, inherit);
+  font-size: var(--db-fs-sm, 12px);
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+
+.md-lang-item:hover {
+  background: var(--el-fill-color-light, rgba(120, 120, 128, 0.08));
+}
+
+.md-lang-item.is-active {
+  color: var(--el-color-primary, #007aff);
+}
+
+.md-lang-check {
+  flex: none;
+  width: 13px;
+  height: 13px;
 }

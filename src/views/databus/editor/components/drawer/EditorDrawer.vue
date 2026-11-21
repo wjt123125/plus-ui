@@ -153,14 +153,14 @@ watch(
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background-color: var(--el-bg-color);
-  border-left: 1px solid var(--el-border-color-lighter);
-  transition: border-left-color 0.2s ease;
+  background-color: var(--db-surface, var(--el-bg-color));
+  border-radius: var(--db-r-card);
+  /* 浮岛之间靠留白分区，不再画结构竖线 */
 }
 
-/* 轨道收 0 时隐掉竖边，避免画布右缘残留一根线 */
+/* 轨道收 0 时保留圆角，避免画布右缘出现直角残影 */
 .editor-drawer.is-collapsed {
-  border-left-color: transparent;
+  border-radius: 0;
 }
 
 /* 链路树 slot 容器：撑满 pane，树内部自理滚动 */
@@ -177,12 +177,11 @@ watch(
 }
 
 /* 页签胶囊样式统一走全局 .db-tabs（databus-tabs），此处只留抽屉内的边距与居中。
-   页签条与内容黏合成一个整体（参照 Trae 侧栏）：header 变成与面板同色面的通栏横条，
-   与内容之间的空白改用发丝线收口——「浮岛胶囊 + 一段空白」是割裂感的来源 */
+   页签条与内容黏合为一个整体（参照 Trae 侧栏），两者之间靠留白分区，不再画发丝线 */
 .editor-drawer__tabs :deep(.el-tabs__header) {
   margin: 0;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  /* 页签条与内容之间用留白分区，不再画横线 */
 }
 
 /* 胶囊居中：fit-content 收宽 + margin auto 居中，左右留白对称后页签条读作面板标题栏
@@ -203,6 +202,18 @@ watch(
   flex: 1;
   min-height: 0;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(60, 60, 67, 0.18) transparent;
+}
+
+.editor-drawer__tabs :deep(.el-tabs__content)::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.editor-drawer__tabs :deep(.el-tabs__content)::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(60, 60, 67, 0.18);
 }
 
 .editor-drawer__tabs :deep(.el-tab-pane) {

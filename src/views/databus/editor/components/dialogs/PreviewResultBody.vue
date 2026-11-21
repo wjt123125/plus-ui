@@ -551,7 +551,7 @@ function depthPx(row: NodeStep): string {
   min-height: 56px;
   margin-bottom: 4px;
   padding: 10px 16px;
-  border-radius: var(--app-radius-lg, 12px);
+  border-radius: var(--db-r-control, 10px);
 }
 
 .pr__banner.is-ok {
@@ -700,7 +700,7 @@ function depthPx(row: NodeStep): string {
   gap: 10px;
   padding: 14px;
   border: 1px solid var(--el-border-color-lighter, #ebeef5);
-  border-radius: var(--app-radius-lg, 12px);
+  border-radius: var(--db-r-control, 10px);
   background: var(--el-bg-color, #fff);
 }
 
@@ -735,7 +735,7 @@ function depthPx(row: NodeStep): string {
   padding: 8px 10px;
   overflow: auto;
   max-height: 240px;
-  border-radius: var(--app-radius-md, 10px);
+  border-radius: var(--db-r-control, 10px);
   background: var(--el-fill-color-lighter, #fafafa);
   color: var(--db-ink-secondary, #3a3a3c);
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
@@ -759,7 +759,7 @@ function depthPx(row: NodeStep): string {
   gap: 10px;
   min-height: 34px;
   padding-right: 8px;
-  border-radius: var(--app-radius-sm, 6px);
+  border-radius: var(--db-r-tag, 7px);
   cursor: pointer;
   transition: background-color 0.15s ease;
 }
@@ -793,7 +793,7 @@ function depthPx(row: NodeStep): string {
   margin: 0 8px 10px;
   padding: 10px 12px;
   border: 1px solid var(--el-border-color-lighter, #ebeef5);
-  border-radius: var(--app-radius-md, 10px);
+  border-radius: var(--db-r-control, 10px);
   background: var(--el-bg-color, #fff);
 }
 
@@ -881,7 +881,7 @@ function depthPx(row: NodeStep): string {
 .pr__step-detail-error {
   padding: 8px 10px;
   border: 1px solid var(--el-color-danger-light-7, #fab6b6);
-  border-radius: var(--app-radius-sm, 6px);
+  border-radius: var(--db-r-tag, 7px);
   background: var(--el-color-danger-light-9, #fef0f0);
   color: var(--el-color-danger-dark-2, #c45656);
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;

@@ -290,11 +290,16 @@ defineExpose({ focus: focusEditor });
 <style scoped lang="scss">
 .composer {
   position: relative;
+  /* 撑满输入卡：工具行贴底，编辑区吃掉剩余高度，卡片静止高度才由外层决定 */
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
   min-height: 46px;
 }
 
 /* 两行起、八行封顶，超出内部滚动；white-space 保留手动换行 */
 .composer__editor {
+  flex: 1 1 auto;
   max-height: 186px;
   overflow-y: auto;
   outline: none;

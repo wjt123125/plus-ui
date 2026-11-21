@@ -7,7 +7,7 @@
   <section class="rc-console" aria-label="运行输出">
     <div ref="bodyRef" class="rc-console__body">
       <div v-if="!entries.length" class="rc-console__empty">
-        暂无运行输出——执行链路或在画布上试运行，结果显示在这里
+        暂无运行输出
       </div>
       <template v-for="entry in entries" :key="entry.id">
         <ChainRunRow

@@ -13,7 +13,10 @@ let closePushConnection: (() => void) | undefined;
 let stopPushWatchers: Array<() => void> = [];
 const KICKED_MESSAGE = 'kicked';
 let pushKicked = false;
+// SSE 重连次数耗尽后置位：连接已死但页面没关，focus/visibilitychange 兜底重连（否则 AI 画布推送永远收不到）
+let pushBroken = false;
 let resumePushTimer: ReturnType<typeof setTimeout> | undefined;
+let reconnectPushTimer: ReturnType<typeof setTimeout> | undefined;
 
 const formatNoticeTime = (timestamp?: number | string) => {
   const time = timestamp ? new Date(timestamp) : new Date();
@@ -98,6 +101,18 @@ const initSsePush = (url: string) => {
       delay: 5000,
       onFailed() {
         console.warn('SSE connection failed after 5 retries');
+        pushBroken = true;
+        // 后台重启等长断线场景：重连次数用完不代表放弃，定时再拉一次
+        if (reconnectPushTimer) {
+          clearTimeout(reconnectPushTimer);
+        }
+        reconnectPushTimer = setTimeout(() => {
+          reconnectPushTimer = undefined;
+          if (!getToken() || document.visibilityState !== 'visible') {
+            return;
+          }
+          initPush();
+        }, 15000);
       }
     }
   });
@@ -146,6 +161,7 @@ export const initPush = () => {
     return;
   }
   pushKicked = false;
+  pushBroken = false;
   const path = import.meta.env.VITE_APP_MESSAGE_PATH || '/resource/message';
   const transport = import.meta.env.VITE_APP_MESSAGE_TRANSPORT || 'sse';
   if (transport.toLowerCase() === 'websocket') {
@@ -172,10 +188,14 @@ export const closePush = () => {
   closePushConnection = undefined;
   stopPushWatchers.forEach(stop => stop());
   stopPushWatchers = [];
+  if (reconnectPushTimer) {
+    clearTimeout(reconnectPushTimer);
+    reconnectPushTimer = undefined;
+  }
 };
 
 const resumePushIfNeeded = () => {
-  if (!pushKicked || !getToken() || document.visibilityState !== 'visible') {
+  if ((!pushKicked && !pushBroken) || !getToken() || document.visibilityState !== 'visible') {
     return;
   }
   if (resumePushTimer) {
@@ -183,7 +203,7 @@ const resumePushIfNeeded = () => {
   }
   resumePushTimer = setTimeout(async () => {
     resumePushTimer = undefined;
-    if (!pushKicked || !getToken() || document.visibilityState !== 'visible') {
+    if ((!pushKicked && !pushBroken) || !getToken() || document.visibilityState !== 'visible') {
       return;
     }
     try {

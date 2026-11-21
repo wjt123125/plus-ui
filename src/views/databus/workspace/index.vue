@@ -39,7 +39,13 @@
           <WorkbenchUserBar settings-entry @settings="goSettings" @logout="onLogout" />
         </template>
       </AiHistoryRail>
-      <Splitter v-if="!historyCollapsed" v-model="historyWidth" :min="200" />
+      <Splitter
+        v-if="!historyCollapsed"
+        v-model="historyWidth"
+        :min="HISTORY_MIN_WIDTH"
+        :max="HISTORY_MAX_WIDTH"
+        :reset-width="HISTORY_MIN_WIDTH"
+      />
 
       <!-- 栏 2：AI 助手（对话面板薄壳，状态在 useAgentChat 模块级单例） -->
       <AiAssistantRail
@@ -60,7 +66,14 @@
           @ref-preview="onAgentRefPreview"
         />
       </AiAssistantRail>
-      <Splitter v-if="!aiCollapsed" v-model="aiWidth" :min="AI_MIN_WIDTH" />
+      <Splitter
+        v-if="!aiCollapsed || !historyCollapsed"
+        v-model="aiWidth"
+        :min="AI_MIN_WIDTH"
+        :max="AI_MAX_WIDTH"
+        :reset-width="AI_MIN_WIDTH"
+        :disabled="aiCollapsed"
+      />
 
       <!-- 栏 3：中栏容器 = 工作面板（五 kind 主内容区）+ 底部终端。
            终端放进中栏而不是整页 flex 兄弟：宽度只吃中栏，右抽屉折叠时中栏变宽、终端跟着变宽 -->
@@ -123,7 +136,7 @@
       <!-- 栏 4：右抽屉统一资源树（六 section 组织链路/组件/目录/收藏/模板）。
            折叠不收边销毁（宽度收 0 + overflow 裁剪），tab 停留位、树展开/搜索态全部保活；
            属性/EL/大纲读当前激活画布上报的名片（activePort），kind 决定三 tab 是否露出 -->
-      <Splitter v-if="!drawerCollapsed" v-model="drawerWidth" target="next" />
+      <Splitter v-if="!drawerCollapsed" v-model="drawerWidth" target="next" :reset-width="300" />
       <div class="wsp__drawer" :style="{ width: (drawerCollapsed ? 0 : drawerWidth) + 'px' }">
         <EditorDrawer
           :port="activePort"
@@ -152,6 +165,14 @@
         </EditorDrawer>
       </div>
     </div>
+
+    <!-- 命令面板（Ctrl/Cmd+K）：统一打开/新建/切会话入口，减轻三栏头部按钮密度 -->
+    <WorkspaceCommandPalette
+      v-model:open="paletteOpen"
+      :sessions="sessionList"
+      @command="onLauncherCommand"
+      @open-session="onHistoryOpen"
+    />
 
     <!-- 链路编辑抽屉（薄壳）：树上叶子编辑/重命名用；新建路径已收敛到向导 create tab（2026-10-21），保存后刷树与改标题 -->
     <ChainForm ref="chainFormRef" @success="onChainFormSaved" />
@@ -208,7 +229,7 @@ import AiAssistantRail from '@/views/databus/workbench/ai/AiAssistantRail.vue';
 import AgentChatPanel from '@/views/databus/workbench/ai/AgentChatPanel.vue';
 import ContextSelectionBubble from '@/views/databus/workbench/ai/ContextSelectionBubble.vue';
 import AiHistoryRail from '@/views/databus/workbench/ai/AiHistoryRail.vue';
-import { useAiSessionHistory } from '@/views/databus/workbench/ai/useAiSessionHistory';
+import { HISTORY_MAX_WIDTH, HISTORY_MIN_WIDTH, useAiSessionHistory } from '@/views/databus/workbench/ai/useAiSessionHistory';
 import { useAgentRefs, type AgentRefItem } from '@/views/databus/workbench/ai/useAgentRefs';
 import { useAgentChat } from '@/views/databus/workbench/ai/useAgentChat';
 import type { AiSession } from '@/views/databus/workbench/ai/ai.types';
@@ -231,6 +252,7 @@ import { useRecentResources } from './composables/useRecentResources';
 import { useWorkspaceTerminal } from './composables/useWorkspaceTerminal';
 import WorkspaceWorkPanel from './panel/WorkspaceWorkPanel.vue';
 import WorkbenchLauncher from './panel/WorkbenchLauncher.vue';
+import WorkspaceCommandPalette from './components/WorkspaceCommandPalette.vue';
 import WorkbenchTerminal from './components/WorkbenchTerminal.vue';
 import ResourceTree from './tree/ResourceTree.vue';
 import type {
@@ -407,9 +429,17 @@ function toggleFocus() {
 /* ---------------- 前端偏好（开合与宽度） ---------------- */
 
 const aiCollapsed = usePersisted('databus.ws.aiCollapsed', true);
-const aiWidth = usePersisted('databus.ws.aiWidth', 300);
+const aiWidth = usePersisted('databus.ws.aiWidth', 400);
 /** AI 栏最小宽度：再窄对话区无可用宽度，同时作为「拖到最窄=收起历史栏」的阈值 */
-const AI_MIN_WIDTH = 220;
+const AI_MIN_WIDTH = 400;
+/** AI 栏最大宽度：正文与卡片再宽只是拉长行宽，阅读要来回扫 */
+const AI_MAX_WIDTH = 640;
+// 旧偏好可能越界，进来先夹到 [min, max]
+if (aiWidth.value < AI_MIN_WIDTH) {
+  aiWidth.value = AI_MIN_WIDTH;
+} else if (aiWidth.value > AI_MAX_WIDTH) {
+  aiWidth.value = AI_MAX_WIDTH;
+}
 
 /** 结果页「加入会话」的跨组件信号：附件加进暂存区后把 AI 栏展开，让新卡片当场可见 */
 const REVEAL_AI_EVENT = 'databus:reveal-ai';
@@ -1141,6 +1171,8 @@ interface AgentCanvasEvent {
   /** 本次是新建还是修改链路：新建时即使画布没开着也自动开 tab */
   operation?: 'CREATE' | 'UPDATE';
   cmpProperty?: CmpProperty | null;
+  /** 落库后的链路更新时间：画布存为基线，用来发现漏掉的后续推送 */
+  updateTime?: string | null;
   revealNodeId?: string | null;
   /** component:draft:saved 事件：刚落库的组件草稿 */
   componentId?: number | string;
@@ -1191,11 +1223,14 @@ function redrawAgentCanvas(evt: AgentCanvasEvent) {
   }
   const done = workPanelRef.value?.applyAgentCanvas(evt.chainId, {
     cmpProperty: evt.cmpProperty ?? null,
+    updateTime: evt.updateTime ?? null,
     revealNodeId: evt.revealNodeId ?? null
   });
   if (!done) {
     void reloadTree();
+    return;
   }
+  ElMessage.info(`画布已同步「${evt.chainName || '链路'}」的最新草稿`);
 }
 
 useAgentPush((payload) => {
@@ -1664,7 +1699,9 @@ watch(revealTarget, (target) => {
   }
 });
 
-/** Ctrl+U 开合 AI 栏；输入区/代码编辑器内不抢键 */
+/** Ctrl/Cmd+K 打开命令面板；Ctrl+U 开合 AI 栏。输入区/代码编辑器内不抢键 */
+const paletteOpen = ref(false);
+
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -1674,6 +1711,12 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 function onKeydown(event: KeyboardEvent) {
+  // 命令面板属于全局入口，输入框里也应当能唤起
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k') {
+    event.preventDefault();
+    paletteOpen.value = !paletteOpen.value;
+    return;
+  }
   if (!event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) {
     return;
   }
@@ -1683,6 +1726,33 @@ function onKeydown(event: KeyboardEvent) {
   if (event.key.toLowerCase() === 'u') {
     event.preventDefault();
     aiCollapsed.value = !aiCollapsed.value;
+  }
+}
+
+/* ---------------- 响应式收栏（只收不放，保留用户手动展开的权利） ---------------- */
+
+const narrowQuery = window.matchMedia('(max-width: 1199px)');
+const compactQuery = window.matchMedia('(max-width: 1439px)');
+
+function onNarrowChange(event: MediaQueryListEvent) {
+  if (event.matches) {
+    setDrawerCollapsed(true);
+    historyCollapsed.value = true;
+  }
+}
+
+function onCompactChange(event: MediaQueryListEvent) {
+  if (event.matches) {
+    historyCollapsed.value = true;
+  }
+}
+
+function applyResponsiveCollapse() {
+  if (narrowQuery.matches) {
+    setDrawerCollapsed(true);
+    historyCollapsed.value = true;
+  } else if (compactQuery.matches) {
+    historyCollapsed.value = true;
   }
 }
 
@@ -1697,11 +1767,16 @@ onMounted(() => {
   // 品牌图标集（logos）：连接器 manifest 里 `logos:mysql` 这类值要靠它离线渲染，见 useBrandIcons
   void loadBrandIcons();
   getList();
+  applyResponsiveCollapse();
+  narrowQuery.addEventListener('change', onNarrowChange);
+  compactQuery.addEventListener('change', onCompactChange);
   window.addEventListener('keydown', onKeydown);
   window.addEventListener(REVEAL_AI_EVENT, onRevealAiRail);
 });
 
 onBeforeUnmount(() => {
+  narrowQuery.removeEventListener('change', onNarrowChange);
+  compactQuery.removeEventListener('change', onCompactChange);
   window.removeEventListener('keydown', onKeydown);
   window.removeEventListener(REVEAL_AI_EVENT, onRevealAiRail);
 });
@@ -1709,16 +1784,16 @@ onBeforeUnmount(() => {
 
 <style lang="scss" scoped>
 /* 页面级 wrapper：吃满视口高度（2026-10-20 剥壳后不再缩后台 header 高度，§7 改造点2）。
-   整页垫白成壳内一张大卡：header 带与工作区同底，避免顶部 tab 条灰轨道与壳灰底
-   （#f5f7fa）近邻时色阶几乎相同、糊成一块。
-   底色用 --el-bg-color（白），不要用 .db-app 的灰底 --db-bg #f2f2f7——
-   2026-11-01 用户反馈「颜色不正」，即由灰底透出所致（decisions.md §十六）。 */
+   顶部 header 与工作区画布、会话历史栏统一用 --db-bg-sunken 同色，
+   整块工作台是一张连续的面，只有中间/右侧内容白卡浮起。
+   （早期为避免 tab 轨道与灰底混淆曾垫白，现按「整体统一」重新定案。） */
 .wsp-page {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: var(--el-bg-color, #fff);
-  border-radius: 10px;
+  background: var(--db-bg-sunken, #f4f4f5);
+  /* 与画布同圆角：header 带和下方画布共用 14px，壳的四角一条曲线到底 */
+  border-radius: var(--db-r-card, 14px);
 }
 
 .wsp {
@@ -1727,19 +1802,26 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: stretch;
   overflow: hidden;
-  /* 与顶部 header 留出明确间隙：灰轨道与 header 之间隔一段白，不再贴边融合 */
+  /* 浮岛画布：与输入井/会话历史栏同色（--db-bg-sunken），左栏无缝融进画布；
+     8px 内衬 + 8px 栏间距，中栏/对话/抽屉各自成白卡 */
+  gap: 8px;
   margin-top: 8px;
-  background: var(--el-bg-color, #fff);
-  border: 1px solid var(--el-border-color-lighter, #ebeef5);
-  border-radius: 8px;
+  padding: 8px;
+  background: var(--db-bg-sunken, #f4f4f5);
+  border: none;
+  border-radius: var(--db-r-card, 14px);
 }
 
-/* 中栏：工作面板（flex:1）+ 终端纵向排布，宽度 = 三栏分配后的余量 */
+/* 中栏：工作面板（flex:1）+ 终端纵向排布，宽度 = 三栏分配后的余量；
+   自身是一张白卡，圆角裁切，与外层灰底形成层级 */
 .wsp__center {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  background: var(--db-surface, #fff);
+  border-radius: var(--db-r-card);
+  overflow: hidden;
 }
 
 /* 右抽屉槽：折叠时宽度收 0（不 v-if，保活 tab 停留位与资源树状态）；
@@ -1748,6 +1830,7 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   height: 100%;
   overflow: hidden;
+  border-radius: var(--db-r-card);
   transition: width 0.2s ease;
 }
 </style>

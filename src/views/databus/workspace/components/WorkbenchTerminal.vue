@@ -39,7 +39,7 @@
       </el-tooltip>
     </header>
 
-    <div class="ws-term__body">
+    <div class="ws-term__body db-scroll">
       <RunConsole v-show="tab === 'run'" @view-record="onViewRecord" @view-preview="onViewPreview" />
       <CompileConsole v-show="tab === 'compile'" bare />
     </div>
@@ -135,12 +135,13 @@ useLucideSubset();
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  height: 200px;
-  /* 宿主是中栏容器（工作面板下方）：左右 8px 与 tab strip 的内缩对齐，卡片不贴工作台边框 */
-  margin: 6px 8px 8px;
-  border-radius: var(--app-radius-lg, 14px);
-  background: var(--el-bg-color, #fff);
-  box-shadow: var(--wb-tab-card-shadow);
+  /* 与会话输入卡共用 --db-bottom-pane-h：两张底部卡片等高 */
+  height: var(--db-bottom-pane-h, 150px);
+  /* 宿主是中栏容器：四周留 8px，让终端成为一张独立浮岛卡片，而不是粘在画布底边 */
+  margin: 8px;
+  border-radius: var(--db-r-card);
+  background: var(--db-bg-sunken, #f4f4f5);
+  box-shadow: var(--db-shadow-sm), inset 0 0 0 0.5px var(--db-rule);
   overflow: hidden;
 }
 

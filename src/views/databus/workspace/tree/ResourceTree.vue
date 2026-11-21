@@ -69,12 +69,22 @@
       </div>
     </div>
 
-    <div ref="bodyRef" v-loading="loading || localLoading" class="res-tree__body">
-      <el-empty
-        v-if="!loading && !localLoading && !treeData.length"
-        description="暂无资源"
-        :image-size="64"
-      />
+    <div ref="bodyRef" class="res-tree__body db-scroll">
+      <!-- 加载态用骨架行而不是转圈：树的行高、缩进与真实结构一致，加载完不跳动 -->
+      <div v-if="loading || localLoading" class="res-tree__skeleton" aria-hidden="true">
+        <div v-for="n in 9" :key="n" class="res-tree__skeleton-row">
+          <span class="db-skeleton res-tree__skeleton-icon" />
+          <span
+            class="db-skeleton res-tree__skeleton-label"
+            :style="{ width: `${42 + ((n * 13) % 38)}%` }"
+          />
+        </div>
+      </div>
+      <div v-else-if="!treeData.length" class="db-empty db-empty--compact">
+        <span class="db-empty__icon"><SvgIcon icon-class="lucide:folder-open" /></span>
+        <p class="db-empty__title">暂无资源</p>
+        <p class="db-empty__hint">新建链路或目录后会出现在这里</p>
+      </div>
       <el-tree
         v-else
         ref="treeRef"
@@ -112,27 +122,37 @@
               :style="iconStyle(data)"
             />
             <span class="tree-node__label" :class="labelClass(data)">{{ data.label }}</span>
+            <!-- 行尾四槽固定列（字母码/徽标/星标/点）：槽位常驻，各行的生命周期色点才能对齐成一条竖线。
+                 色点放最后一槽——它是所有资源都有的状态，只有贴住右边缘才不会显得悬空突兀 -->
             <span class="tree-node__tail">
-              <span v-if="data.type === DATABUS_RESOURCE_TYPE_MARKET_REF" class="tree-node__mark is-shared">S</span>
-              <span
-                v-if="data.lifecycle"
-                class="tree-node__dot"
-                :class="`is-${data.lifecycle}`"
-              />
-              <span v-if="data.marks?.length" class="tree-node__mark" :class="markClass(data)">
-                {{ markText(data) }}
+              <span class="tree-node__slot">
+                <span v-if="data.type === DATABUS_RESOURCE_TYPE_MARKET_REF" class="tree-node__mark is-shared">S</span>
+                <span v-if="data.marks?.length" class="tree-node__mark" :class="markClass(data)">
+                  {{ markText(data) }}
+                </span>
               </span>
-              <span v-if="data.badge" class="tree-node__badge">{{ data.badge }}</span>
-              <button
-                v-if="canFav(data)"
-                type="button"
-                class="tree-node__star"
-                :class="{ 'is-on': data.favorited }"
-                :title="data.favorited ? '取消收藏' : '收藏'"
-                @click.stop="toggleFav(data)"
-              >
-                <SvgIcon :icon-class="data.favorited ? 'lucide:star' : 'lucide:star-off'" />
-              </button>
+              <span class="tree-node__slot">
+                <span v-if="data.badge" class="tree-node__badge">{{ data.badge }}</span>
+              </span>
+              <span class="tree-node__slot">
+                <button
+                  v-if="canFav(data)"
+                  type="button"
+                  class="tree-node__star"
+                  :class="{ 'is-on': data.favorited }"
+                  :title="data.favorited ? '取消收藏' : '收藏'"
+                  @click.stop="toggleFav(data)"
+                >
+                  <SvgIcon :icon-class="data.favorited ? 'lucide:star' : 'lucide:star-off'" />
+                </button>
+              </span>
+              <span class="tree-node__slot">
+                <span
+                  v-if="data.lifecycle"
+                  class="tree-node__dot"
+                  :class="`is-${data.lifecycle}`"
+                />
+              </span>
             </span>
           </span>
         </template>
@@ -1444,11 +1464,11 @@ defineExpose({ reload, focusSection });
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     padding: 0;
-    font-size: 13px;
-    color: var(--el-text-color-secondary);
+    font-size: 14px;
+    color: var(--db-ink-secondary);
     background: transparent;
     border: none;
     border-radius: 5px;
@@ -1527,10 +1547,65 @@ defineExpose({ reload, focusSection });
     overflow-y: auto;
     padding: 0 6px 12px;
   }
+
+  /* 加载骨架：与树行同高同缩进，避免加载完成的瞬间整块内容位移 */
+  &__skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 2px;
+  }
+
+  &__skeleton-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 30px;
+    padding: 0 8px;
+  }
+
+  &__skeleton-icon {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    border-radius: var(--db-r-xs);
+  }
+
+  &__skeleton-label {
+    height: 8px;
+    border-radius: var(--db-r-pill);
+  }
 }
 
 .res-tree__el {
   --el-tree-node-hover-bg-color: var(--el-fill-color-light, #f5f7fa);
+
+  /* 展开钮：Element 默认的实心小三角改为细圆头 chevron，和 Trae 一致；
+     旋转仍由 .expanded 承担，只替换图形本身 */
+  :deep(.el-tree-node__expand-icon) {
+    margin-right: 2px;
+    color: var(--db-ink-muted);
+    font-size: 14px;
+  }
+
+  :deep(.el-tree-node__expand-icon svg) {
+    display: none;
+  }
+
+  :deep(.el-tree-node__expand-icon::before) {
+    content: '';
+    display: block;
+    width: 10px;
+    height: 10px;
+    margin: 0 auto;
+    background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9%2018%206-6-6-6'/%3E%3C/svg%3E") center / 10px 10px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9%2018%206-6-6-6'/%3E%3C/svg%3E") center / 10px 10px no-repeat;
+  }
+
+  :deep(.el-tree-node__content:hover .el-tree-node__expand-icon) {
+    color: var(--db-ink);
+  }
 
   :deep(.el-tree-node__content) {
     height: 30px;
@@ -1625,13 +1700,25 @@ defineExpose({ reload, focusSection });
     }
   }
 
+  /* 行尾四槽固定列：字母码 / 徽标 / 星标 / 点。
+     列宽固定且槽位常驻（空槽也占位），各行色点因此落在同一纵向线上；
+     色点占末列、行尾不再留右内边距，紧贴列表右边缘（它是所有资源都有的状态）。 */
   &__tail {
     margin-left: auto;
-    display: flex;
+    display: grid;
+    grid-template-columns: 16px 24px 18px 7px;
+    column-gap: 4px;
     align-items: center;
-    gap: 6px;
+    justify-items: center;
     flex-shrink: 0;
     padding-left: 6px;
+  }
+
+  &__slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
   }
 
   /* 行尾生命周期色点（叶子按自身语义，目录取后代最差者） */

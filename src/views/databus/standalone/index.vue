@@ -61,7 +61,7 @@ function goWorkspace() {
   gap: 6px;
   padding: 6px 12px;
   border: 1px solid var(--el-border-color, #dcdfe6);
-  border-radius: var(--app-radius-md, 10px);
+  border-radius: var(--db-r-control, 10px);
   background: var(--el-bg-color, #fff);
   color: var(--el-text-color-regular, #363b41);
   font-size: 13px;

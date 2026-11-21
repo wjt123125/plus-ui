@@ -12,8 +12,20 @@ import { usePersisted } from '../composables/usePersisted';
 /** 历史栏开合（整栏收起即不渲染，入口在工作台顶部 header） */
 const collapsed = usePersisted('databus.ai.historyCollapsed', false);
 
+/** 历史栏最小宽度：再窄会话标题与操作按钮挤不下 */
+export const HISTORY_MIN_WIDTH = 260;
+
+/** 历史栏最大宽度：两行卡片信息，再宽只是纯留白 */
+export const HISTORY_MAX_WIDTH = 360;
+
 /** 历史栏宽度（纯列表栏，宿主拖条写入） */
-const width = usePersisted('databus.ai.historyWidth', 220);
+const width = usePersisted('databus.ai.historyWidth', HISTORY_MIN_WIDTH);
+// 旧偏好可能越界，进来先夹到 [min, max]
+if (width.value < HISTORY_MIN_WIDTH) {
+  width.value = HISTORY_MIN_WIDTH;
+} else if (width.value > HISTORY_MAX_WIDTH) {
+  width.value = HISTORY_MAX_WIDTH;
+}
 
 /**
  * 绑定 AI 栏 → 会话历史栏的单向联动，两个工作台 setup 各调一次：

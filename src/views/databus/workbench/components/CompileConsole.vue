@@ -24,7 +24,7 @@
     </header>
     <div ref="bodyRef" class="cc-console__body">
       <div v-if="!entries.length" class="cc-console__empty">
-        暂无编译输出——发布脚本后，编译结果会显示在这里
+        暂无编译输出
       </div>
       <div
         v-for="(entry, index) in entries"
@@ -93,17 +93,19 @@ function onReveal(entry: CompileLogEntry, d: ScriptDiagnostic) {
   height: 200px;
   /* 宿主是中栏容器（工作面板下方）：左右 8px 与 tab strip 的内缩对齐，卡片不贴工作台边框 */
   margin: 6px 8px 8px;
-  border-radius: var(--app-radius-lg, 14px);
+  border-radius: var(--db-r-card, 14px);
   background: var(--el-bg-color, #fff);
   box-shadow: var(--wb-tab-card-shadow);
   overflow: hidden;
 
-  /* 容器内嵌（工作区终端双小 tab）：褪去独立卡片样式，填满容器正文区 */
+  /* 容器内嵌（工作区终端双小 tab）：褪去独立卡片样式，填满容器正文区。
+     背景必须一起透明，否则会覆掉终端灰卡、露出直角白块 */
   &.is-bare {
     flex: 1;
     height: 100%;
     margin: 0;
     border-radius: 0;
+    background: transparent;
     box-shadow: none;
   }
 

@@ -44,9 +44,13 @@
       </el-tooltip>
     </div>
 
-    <div class="ai-hist-rail__body">
-      <p v-if="!sessions.length" class="ai-hist-rail__empty">
-        {{ keyword ? '没有匹配的会话' : '暂无会话，开始提问后会在这里留存' }}
+    <div class="ai-hist-rail__body db-scroll">
+      <div v-if="!sessions.length && !keyword" class="db-empty db-empty--compact ai-hist-rail__empty">
+        <span class="db-empty__icon"><SvgIcon icon-class="lucide:message-square-more" /></span>
+        <p class="db-empty__title">还没有会话</p>
+      </div>
+      <p v-else-if="!sessions.length" class="ai-hist-rail__empty">
+        没有匹配「{{ keyword }}」的会话
       </p>
 
       <section v-for="group in displayGroups" :key="group.key" class="ai-hist-rail__group">
@@ -74,7 +78,7 @@
             @click="emit('open', s)"
           >
             <div class="db-row__meta">
-              <!-- 首行：圆点 + 标题（圆点与标题同一水平线） -->
+              <!-- 首行：圆点 + 标题（圆点与标题同一水平线）；圆点常驻，状态词只在 hover 时提示 -->
               <div class="db-row__line ai-hist-rail__title-line">
                 <StatusDot
                   :tone="s.running ? 'success' : 'info'"
@@ -83,13 +87,13 @@
                 <span class="db-row__name">{{ s.title }}</span>
                 <SvgIcon v-if="s.pinned" icon-class="lucide:pin" class="ai-hist-rail__pin" />
               </div>
-              <!-- 次行：时间在左、状态在右，中间用圆点分隔；与标题文字左对齐 -->
+              <!-- 次行：时间在左，运行中才补状态词；完成态不再重复写「已完成」 -->
               <div class="ai-hist-rail__state">
                 <template v-if="s.time">
-                  <span class="ai-hist-rail__time">{{ s.time }}</span>
-                  <span class="ai-hist-rail__sep" aria-hidden="true" />
+                  <span class="ai-hist-rail__time db-num">{{ s.time }}</span>
+                  <span v-if="s.running" class="ai-hist-rail__sep" aria-hidden="true" />
                 </template>
-                <span>{{ s.running ? '运行中' : '已完成' }}</span>
+                <span v-if="s.running">运行中</span>
               </div>
             </div>
             <SessionMoreMenu
@@ -286,8 +290,11 @@ async function onMore(session: AiSession, command: string) {
   min-width: 0;
   height: 100%;
   overflow: hidden;
-  background: var(--el-bg-color, #fff);
-  border-right: 1px solid var(--el-border-color-lighter, #ebeef5);
+  /* 与工作台画布、输入井同色（--db-bg-sunken）：左栏无缝融进工作台，不再像一张独立灰卡 */
+  background: var(--db-bg-sunken, #f4f4f5);
+  /* 同心圆角：画布圆角 14px - 画布 8px 内衬 = 6px，左栏拐角与画布拐角同心，接缝不露 */
+  border-radius: calc(var(--db-r-card) - 8px);
+  /* 分区靠浮岛留白，不再画结构竖线 */
 
   /* 会话行正文统一色：标题 / 状态词 / 时间共用一个令牌，
      不随激活或 hover 变化，后续调色只改这一处 */
@@ -324,6 +331,11 @@ async function onMore(session: AiSession, command: string) {
     &:hover,
     &:active {
       background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
+    }
+
+    /* 新建会话的加号与右侧文字同高，图标略放大一档更饱满 */
+    :deep(.svg-icon) {
+      font-size: 14px;
     }
   }
 
@@ -366,7 +378,7 @@ async function onMore(session: AiSession, command: string) {
     width: auto;
 
     :deep(.el-input__wrapper) {
-      border-radius: var(--app-radius-sm);
+      border-radius: var(--db-r-tag);
       /* 与新建按钮 / 会话行同一灰底，输入框未聚焦时不再另起一档浅色 */
       background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
       box-shadow: none;
@@ -386,10 +398,10 @@ async function onMore(session: AiSession, command: string) {
     height: 22px;
     padding: 0;
     border: none;
-    border-radius: var(--app-radius-sm);
+    border-radius: var(--db-r-tag);
     background: none;
-    color: var(--el-text-color-secondary);
-    font-size: 13px;
+    color: var(--db-ink-secondary);
+    font-size: 14px;
     cursor: pointer;
     transition:
       background 0.2s,
@@ -505,7 +517,7 @@ async function onMore(session: AiSession, command: string) {
 
   /* 行间不画分割线：界线交给行间距，整个列表更轻 */
   &__body :deep(.db-row) {
-    border-bottom: 0;
+    border: 0;
     /* 比紧凑基元的 12px 上下留白再放 2px，两行文字（标题 + 时间·状态）不显挤 */
     padding: 14px 10px;
   }
@@ -515,10 +527,28 @@ async function onMore(session: AiSession, command: string) {
     margin-top: 2px;
   }
 
-  /* 激活与 hover 同色：都取输入框未激活时的灰底，侧栏里只允许一种「有反馈」的灰 */
-  &__body :deep(.db-row.is-active),
+  /* 选中 = 白色卡片浮在画布色侧栏上；不做任何竖条/边框。
+     卡片只有 4% 的一层浅投影 + 圆角，和 hover 的「半透明白」拉开层级 */
+  &__body :deep(.db-row.is-active) {
+    background-color: var(--db-surface);
+    border-radius: var(--db-r-control);
+    box-shadow: var(--db-shadow-xs);
+  }
+
+  /* hover 只留半透明白底与圆角：不位移、不投影、不画上下线 */
   &__body :deep(.db-row.db-float:hover) {
-    background-color: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
+    background-color: color-mix(in srgb, var(--db-surface) 55%, transparent);
+    border: 0;
+    border-radius: var(--db-r-control);
+    outline: none;
+    box-shadow: none;
+    transform: none;
+  }
+
+  /* 悬停选中行时保持白卡（hover 规则特异性更高，需显式补回） */
+  &__body :deep(.db-row.is-active.db-float:hover) {
+    background-color: var(--db-surface);
+    box-shadow: var(--db-shadow-xs);
   }
 
   /* 首行给右上角三点让位：预留一整段呼吸空间，标题与三点不贴着（不做渐变遮罩） */

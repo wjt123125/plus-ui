@@ -515,7 +515,7 @@ watch(
   gap: 4px;
   padding: 4px 10px;
   border: 1px solid var(--el-border-color, #e8eaec);
-  border-radius: var(--app-radius-md, 10px);
+  border-radius: var(--db-r-control, 10px);
   background: var(--el-bg-color, #fff);
   color: var(--el-text-color-regular, #363b41);
   font-size: 13px;
@@ -568,7 +568,7 @@ watch(
   align-items: center;
   gap: 6px;
   padding: 10px 18px;
-  border-radius: var(--app-radius-md, 10px);
+  border-radius: var(--db-r-control, 10px);
   border: 1px solid var(--el-color-danger-light-5, #fde2e2);
   background: var(--el-bg-color, #fff);
   color: var(--el-color-danger);
@@ -606,7 +606,7 @@ watch(
   gap: 6px;
   padding: 10px 20px;
   border: none;
-  border-radius: var(--app-radius-md, 10px);
+  border-radius: var(--db-r-control, 10px);
   background: var(--el-color-primary);
   color: #fff;
   font-size: 14px;
@@ -655,7 +655,7 @@ watch(
   max-width: 100%;
 
   :deep(.el-select__wrapper) {
-    border-radius: var(--app-radius-md, 10px);
+    border-radius: var(--db-r-control, 10px);
     min-height: 40px;
     box-shadow: 0 0 0 1.5px var(--el-border-color, #e8eaec) inset;
     transition: box-shadow 0.2s ease;

@@ -241,7 +241,7 @@ defineExpose({ resetScript, applyScript });
 .cf-script-card {
   display: flex;
   flex-direction: column;
-  border-radius: var(--app-radius-lg, 14px);
+  border-radius: var(--db-r-card, 14px);
   background: var(--el-bg-color, #fff);
   box-shadow: var(
     --wb-tab-card-shadow,

@@ -446,6 +446,23 @@ function parseAttachments(raw?: string): AgentContextItem[] | null {
 }
 
 /**
+ * 服务端已不再返回该会话（被删或没有可见轮次）时清掉本地桶与持久化的 activeId，
+ * 避免刷新后停在一条已删会话上、又被当成新会话继续提问。
+ *
+ * @param conversationId 会话 id
+ */
+function dropIfGone(conversationId: string, state: AgentSessionState) {
+  // 拉历史期间用户可能已经开问：有本地消息或正在跑就说明会话仍在用，不能清
+  if (state.running || state.messages.some((m) => m.role === 'user')) {
+    return;
+  }
+  delete sessions[conversationId];
+  if (activeId.value === conversationId) {
+    activeId.value = '';
+  }
+}
+
+/**
  * 发一句话：本地先定会话 id，把用户气泡与流式 assistant 气泡写进该会话桶，再建 run 拉流。
  *
  * @param content    用户原话（卡片点选时是选项文案；系统事件发起时为空）
@@ -626,7 +643,7 @@ async function removeTurn(messageId: string) {
 
 /**
  * 会话被删空后的收尾：服务端已不再返回这个会话时，本地桶也要丢弃，
- * 否则 sessionList 会把它当成「本地新会话」重新排到列表最前。
+ * 避免切回该 id 时还能看到已经删掉的历史。
  *
  * @param conversationId 会话 id
  */
@@ -828,6 +845,12 @@ async function restore(conversationId?: string) {
     const { data } = await listAgentHistory(id);
     const restored: AgentChatMessage[] = [];
     const runs = data ?? [];
+    // 回放完仍是零轮次：会话已被删（或轮次全被删/回退），清掉本地态；
+    // 注意这里不能用列表接口反查——它受搜索关键字影响，会误判
+    if (!runs.length) {
+      dropIfGone(id, state);
+      return;
+    }
     // 回执落在点选后新建的 run 上，先按 cardId 汇总，才能把「选了哪项」贴回原卡片
     const replies = new Map<string, AgentCardReply>();
     /** 卡片本体也按 cardId 收一份：只有老回执缺 display 时才需要它来翻译文案 */
@@ -1073,20 +1096,6 @@ function formatRelativeTime(value?: string): string | undefined {
   return `${time.getFullYear()}-${pad(time.getMonth() + 1)}-${pad(time.getDate())}`;
 }
 
-/** 本地新建、后端还没有 run 的会话行：标题取首问全文压成一行，长度不截断，交给 CSS 按栏宽省略 */
-function localSessionItem(conversationId: string): AiSession {
-  const state = sessions[conversationId];
-  const firstUser = state?.messages.find((m) => m.role === 'user');
-  const title = firstUser ? textOf(firstUser).replace(/\s+/g, ' ').trim() : '';
-  const running = !!state?.running;
-  return {
-    id: conversationId,
-    title: title || '新会话',
-    running,
-    status: running ? 'running' : 'finished'
-  };
-}
-
 /**
  * 卡片点选：把该卡置为已答并回传 cardReply，后端据此认 userConfirmed。
  *
@@ -1141,27 +1150,12 @@ const running = computed(() => {
   return !!(id && sessions[id]?.running);
 });
 
-/** 历史栏列表：后端会话按「置顶 + 最近活跃」排序，本地新建但还没有 run 的会话排在最前 */
-const sessionList = computed<AiSession[]>(() => {
-  const remote = remoteSessions.value;
-  const remoteIds = new Set(remote.map((item) => item.conversationId));
-  const list: AiSession[] = [];
-  for (const id of Object.keys(sessions).toReversed()) {
-    if (remoteIds.has(id)) {
-      continue;
-    }
-    // 空白态（尚未发出任何用户消息）不进历史栏，避免一堆废会话 item
-    const state = sessions[id];
-    if (!state?.messages.some((m) => m.role === 'user')) {
-      continue;
-    }
-    list.push(localSessionItem(id));
-  }
-  for (const item of remote) {
-    list.push(remoteSessionItem(item));
-  }
-  return list;
-});
+/**
+ * 历史栏列表：只认服务端会话列表。
+ * 本地会话桶（sessions）只服务当前对话的渲染，不能拿来补历史——
+ * 否则会话在别处被删后，本地还有消息的桶会被当成「新会话」重新插回列表。
+ */
+const sessionList = computed<AiSession[]>(() => remoteSessions.value.map(remoteSessionItem));
 
 const DEFAULT_WORKSPACE_KEY = 'default';
 const DEFAULT_WORKSPACE_NAME = '默认工作区';

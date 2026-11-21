@@ -4,13 +4,13 @@
       工作台顶部 header（共享壳，§2.0）：侧栏开关的**唯一入口**。
       只放侧栏开关，不放标题/面包屑/全局操作——避免长成第二条工具栏，页面标题由外层框架提供。
       会话历史（AI 栏左边的兄弟栏）与底部面板开关都是 opt-in：仅在对应属性传入时渲染
-      （undefined 视为该页面不提供），保持共享壳对其它使用方零影响。图标用 lucide 的 panel-*
-      侧栏语义图形（DArrowLeft/Right 语义是「翻页」，不是「侧栏」），经 useLucideSubset
-      离线注入，不触发 iconify 联网取图。
+      （undefined 视为该页面不提供），保持共享壳对其它使用方零影响。图标统一为「面板 + 分隔线」
+      的简化图形：展开态用实心侧栏带、收起态用空心矩形，不再内嵌小箭头方向标识；
+      会话历史用纯气泡图形，避免回转箭头带来的视觉噪音。
     -->
     <div class="wb-header__side">
       <!-- 会话历史栏开关（opt-in）：历史栏在 AI 助手左边，按钮也排在 AI 开关左边。
-           用 history 语义图形而不是再放一颗 panel-left，避免两个同形侧栏钮分不清 -->
+           用纯气泡图形与侧栏面板区分，避免同形按钮分不清 -->
       <el-tooltip
         v-if="historyCollapsed !== undefined"
         :content="`${historyCollapsed ? '展开' : '收起'}${historyLabel}`"
@@ -23,7 +23,7 @@
           :aria-expanded="!historyCollapsed"
           @click="emit('update:historyCollapsed', !historyCollapsed)"
         >
-          <SvgIcon icon-class="lucide:history" />
+          <SvgIcon icon-class="lucide:message-square" />
         </button>
       </el-tooltip>
       <el-tooltip :content="`${aiCollapsed ? '展开' : '收起'}${aiLabel}${aiHotkey ? `（${aiHotkey}）` : ''}`" placement="bottom" :show-after="300">
@@ -139,22 +139,26 @@ useLucideSubset();
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    height: 26px;
     padding: 0;
     border: none;
-    border-radius: 5px;
+    border-radius: var(--db-r-tag);
     background: transparent;
-    color: var(--el-text-color-secondary);
-    font-size: 15px;
+    /* 图标走实心/描边结合的面板图形：略大、略重，观感更饱满 */
+    color: var(--db-ink-secondary);
+    opacity: 0.85;
+    font-size: 17px;
     cursor: pointer;
     transition:
-      background-color 0.15s ease,
-      color 0.15s ease;
+      background-color var(--db-dur-fast) var(--db-ease),
+      color var(--db-dur-fast) var(--db-ease),
+      opacity var(--db-dur-fast) var(--db-ease);
 
     &:hover {
-      background: var(--el-fill-color-light, #f5f7fa);
-      color: var(--el-color-primary);
+      background: var(--db-bg-hover);
+      color: var(--db-ink);
+      opacity: 1;
     }
   }
 
@@ -166,7 +170,7 @@ useLucideSubset();
     min-width: 15px;
     height: 15px;
     padding: 0 4px;
-    border-radius: 8px;
+    border-radius: var(--db-r-pill);
     background: var(--el-color-danger, #f56c6c);
     color: #fff;
     font-size: 10px;
@@ -174,6 +178,7 @@ useLucideSubset();
     line-height: 15px;
     text-align: center;
     pointer-events: none;
+    font-variant-numeric: tabular-nums;
   }
 }
 </style>

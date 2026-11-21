@@ -40,7 +40,7 @@
           class="wb-tab-add-wrap"
           trigger="click"
           placement="bottom-start"
-          popper-class="wb-tab-add-popper"
+          popper-class="db-menu-popper"
           :show-arrow="false"
           @command="onOpenTool"
         >
@@ -66,14 +66,11 @@
 
     <div class="ws-panel__body">
       <slot v-if="!tabs.length" name="empty">
-        <el-empty class="ws-panel__empty" :image-size="72">
-          <template #description>
-            <p class="ws-panel__empty-title">没有打开的面板</p>
-            <p class="ws-panel__empty-hint">
-              点右侧资源树的链路打开画布，点组件打开详情，或用上方入口新建
-            </p>
-          </template>
-        </el-empty>
+        <div class="db-empty ws-panel__empty">
+          <span class="db-empty__icon"><SvgIcon icon-class="lucide:layout-grid" /></span>
+          <p class="db-empty__title">没有打开的面板</p>
+          <p class="db-empty__hint">点右侧资源树的链路打开画布，点组件打开详情，或用上方入口新建</p>
+        </div>
       </slot>
       <template v-for="tab in tabs" :key="tab.key">
         <div v-show="tab.key === activeKey" class="ws-panel__pane">
@@ -337,7 +334,7 @@ const TAB_META: Record<WorkspaceTabKind, { icon: string; color: string }> = {
   market: { icon: 'lucide:store', color: '#4F8EF7' },
   // 物料管理（2026-10-30 由 MarketPane 内部视图提为独立 tab）；2026-11-01 进 launcher 清单后
   // 与「设置」入口在菜单/空态卡必同屏，故换独立图标色（对齐 launcherEntries 同入口同色口径）
-  'market-manage': { icon: 'lucide:boxes', color: '#F59E0B' },
+  'market-manage': { icon: 'lucide:layout-grid', color: '#F59E0B' },
   // 物料上架（2026-11-01 由管理 pane 内部弹窗提为独立 tab）；send＝提交进待审的动作语义
   'market-publish': { icon: 'lucide:send', color: '#2DD288' },
   'market-detail': { icon: 'lucide:package', color: '#22B8CF' },
@@ -346,10 +343,10 @@ const TAB_META: Record<WorkspaceTabKind, { icon: string; color: string }> = {
   // 连接器包查看（2026-10-29 「看包」弹窗 tab 化）；与 market-detail 的 package 错开，同屏两 tab 可辨
   'connector-package': { icon: 'lucide:box', color: '#A371F7' },
   // 管理页 tab（2026-10-20 扩展，§4.1）；图标一律取自 lucide 子集现有 key（见 useLucideSubset）
-  'connection-list': { icon: 'lucide:external-link', color: '#22B8CF' },
+  'connection-list': { icon: 'lucide:database', color: '#22B8CF' },
   'connection-form': { icon: 'lucide:file-pen', color: '#2DD288' },
   'execution-list': { icon: 'lucide:play', color: '#4F8EF7' },
-  'execution-record': { icon: 'lucide:history', color: '#A371F7' },
+  'execution-record': { icon: 'lucide:clock', color: '#A371F7' },
   'monitor-overview': { icon: 'lucide:layout-grid', color: '#A371F7' },
   'alert-record': { icon: 'lucide:circle-alert', color: '#FF8A5B' },
   settings: { icon: 'lucide:settings', color: '#2DD288' },
@@ -438,7 +435,9 @@ function rowOf(tab: WorkspaceTab): ComponentRegistryRow | undefined {
 
 /** ChainCanvasPane 对宿主暴露的两个动作（defineExpose 见该组件） */
 type CanvasPaneExpose = {
-  applyAgentCanvas: (payload: { cmpProperty?: CmpProperty | null; revealNodeId?: string | null }) => void;
+  applyAgentCanvas: (
+    payload: { cmpProperty?: CmpProperty | null; updateTime?: string | null; revealNodeId?: string | null }
+  ) => void;
   reloadFromServer: () => Promise<void>;
 };
 
@@ -461,7 +460,7 @@ defineExpose({
   /** 按 AI 推来的全量快照重画该链路画布；返回 false 表示这条链的画布没开着 */
   applyAgentCanvas(
     chainId: number | string,
-    payload: { cmpProperty?: CmpProperty | null; revealNodeId?: string | null }
+    payload: { cmpProperty?: CmpProperty | null; updateTime?: string | null; revealNodeId?: string | null }
   ): boolean {
     const pane = canvasPaneOf(chainId);
     pane?.applyAgentCanvas(payload);
@@ -801,7 +800,7 @@ onBeforeUnmount(() => {
   height: 34px;
   margin: 2px 4px;
   padding: 0 4px;
-  border-radius: var(--app-radius-lg, 14px);
+  border-radius: var(--db-r-card);
   background: var(--wb-tab-track-bg);
   /* 原先这里挂着 backdrop-filter，但它的 backdrop 是父面板的不透明白底——糊纯色等于没糊（decisions.md §十六-1/5）。
      等 tab 条真做吸顶改造、背后有内容流过了再加回来。 */
@@ -835,7 +834,7 @@ onBeforeUnmount(() => {
   height: 24px;
   padding: 0 6px 0 10px;
   max-width: 200px;
-  border-radius: var(--app-radius-md, 10px);
+  border-radius: var(--db-r-control);
   background: var(--wb-tab-bg);
   font-size: 12px;
   color: var(--el-text-color-secondary);
@@ -858,11 +857,11 @@ onBeforeUnmount(() => {
     box-shadow: var(--wb-tab-card-shadow);
   }
 
-  /* 图标常驻彩色：未激活略收，激活/hover 提亮（颜色由 TAB_META 按 kind 注入） */
+  /* 图标保留按 kind 的多色区分，只做透明度降噪：未激活略收，激活/hover 提亮 */
   &__icon {
-    font-size: 13px;
+    font-size: 14px;
     flex-shrink: 0;
-    opacity: 0.8;
+    opacity: 0.85;
     transition: opacity 0.15s ease;
 
     .wb-tab:hover &,
@@ -1015,20 +1014,8 @@ onBeforeUnmount(() => {
   }
 }
 
-/* 下拉弹层（Trae 观感）：定宽更舒展、内边距与行高加大、字号收到 13px */
-:global(.wb-tab-add-popper) {
-  min-width: 208px;
-}
-
-:global(.wb-tab-add-popper .el-dropdown-menu) {
-  padding: 6px;
-}
-
-:global(.wb-tab-add-popper .el-dropdown-menu__item) {
-  height: 34px;
-  padding: 0 10px;
-  font-size: 13px;
-}
+/* tab 条「+」下拉统一走全局 .db-menu-popper（行高 / 圆角 / hover 与其它菜单一致），
+   不再单独维护 wb-tab-add-popper 一套尺寸 */
 
 .ws-panel__body {
   flex: 1;
@@ -1043,21 +1030,9 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-/* 全部 tab 关掉后的引导空态 */
+/* 全部 tab 关掉后的引导空态（统一 .db-empty 基元，仅覆盖占满高度） */
 .ws-panel__empty {
   height: 100%;
   justify-content: center;
-
-  &-title {
-    margin: 0;
-    font-size: 14px;
-    color: var(--el-text-color-secondary);
-  }
-
-  &-hint {
-    margin: 6px 0 0;
-    font-size: 12px;
-    color: var(--el-text-color-placeholder);
-  }
 }
 </style>

@@ -82,6 +82,80 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 任意数字段落：时间 / 百分比 / 计数，滚动时不抖动 */
+.db-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* —— 分组标签（面板小标题 / 列表分组头 / 指标名，三处同构）—— */
+.db-label {
+  font-size: var(--db-fs-xs);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  color: var(--db-ink-muted);
+}
+
+/* —— 统一空态：图标 + 标题 + 一句说明（列表 / 侧栏 / 资源树共用）—— */
+.db-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--db-ink-muted);
+}
+
+.db-empty__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 2px;
+  border-radius: var(--db-r-card);
+  background: var(--db-bg-hover);
+  font-size: 18px;
+  color: var(--db-ink-muted);
+}
+
+.db-empty__title {
+  margin: 0;
+  font-size: var(--db-fs-md);
+  font-weight: 600;
+  color: var(--db-ink);
+}
+
+.db-empty__hint {
+  margin: 0;
+  font-size: var(--db-fs-sm);
+  line-height: 1.6;
+  color: var(--db-ink-muted);
+}
+
+/* 窄侧栏（会话历史 / 资源树）用紧凑档：留白减半，图标缩小 */
+.db-empty--compact {
+  gap: 4px;
+  padding: 28px 12px;
+}
+
+.db-empty--compact .db-empty__icon {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--db-r-control);
+  font-size: 14px;
+}
+
+.db-empty--compact .db-empty__title {
+  font-size: var(--db-fs-sm);
+}
+
+.db-empty--compact .db-empty__hint {
+  font-size: var(--db-fs-xs);
+}
+
 /* —— 行列表（监控大屏 / 执行记录 / 告警记录 / 物料管理）——
    发丝线分隔行 + 左图标 / 两行主体 / 右侧信息，替代 el-table 与一堆带间隙的浮动卡片。
 
@@ -404,4 +478,55 @@
    任何承载面挂上它即自动获得顶边补丁，不必再去各 SFC 里各补一条。 */
 .db-float:hover {
   box-shadow: var(--db-shadow-lg), 0 -3px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* ============================================================
+   键盘焦点环（全 databus 统一）
+   ------------------------------------------------------------
+   只作用于键盘导航（:focus-visible），鼠标点击不出现；
+   颜色取主色半透明外发光，不改变布局尺寸。 */
+.db-app :focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--db-blue) 60%, transparent);
+  outline-offset: 2px;
+}
+
+.db-app button:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ============================================================
+   细滚动条（全 databus 统一，替代 Windows 默认粗条）
+   ------------------------------------------------------------
+   列表 / 侧栏 / 日志区挂 .db-scroll；聊天正文和代码块在各自
+   组件内已有等价规则，这里只补未覆盖的容器。 */
+.db-app .db-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(60, 60, 67, 0.18) transparent;
+}
+
+.db-app .db-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.db-app .db-scroll::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(60, 60, 67, 0.18);
+}
+
+.db-app .db-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(60, 60, 67, 0.32);
+}
+
+.db-app .db-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 尊重系统「减少动态效果」：只关装饰动画，不影响滚动与布局 */
+@media (prefers-reduced-motion: reduce) {
+  .db-app .db-float,
+  .db-app .db-float:hover {
+    transition: none;
+    transform: none;
+  }
 }

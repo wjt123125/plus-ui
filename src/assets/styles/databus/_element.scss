@@ -178,6 +178,13 @@
   border-radius: var(--db-r-control) !important;
   box-shadow: var(--db-shadow-md) !important;
 }
+
+/* 浮层统一去掉指示小三角：Trae 式无箭头菜单，界面更干净 */
+.db-popper .el-popper__arrow,
+.db-menu-popper .el-popper__arrow,
+.db-select-popper .el-popper__arrow {
+  display: none;
+}
 .db-popper .el-select-dropdown__item {
   border-radius: var(--db-r-tag);
   margin: 2px 6px;

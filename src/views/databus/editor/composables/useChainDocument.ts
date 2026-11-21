@@ -58,6 +58,9 @@ export function useChainDocument(store: ChainDocumentStore) {
   const logLevel = ref<string>(LOG_LEVEL.BASIC);
   const remark = ref('');
   const chainSaving = ref(false);
+
+  /** 本次载入时的服务端 updateTime：试运行/切回 tab 时用它发现「AI 已落库但推送漏了」的版本差 */
+  const loadedUpdateTime = ref<string | null>(null);
   /** 当前链路创建人 id（P1 看得见：非本人链路画布置只读——审核者从审核详情打开他人链路仅查看；系统行 create_by 为空不拦） */
   const chainOwner = ref<number | string | null>(null);
 
@@ -88,6 +91,7 @@ export function useChainDocument(store: ChainDocumentStore) {
     logLevel.value = data.logLevel ?? LOG_LEVEL.BASIC;
     remark.value = data.remark ?? '';
     inputParams.value = data.inputParams ? JSON.parse(JSON.stringify(data.inputParams)) : [];
+    loadedUpdateTime.value = data.updateTime ?? null;
 
     treeModel.loadFromCmpProperty(cmpProperty);
     const { nodes, edges } = treeModel.project();
@@ -192,6 +196,7 @@ export function useChainDocument(store: ChainDocumentStore) {
     logLevel,
     remark,
     chainSaving,
+    loadedUpdateTime,
     inputParams,
     inputParamsVisible,
     onInputParamsSave,

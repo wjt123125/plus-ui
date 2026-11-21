@@ -21,6 +21,9 @@
           <span class="wb-launcher__label">{{ card.label }}</span>
         </button>
       </div>
+      <p class="wb-launcher__hint">
+        按 <kbd>Ctrl</kbd> + <kbd>K</kbd> 搜索操作或会话
+      </p>
     </div>
   </div>
 </template>
@@ -86,8 +89,8 @@ const cards = computed(() => LAUNCHER_ENTRIES.filter((c) => !c.perm || checkPerm
   min-height: 100px;
   padding: 14px 8px;
   border: 0;
-  border-radius: 12px;
-  background: var(--el-fill-color-light, #f5f7fa);
+  border-radius: var(--db-r-control);
+  background: var(--db-bg-hover);
   font-family: inherit;
   cursor: pointer;
   /* 浮起（位移/缩放/阴影/过渡）统一由 .db-float 提供（见 _primitives.scss）；
@@ -95,7 +98,7 @@ const cards = computed(() => LAUNCHER_ENTRIES.filter((c) => !c.perm || checkPerm
   --db-zoom: 1.015;
 
   &:hover {
-    background: var(--el-fill-color, #eef0f3);
+    background: var(--db-bg-hover);
   }
 
   &:active {
@@ -104,13 +107,28 @@ const cards = computed(() => LAUNCHER_ENTRIES.filter((c) => !c.perm || checkPerm
 }
 
 .wb-launcher__icon {
-  font-size: 22px;
+  font-size: 24px;
+  transition: color var(--db-dur-fast) var(--db-ease);
 }
 
 .wb-launcher__label {
   font-size: 13px;
   font-weight: 500;
   color: var(--el-text-color-primary, #1d2129);
+}
+
+.wb-launcher__hint {
+  margin: 18px 0 0;
+  font-size: var(--db-fs-xs);
+  color: var(--db-ink-muted);
+
+  kbd {
+    padding: 1px 4px;
+    border-radius: var(--db-r-xs);
+    background: var(--db-bg-hover);
+    font-family: inherit;
+    font-size: 10px;
+  }
 }
 
 /* 深色主题精确贴合参考截图（面板 #1A1B1D、卡片 #202124） */

@@ -15,30 +15,34 @@ import type { IconifyJSON } from '@iconify/vue';
 /** lucide 全集统一的描边属性，抽出来只为让下面的 body 字符串可读 */
 const S = 'fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"';
 
+/** header 大图标（17px）专用：略加粗一档，缩小后仍有体块感 */
+const SS = 'fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"';
+
 const LUCIDE_SUBSET: IconifyJSON = {
   prefix: 'lucide',
   width: 24,
   height: 24,
   icons: {
-    // 顶部 header 的两个侧栏开关
+    // 顶部 header 的侧栏开关：只保留「面板 + 一条分隔线」，去掉内嵌小箭头；
+    // 展开态用实心侧栏带表示，收起态用空心矩形，靠体块而不是方向符号表达状态
     'panel-left-close': {
-      body: `<g ${S}><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18m7-6l-3-3l3-3"/></g>`
+      body: `<g ${SS}><rect width="18" height="18" x="3" y="3" rx="3"/><path d="M9 3v18"/><path fill="currentColor" stroke="none" d="M6 3h3v18H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3z"/></g>`
     },
     'panel-left-open': {
-      body: `<g ${S}><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18m5-12l3 3l-3 3"/></g>`
+      body: `<g ${SS}><rect width="18" height="18" x="3" y="3" rx="3"/><path d="M9 3v18"/></g>`
     },
     'panel-right-close': {
-      body: `<g ${S}><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18M8 9l3 3l-3 3"/></g>`
+      body: `<g ${SS}><rect width="18" height="18" x="3" y="3" rx="3"/><path d="M15 3v18"/><path fill="currentColor" stroke="none" d="M15 3h3a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3h-3z"/></g>`
     },
     'panel-right-open': {
-      body: `<g ${S}><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18m-5-6l-3-3l3-3"/></g>`
+      body: `<g ${SS}><rect width="18" height="18" x="3" y="3" rx="3"/><path d="M15 3v18"/></g>`
     },
-    // 底部编译控制台开关（箭头语义与左右家族同约定：面板展开指底部、收起背离）
+    // 底部终端开关：同「面板 + 分隔线」规则，展开态用底栏实心块
     'panel-bottom-close': {
-      body: `<g ${S}><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18m-6-7l-3 3l-3-3"/></g>`
+      body: `<g ${SS}><rect width="18" height="18" x="3" y="3" rx="3"/><path d="M3 15h18"/><path fill="currentColor" stroke="none" d="M3 15h18v3a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z"/></g>`
     },
     'panel-bottom-open': {
-      body: `<g ${S}><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18M9 10l3-3l3 3"/></g>`
+      body: `<g ${SS}><rect width="18" height="18" x="3" y="3" rx="3"/><path d="M3 15h18"/></g>`
     },
     // 用户区下拉（§7 改造点3）：展开箭头、退出登录
     'chevron-down': { body: `<path ${S} d="m6 9l6 6l6-6"/>` },
@@ -125,6 +129,10 @@ const LUCIDE_SUBSET: IconifyJSON = {
       body: `<g ${S}><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></g>`
     },
     plus: { body: `<path ${S} d="M5 12h14m-7-7v14"/>` },
+    // 空态/入口「新建」：一个圆角方块 + 加号，比「文件 + 加号」少一层内部细节
+    'square-plus': {
+      body: `<g ${S}><rect width="18" height="18" x="3" y="3" rx="4"/><path d="M12 8v8M8 12h8"/></g>`
+    },
     // AI 对话输入区：发送（面性倾斜纸飞机；lucide 只有描边版，这里是同路径填充版）、停止（方形，靠 CSS fill 变实心）
     'send-filled': {
       body: `<path fill="currentColor" stroke="none" d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/>`
@@ -172,9 +180,13 @@ const LUCIDE_SUBSET: IconifyJSON = {
     'sparkle-filled': {
       body: '<path fill="currentColor" stroke="none" d="M11 2.6c.4 0 .76.27.87.66l1.2 4.4a5.2 5.2 0 0 0 3.04 3.04l4.4 1.2a.9.9 0 0 1 0 1.74l-4.4 1.2a5.2 5.2 0 0 0-3.04 3.04l-1.2 4.4a.9.9 0 0 1-1.74 0l-1.2-4.4a5.2 5.2 0 0 0-3.04-3.04l-4.4-1.2a.9.9 0 0 1 0-1.74l4.4-1.2A5.2 5.2 0 0 0 8.93 7.66l1.2-4.4A.9.9 0 0 1 11 2.6z"/><path fill="currentColor" stroke="none" d="M19.5 1.6c.28 0 .52.19.58.46l.36 1.5a1.6 1.6 0 0 0 1.1 1.1l1.5.36a.6.6 0 0 1 0 1.16l-1.5.36a1.6 1.6 0 0 0-1.1 1.1l-.36 1.5a.6.6 0 0 1-1.16 0l-.36-1.5a1.6 1.6 0 0 0-1.1-1.1l-1.5-.36a.6.6 0 0 1 0-1.16l1.5-.36a1.6 1.6 0 0 0 1.1-1.1l.36-1.5a.6.6 0 0 1 .58-.46z"/>'
     },
-    // AI 助手栏：会话历史折叠区（history 语义 + 新会话钮 + 折叠箭头）
+    // 回退/历史动作（执行记录 tab 已改用纯 clock，这里只留给「回到这次对话前」）
     history: {
       body: `<g ${S}><path d="M3 12a9 9 0 1 0 9-9a9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></g>`
+    },
+    // 顶部「会话历史」开关：纯气泡，不再用带回转箭头的 history 图形
+    'message-square': {
+      body: `<path ${SS} d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>`
     },
     // 上下文卡前置图标：气泡里带三点，比空气泡更明确是「消息」
     'message-square-more': {

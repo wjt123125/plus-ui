@@ -85,8 +85,8 @@ const emit = defineEmits<{
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--el-bg-color, #fff);
-  border-right: 1px solid var(--el-border-color-lighter, #ebeef5);
+  background: var(--db-surface, #fff);
+  border-radius: var(--db-r-card);
   height: 100%;
   overflow: hidden;
 
@@ -109,7 +109,7 @@ const emit = defineEmits<{
     height: 34px;
     flex-shrink: 0;
     padding: 0 8px 0 12px;
-    border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5);
+    /* 头部与正文靠留白分区，不再画横线 */
   }
 
   &__title {
@@ -132,16 +132,17 @@ const emit = defineEmits<{
     height: 22px;
     padding: 0;
     border: none;
-    border-radius: var(--app-radius-sm);
+    border-radius: var(--db-r-tag);
     background: none;
     cursor: pointer;
-    color: var(--el-text-color-secondary);
+    color: var(--db-ink-muted);
     font-size: 15px;
-    transition: all 0.2s;
+    transition: background-color var(--db-dur-fast) var(--db-ease),
+      color var(--db-dur-fast) var(--db-ease);
 
     &:hover {
-      background: var(--el-fill-color-light, #f5f7fa);
-      color: var(--el-color-primary);
+      background: var(--db-bg-hover);
+      color: var(--db-ink);
     }
   }
 

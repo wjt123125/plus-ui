@@ -31,17 +31,37 @@
   --db-blue-hover: #0068db;
   --db-blue-active: #0059bd;
   --db-green: #34c759;
+  /* 亮薄荷绿：比 --db-green 更亮更实，用于需要强提示的细线/示意（如拖拽针线） */
+  --db-mint: #0fdc78;
   --db-red: #ff3b30;
   --db-orange: #ff9500;
   --db-yellow: #ffcc00;
   --db-purple: #af52de;
   --db-gray: #8e8e93;
 
-  /* —— 圆角 —— */
-  --db-r-card: 14px;
-  --db-r-control: 10px;
+  /* —— 圆角（五档，页面只允许取这五档）—— */
+  --db-r-xs: 4px;
   --db-r-tag: 7px;
+  --db-r-control: 10px;
+  --db-r-card: 14px;
   --db-r-pill: 999px;
+
+  /* —— 字号（四档正文 + 一档欢迎标题，禁止再出现 11.5 / 12.5 / 13.5）—— */
+  --db-fs-xs: 11px;
+  --db-fs-sm: 12px;
+  --db-fs-md: 13px;
+  --db-fs-lg: 15px;
+  --db-fs-hero: 30px;
+
+  /* —— 表面层级（浮岛布局：灰底画布 + 白卡）—— */
+  --db-canvas: #f2f2f7;
+  --db-surface: #ffffff;
+  --db-surface-subtle: rgba(120, 120, 128, 0.06);
+  /* 下沉面：聊天输入井（8% 灰叠白）的颜色抽成令牌，
+     工作台画布、会话历史栏、输入框统一引用，三者同一底色、无缝相接 */
+  --db-bg-sunken: #f4f4f5;
+  /* 底部带高度：会话输入卡与中栏终端卡同高，两侧底边齐平、顶边也齐平 */
+  --db-bottom-pane-h: 150px;
 
   /* —— 间距（严格 4px 网格）—— */
   --db-p-xs: 4px;
@@ -76,7 +96,9 @@
   /* —— 字体 —— */
   --db-font: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC',
     'Hiragino Sans GB', 'Noto Sans SC', 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
-  --db-font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  /* 等宽栈：JetBrains Mono 没装时按平台落到 Menlo / Consolas，避免退化成 Courier */
+  --db-font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, 'Cascadia Mono',
+    'DejaVu Sans Mono', ui-monospace, monospace;
 
   /* —— 焦点环（外发光，不是硬边框）—— */
   --db-ring: 0 0 0 3px rgba(0, 122, 255, 0.22);
@@ -85,9 +107,14 @@
 /* 深色：只覆写变量值，组件一行不用改 */
 html.dark .db-app {
   --db-bg: #1c1c1e;
+  --db-canvas: #1c1c1e;
+  --db-surface: #2c2c2e;
+  --db-surface-subtle: rgba(255, 255, 255, 0.06);
   --db-bg-card: rgba(44, 44, 46, 0.72);
   --db-bg-solid: #2c2c2e;
   --db-bg-hover: rgba(255, 255, 255, 0.08);
+  /* 深色下"下沉"= 比卡片更深一档，保持层级不倒置 */
+  --db-bg-sunken: #242426;
 
   --db-ink: #f2f2f7;
   --db-ink-secondary: #d1d1d6;
@@ -100,6 +127,7 @@ html.dark .db-app {
   --db-blue-hover: #3d9bff;
   --db-blue-active: #0060df;
   --db-green: #30d158;
+  --db-mint: #2ee98d;
   --db-red: #ff453a;
   --db-orange: #ff9f0a;
   --db-yellow: #ffd60a;

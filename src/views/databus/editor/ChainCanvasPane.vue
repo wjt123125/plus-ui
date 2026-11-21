@@ -74,7 +74,7 @@
       v-model:visible="previewVisible"
       v-model:request="previewRequest"
       :loading="previewRunning"
-      @execute="runPreview"
+      @execute="handlePreviewExecute"
     />
 
     <!-- 试运行：执行结果（banner/步骤表/上下文快照在组件内，步骤标题推断由 composable 注入）。
@@ -106,6 +106,7 @@ import { Expand } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { useUserStore } from '@/store/modules/user';
 import { generateEl } from '@/api/databus/el';
+import { getChain } from '@/api/databus/chain';
 import type { CmpProperty } from '@/api/databus/el/types';
 import CmpPalette from './components/palette/CmpPalette.vue';
 import FlowCanvas from './components/canvas/FlowCanvas.vue';
@@ -389,6 +390,7 @@ const {
   chainName,
   chainOwner,
   chainSaving,
+  loadedUpdateTime,
   inputParams,
   inputParamsVisible,
   onInputParamsSave,
@@ -521,6 +523,44 @@ const {
   onResult: props.host === 'workbench' ? onPreviewResult : undefined
 });
 
+/**
+ * 画布与服务端版本对齐（补漏推送）：AI 落完草稿如果推送没到（SSE 断线、多标签同 token 顶号），
+ * 画布会停在旧结构，本地试运行就会拿旧树跑出假失败。
+ * 只在无未保存改动时按 updateTime 重拉，有本地改动一律不覆盖。
+ */
+async function syncIfStale() {
+  const id = editingId.value;
+  if (isPreview.value || isReadonly.value || id == null || dirty.value) {
+    return;
+  }
+  try {
+    const { data } = await getChain(id);
+    const serverTime = data.updateTime ?? null;
+    if (serverTime && serverTime !== loadedUpdateTime.value) {
+      await loadChainToEditor(id);
+      ElMessage.info('画布已同步为最新草稿');
+    }
+  } catch {
+    // 版本检查失败不阻断试运行：按当前画布结构继续
+  }
+}
+
+/** 试运行前先对齐版本，避免拿漏推送的旧结构跑出假失败 */
+async function handlePreviewExecute() {
+  await syncIfStale();
+  await runPreview();
+}
+
+// 切回这条链的 tab 时补一次版本对齐（推送漏掉的更新在这里兜底）
+watch(
+  () => props.active,
+  (active) => {
+    if (active) {
+      void syncIfStale();
+    }
+  }
+);
+
 // 文档动作注入：画布空白右键菜单/右上浮层 inject（IDE 化后顶栏已删，命令统一收口于此）
 // 只读分享态给空壳：CmpContextMenu/FlowSidePanel 已被 FlowCanvas readonly 隐藏，空壳仅兜底
 // 意外消费方（双击/快捷键等不走此表），保证不触发保存/试运行/生成 EL。
@@ -579,12 +619,18 @@ useEditorHotkeys(
  * 只重建内存里的模型树与画布，不写库、不调 resetHistory（AI 改动靠服务端快照回滚，不指望 Ctrl+Z）。
  * §12.4 的脏画布判定与确认弹窗由宿主（工作区）在做，这里只管拿到允许后重画。
  */
-function applyAgentCanvas(payload: { cmpProperty?: CmpProperty | null; revealNodeId?: string | null }) {
+function applyAgentCanvas(payload: {
+  cmpProperty?: CmpProperty | null;
+  updateTime?: string | null;
+  revealNodeId?: string | null;
+}) {
   treeModel.loadFromCmpProperty(payload.cmpProperty ?? null);
   treeModel.project();
   ctrl.reproject();
   // 服务端刚落完草稿，画布与库一致 → 清掉脏标记（watch(dirty) 会同步给宿主 tab）
   dirty.value = false;
+  // 记下这次推送对应的库版本，后续切 tab/试运行据此判断是否又漏了推送
+  loadedUpdateTime.value = payload.updateTime ?? null;
   elPreview.schedule();
   nextTick(() => {
     ctrl.autoLayout();

@@ -13,6 +13,11 @@
       <div v-for="(m, i) in messages" :key="m.id" class="agent-chat__row" :class="`is-${m.role}`">
         <!-- 系统行：错误提示、画布更新被丢弃等结论性提示 -->
         <div v-if="m.role === 'system'" class="agent-chat__system" :class="{ 'is-error': isErrorNotice(m) }">
+          <SvgIcon
+            v-if="isErrorNotice(m)"
+            class="agent-chat__system-icon"
+            icon-class="lucide:circle-alert"
+          />
           <span class="agent-chat__system-text">{{ noticeText(m) }}</span>
         </div>
         <!-- 用户消息：原样纯文本，不解析 Markdown -->
@@ -99,9 +104,10 @@
               />
               <MarkdownBlock v-else-if="seg.kind === 'text'" :text="seg.text" />
             </template>
-            <!-- 还没吐字时用一个空行光标表示「在跑」，有正文后正文本身就是进度 -->
+            <!-- 还没吐字时用光标 + 状态词表示「在跑」，避免用户误判为卡死 -->
             <p v-if="m.status === 'streaming' && !hasText(m)" class="agent-chat__text">
               <span class="agent-chat__cursor" />
+              <span class="agent-chat__waiting">正在生成</span>
             </p>
           </div>
           <!-- 流式中先不给工具栏：这一条还在写，重试/复制都没有确定的对象 -->
@@ -968,6 +974,9 @@ defineExpose({ newSession });
 .agent-chat__row {
   display: flex;
   margin-bottom: 12px;
+  /* 长会话只渲染视口附近的行，滚动更稳；估高与普通一轮接近，避免滚动条跳动 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 140px;
 
   &.is-user {
     justify-content: flex-end;
@@ -1010,6 +1019,24 @@ defineExpose({ newSession });
   pointer-events: auto;
 }
 
+.agent-chat__waiting {
+  margin-left: 8px;
+  font-size: var(--db-fs-xs, 11px);
+  color: var(--db-ink-muted, #6e6e73);
+  animation: agent-waiting-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes agent-waiting-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
 /* 身份行：小胶囊托住图标和名字，比纯文字更有「发言人」感 */
 .agent-chat__who {
   position: relative;
@@ -1020,7 +1047,7 @@ defineExpose({ newSession });
   padding: 3px 9px 3px 7px;
   border-radius: 7px;
   background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
-  font-size: 12.5px;
+  font-size: var(--db-fs-sm, 12px);
   font-weight: 500;
   line-height: 1.6;
   color: var(--db-ink-muted, #6e6e73);
@@ -1054,7 +1081,7 @@ defineExpose({ newSession });
 
 .agent-chat__who-icon {
   flex: none;
-  font-size: 13.5px;
+  font-size: var(--db-fs-md, 13px);
   color: #0a84ff;
 }
 
@@ -1197,7 +1224,7 @@ defineExpose({ newSession });
 /* 段内提示（工具事件、能力限制）：比正文更轻，靠色阶和字号区分 */
 .agent-chat__notice {
   margin: 0 0 8px;
-  font-size: 11.5px;
+  font-size: var(--db-fs-xs, 11px);
   line-height: 1.6;
   color: var(--db-ink-muted, #6e6e73);
 }
@@ -1258,12 +1285,15 @@ defineExpose({ newSession });
   }
 }
 
-/* 系统行：整行浅底提示条，左对齐读得清；错误另用警示色 */
+/* 系统行：整行浅底提示条，左对齐读得清；错误另用警示色并补图标 */
 .agent-chat__system {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   margin: 10px 0;
-  font-size: 11.5px;
+  font-size: var(--db-fs-xs, 11px);
   line-height: 1.65;
   color: var(--db-ink-muted, #6e6e73);
 
@@ -1272,12 +1302,23 @@ defineExpose({ newSession });
   }
 }
 
+.agent-chat__system-icon {
+  flex: none;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
 .agent-chat__system-text {
-  display: block;
+  flex: 1;
+  min-width: 0;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--db-r-tag);
   background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
   word-break: break-word;
+}
+
+.agent-chat__system.is-error .agent-chat__system-icon {
+  margin-top: 8px;
 }
 
 .agent-chat__system.is-error .agent-chat__system-text {
@@ -1287,7 +1328,8 @@ defineExpose({ newSession });
 .agent-chat__input {
   position: relative;
   flex-shrink: 0;
-  padding: 8px 12px 12px;
+  /* 底边 8px，与终端卡 8px 外边距对齐，两张卡底边落在同一条线上 */
+  padding: 8px 12px 8px;
 }
 
 /* 「回到最新」：浮在输入区上沿，不参与消息区布局，出现/消失不会再次触发滚动 */
@@ -1457,13 +1499,16 @@ defineExpose({ newSession });
   opacity: 0.45;
 }
 
-/* 输入块：灰底 + 半根发丝线界定边界，聚焦转白并把线加深（不加蓝环，保持安静） */
+/* 输入块：下沉面底色（与工作台画布、会话历史栏同一令牌）+ 半根发丝线界定边界，
+   聚焦转白并把线加深（不加蓝环，保持安静） */
 .agent-chat__composer {
   display: flex;
   flex-direction: column;
+  /* 与终端卡同高（共用令牌）；正文超出时输入卡再向下长高 */
+  min-height: var(--db-bottom-pane-h, 150px);
   padding: 12px 12px 8px;
   border-radius: var(--db-r-card, 14px);
-  background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
+  background: var(--db-bg-sunken, #f4f4f5);
   box-shadow: inset 0 0 0 0.5px var(--db-rule, rgba(60, 60, 67, 0.12));
   transition:
     background-color 0.15s,

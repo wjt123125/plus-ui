@@ -440,7 +440,7 @@ usePaneRefresh(props, () => getRuleList(true), { immediate: false });
   gap: 8px;
   padding: 9px 12px;
   border: none;
-  border-radius: var(--app-radius-md, 10px);
+  border-radius: var(--db-r-control, 10px);
   background: transparent;
   color: var(--el-text-color-regular, #363b41);
   font-size: 14px;
@@ -594,7 +594,7 @@ usePaneRefresh(props, () => getRuleList(true), { immediate: false });
 .table-card {
   background: var(--app-surface-bg, #fff);
   border: 1px solid var(--app-surface-border, #e5e7eb);
-  border-radius: var(--app-radius-lg, 14px);
+  border-radius: var(--db-r-card, 14px);
   padding: 8px;
 }
 
@@ -615,7 +615,7 @@ usePaneRefresh(props, () => getRuleList(true), { immediate: false });
 .setting-section {
   background: var(--app-surface-bg, #fff);
   border: 1px solid var(--app-surface-border, #e5e7eb);
-  border-radius: var(--app-radius-lg, 14px);
+  border-radius: var(--db-r-card, 14px);
   padding: 8px 20px;
 }
 
