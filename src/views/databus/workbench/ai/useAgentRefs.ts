@@ -1,13 +1,14 @@
 /**
- * AI 对话「引用卡」暂存（模块级单例，与 useAgentChat 同策略：收起侧栏不丢）。
+ * AI 会话「资源引用」的展示映射（不再是独立暂存区）。
  *
- * 资源树 / 画布右键「加入会话」只往这里塞一条引用，不发消息；
- * 真正发出去时由 AgentChatPanel 交给 useAgentChat，转成 resource 附件随消息带出，
- * 让模型拿到确定的 chainId / componentId，不用靠名称猜。
+ * 暂存与发送统一走 useAgentContext 的 contexts：整件资源是 kind='resource' 的上下文条目，
+ * 输入区与消息里按引用卡渲染，点击跳转资源。本文件只保留：
+ * - AgentRefItem：宿主跳转接口（开画布 / 开详情）使用的载荷；
+ * - refToContext / agentRefOf：引用卡与上下文条目的互转；
+ * - parseRefsText：旧历史正文里的「【引用】」段还原（新消息不再走这条路）。
  */
-import { computed, reactive } from 'vue';
-import { currentConversationKey } from './agentSession';
 import { refMeta, refTypeByLabel, type AgentRefType } from './agentRefTypes';
+import type { AgentContextItem } from './contextTypes';
 
 export interface AgentRefItem {
   type: AgentRefType;
@@ -15,50 +16,34 @@ export interface AgentRefItem {
   id?: number | string;
   code?: string;
   name: string;
+  /** 连接器专用：包定位身份（type + version） */
+  connectorType?: string;
+  connectorVersion?: string;
 }
 
-/** conversationId → 该会话暂存的引用卡；切会话各看各的，切回来还在 */
-const refsByConversation = reactive<Record<string, AgentRefItem[]>>({});
-
-const refs = computed<AgentRefItem[]>(() => refsByConversation[currentConversationKey()] ?? []);
-
-function currentList(): AgentRefItem[] {
-  const key = currentConversationKey();
-  if (!refsByConversation[key]) {
-    refsByConversation[key] = [];
-  }
-  return refsByConversation[key];
+/** 引用卡 → 统一上下文条目（旧历史恢复 / 兼容入口使用） */
+export function refToContext(ref: AgentRefItem): AgentContextItem {
+  return {
+    id: `ref_${ref.type}_${ref.id ?? ref.code ?? ''}`,
+    kind: 'resource',
+    type: ref.type,
+    title: ref.name,
+    note: '',
+    payload: { id: ref.id, code: ref.code },
+    fingerprint: `${ref.type}|${ref.id ?? ref.code ?? ''}`
+  };
 }
 
-/** 同类型同 id（无 id 时同 code）只留一条，重复加入不叠加 */
-function sameRef(a: AgentRefItem, b: AgentRefItem): boolean {
-  if (a.type !== b.type) {
-    return false;
-  }
-  if (a.id != null || b.id != null) {
-    return String(a.id) === String(b.id);
-  }
-  return a.code === b.code;
-}
-
-function addRef(item: AgentRefItem): void {
-  const list = currentList();
-  if (list.some((r) => sameRef(r, item))) {
-    return;
-  }
-  list.push(item);
-}
-
-function removeRef(item: AgentRefItem): void {
-  const key = currentConversationKey();
-  const list = refsByConversation[key];
-  if (list) {
-    refsByConversation[key] = list.filter((r) => !sameRef(r, item));
-  }
-}
-
-function clearRefs(): void {
-  delete refsByConversation[currentConversationKey()];
+/** 上下文条目 → 宿主跳转载荷（只对整件资源有意义） */
+export function agentRefOf(item: AgentContextItem): AgentRefItem {
+  return {
+    type: item.type as AgentRefType,
+    name: item.title,
+    id: item.payload?.id,
+    code: item.payload?.code,
+    connectorType: item.payload?.connectorType,
+    connectorVersion: item.payload?.connectorVersion
+  };
 }
 
 /**
@@ -86,8 +71,4 @@ export function parseRefsText(text: string): { text: string; refs: AgentRefItem[
     refs.push({ type, name, code, id });
   }
   return { text: text.slice(0, idx).replace(/\n$/, ''), refs };
-}
-
-export function useAgentRefs() {
-  return { refs, addRef, removeRef, clearRefs };
 }

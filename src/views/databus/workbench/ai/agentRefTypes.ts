@@ -5,7 +5,7 @@
  * 按它渲染；新消息的引用走 attachments，只有旧历史才需要靠标签与 idKey 从正文还原。
  * 这样各处不用散落「type === 'chain' ? ... : ...」。
  */
-export type AgentRefType = 'chain' | 'component';
+export type AgentRefType = 'chain' | 'component' | 'connector';
 
 export interface AgentRefMeta {
   /** 芯片与旧历史引用段里显示的中文类型名，如「链路」 */
@@ -16,11 +16,14 @@ export interface AgentRefMeta {
   color: string;
   /** 旧历史引用段里的主键字段名，parseRefsText 据此还原 id，如 chainId / componentId */
   idKey: string;
+  /** 详情浮层底部跳转按钮文案：新增资源类型只改这里 */
+  openLabel: string;
 }
 
 const REF_TYPES: Record<AgentRefType, AgentRefMeta> = {
-  chain: { label: '链路', icon: 'lucide:spline', color: 'var(--db-ref-chain)', idKey: 'chainId' },
-  component: { label: '组件', icon: 'lucide:box', color: 'var(--db-ref-component)', idKey: 'componentId' }
+  chain: { label: '链路', icon: 'lucide:spline', color: 'var(--db-ref-chain)', idKey: 'chainId', openLabel: '打开链路' },
+  component: { label: '组件', icon: 'lucide:box', color: 'var(--db-ref-component)', idKey: 'componentId', openLabel: '查看组件' },
+  connector: { label: '连接器', icon: 'lucide:plug', color: 'var(--db-ref-connector)', idKey: 'connectorId', openLabel: '打开连接器包' }
 };
 
 /** 未注册类型兜底成中性灰，漏配也不会渲染空白芯片 */
@@ -28,11 +31,13 @@ const FALLBACK: AgentRefMeta = {
   label: '引用',
   icon: 'lucide:link',
   color: 'var(--db-ink-muted, #6e6e73)',
-  idKey: 'refId'
+  idKey: 'refId',
+  openLabel: '打开'
 };
 
-export function refMeta(type: AgentRefType): AgentRefMeta {
-  return REF_TYPES[type] ?? FALLBACK;
+/** type 按 string 收：上下文附件的类型允许后端先于前端扩展，未注册时走兜底 */
+export function refMeta(type: string): AgentRefMeta {
+  return REF_TYPES[type as AgentRefType] ?? FALLBACK;
 }
 
 /** 反查类型：刷新恢复历史时从引用段里的中文标签还原 type */

@@ -8,56 +8,22 @@
 -->
 <template>
   <div class="ctx-layer">
-    <!-- 选区气泡两态：ask=只问要不要加入，comment=已入区，补评论 -->
-    <section
+    <!-- 选区气泡两态：ask=只问要不要加入，comment=已入区，补评论；外观与 hover 浮层共用同一组件 -->
+    <ContextActionBubble
       v-if="mode === 'ask' || mode === 'comment'"
-      ref="bubbleRef"
-      class="ctx-bubble"
-      :class="{ 'ctx-bubble--ask': mode === 'ask' }"
-      :style="bubbleStyle"
-      @pointerdown="bubbleTouched = true"
-    >
-      <template v-if="mode === 'ask'">
-        <button type="button" class="ctx-act" title="复制选中内容" aria-label="复制选中内容" @click="copySelection">
-          <SvgIcon icon-class="lucide:copy" />
-        </button>
-        <span class="ctx-ask__divider" aria-hidden="true" />
-        <button type="button" class="ctx-act" title="加入会话" aria-label="加入会话" @click="beginComment">
-          <SvgIcon icon-class="lucide:sparkles" />
-        </button>
-      </template>
-      <template v-else>
-        <textarea
-          ref="noteRef"
-          v-model="note"
-          class="ctx-bubble__input"
-          rows="1"
-          placeholder="输入你的评论"
-          @input="onNoteInput"
-          @keydown="onNewKeydown"
-        />
-        <button
-          type="button"
-          class="ctx-act ctx-act--danger"
-          :class="{ 'is-idle-hidden': !bubbleTouched }"
-          title="撤销这条上下文"
-          aria-label="撤销这条上下文"
-          @click="discardSelection"
-        >
-          <SvgIcon icon-class="lucide:trash-2" />
-        </button>
-        <button
-          type="button"
-          class="ctx-act ctx-act--primary"
-          :class="{ 'is-idle': !note.trim() }"
-          title="保存评论"
-          aria-label="保存评论"
-          @click="commitNote"
-        >
-          <SvgIcon icon-class="lucide:check" />
-        </button>
-      </template>
-    </section>
+      :mode="mode"
+      :anchor-rect="bubbleAnchorRect"
+      :note="note"
+      :idle-hidden="!bubbleTouched"
+      copy-title="复制选中内容"
+      @update:note="onNoteUpdate"
+      @touch="bubbleTouched = true"
+      @copy="copySelection"
+      @join="beginComment"
+      @remove="discardSelection"
+      @commit="commitNote"
+      @esc="commitNote"
+    />
 
     <!-- 来源角标：数字与暂存卡序号一一对应，位置来自 Range，Range 断开后 rect 为空即不渲染 -->
     <button
@@ -73,44 +39,28 @@
     </button>
 
     <!-- 点角标后的改评论 / 移除浮层：与新选区气泡同一形态，标题走 hover 提示 -->
-    <section
-      v-if="mode === 'badge' && activeBadge"
-      ref="panelRef"
-      class="ctx-bubble ctx-bubble--badge"
-      :style="panelStyle"
+    <ContextActionBubble
+      v-if="mode === 'badge' && activeBadge && panelAnchorRect"
+      :key="activeBadge.itemId"
+      mode="comment"
+      :anchor-rect="panelAnchorRect"
+      :note="badgeNote"
       :title="activeBadge.title"
-    >
-      <textarea
-        ref="badgeNoteRef"
-        v-model="badgeNote"
-        class="ctx-bubble__input"
-        rows="1"
-        placeholder="输入你的评论"
-        @input="onBadgeInput"
-        @keydown="onBadgeKeydown"
-      />
-      <button type="button" class="ctx-act ctx-act--danger" title="移除这条上下文" aria-label="移除这条上下文" @click="removeActiveBadge">
-        <SvgIcon icon-class="lucide:trash-2" />
-      </button>
-      <button
-        type="button"
-        class="ctx-act ctx-act--primary"
-        :class="{ 'is-idle': !badgeNote.trim() }"
-        title="保存评论"
-        aria-label="保存评论"
-        @click="saveBadgeNote"
-      >
-        <SvgIcon icon-class="lucide:check" />
-      </button>
-    </section>
+      @update:note="badgeNote = $event"
+      @remove="removeActiveBadge"
+      @commit="saveBadgeNote"
+      @esc="closeBadgePanel"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import { ElMessage } from 'element-plus';
 import { contextMeta, type AgentContextItem } from './contextTypes';
 import { useAgentContext, nextContextId, type ContextBadge } from './useAgentContext';
+import ContextActionBubble from './ContextActionBubble.vue';
+import type { AnchorRect } from './contextBubble';
 
 const { badges, contexts, addContext, addBadge, removeContext, updateNote, refreshBadges } = useAgentContext();
 
@@ -127,7 +77,7 @@ interface PendingSelection {
   container: HTMLElement;
   range: Range;
   text: string;
-  anchorRect: { top: number; bottom: number; left: number; right: number; width: number; height: number };
+  anchorRect: AnchorRect;
 }
 
 /** ask=确认是否加入；comment=已入区，正在补评论 */
@@ -142,25 +92,8 @@ const activeBadgeId = ref('');
 /** 选区里带 DOM 节点，不能进深响应式代理 */
 const pending = shallowRef<PendingSelection | null>(null);
 
-const bubbleRef = ref<HTMLElement>();
-const noteRef = ref<HTMLTextAreaElement>();
-const panelRef = ref<HTMLElement>();
-const badgeNoteRef = ref<HTMLTextAreaElement>();
-
-const bubbleStyle = ref<Record<string, string>>({});
-const panelStyle = ref<Record<string, string>>({});
-
-/** 评论框最多长到 4 行左右，再多就内部滚动，别把页面顶跑 */
-const NOTE_MAX_HEIGHT = 88;
-
-/** textarea 没有 autosize：先归零再按 scrollHeight 撑开，超上限交给 CSS 滚动 */
-function growNote(el: HTMLTextAreaElement | undefined): void {
-  if (!el) {
-    return;
-  }
-  el.style.height = 'auto';
-  el.style.height = `${Math.min(el.scrollHeight, NOTE_MAX_HEIGHT)}px`;
-}
+/** 当前气泡锚点：滚动/窗口变化时按 Range 重算，气泡组件只认这份矩形 */
+const bubbleAnchorRect = ref<AnchorRect | null>(null);
 
 /**
  * 角标要显示的数字：取它在暂存区里的位次（1 起），和输入框上方的卡片序号对上。
@@ -173,6 +106,24 @@ const visibleBadges = computed(() =>
     .filter((b) => b.order > 0)
 );
 const activeBadge = computed(() => badges.value.find((b) => b.itemId === activeBadgeId.value) ?? null);
+
+/** 角标浮层的锚点：贴住角标自身的位置，与新选区气泡错开 */
+const panelAnchorRect = computed<AnchorRect | null>(() => {
+  const rect = activeBadge.value?.rect;
+  return rect ? { ...rect } : null;
+});
+
+/** Range → 视口矩形；节点被重建/选区断开时返回 null */
+function rangeAnchor(range: Range | null): AnchorRect | null {
+  if (!range || !range.startContainer.isConnected) {
+    return null;
+  }
+  const rect = range.getBoundingClientRect();
+  if (!rect.width && !rect.height) {
+    return null;
+  }
+  return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, width: rect.width, height: rect.height };
+}
 
 /** 从选区节点向上找最近的接入容器；找不到说明这块面板没声明 data-context-type，不弹气泡 */
 function findContextContainer(node: Node | null): HTMLElement | null {
@@ -216,26 +167,8 @@ function showBubble(selection: Selection): void {
   // 只弹确认气泡：暂存区不动、原生选区不清、不抢焦点，右键复制 / Ctrl+C 保持可用
   note.value = '';
   editingId.value = '';
+  bubbleAnchorRect.value = pending.value.anchorRect;
   mode.value = 'ask';
-  // 等气泡渲染出真实高度再定位，否则上下翻转会算错
-  nextTick(placeBubble);
-}
-
-function placeBubble(): void {
-  const p = pending.value;
-  const el = bubbleRef.value;
-  if (!p || !el) {
-    return;
-  }
-  const width = el.offsetWidth || 340;
-  const height = el.offsetHeight || 40;
-  const rect = p.anchorRect;
-  let top = rect.top - height - GAP;
-  if (top < GAP) {
-    top = Math.min(rect.bottom + GAP, window.innerHeight - height - GAP);
-  }
-  const left = Math.max(GAP, Math.min(rect.left, window.innerWidth - width - GAP));
-  bubbleStyle.value = { top: `${top}px`, left: `${left}px` };
 }
 
 /**
@@ -265,12 +198,6 @@ function beginComment(): void {
   attachSelection();
   bubbleTouched.value = false;
   mode.value = 'comment';
-  nextTick(() => {
-    // 复用已有条目时可能带着旧评论，先按内容撑开再定位
-    growNote(noteRef.value);
-    placeBubble();
-    noteRef.value?.focus();
-  });
 }
 
 /**
@@ -329,17 +256,10 @@ function syncEditingNote(): void {
   }
 }
 
-/** 评论框：回写评论 + 跟随内容增高，气泡按新高度重新定位（保持贴在选区上方） */
-function onNoteInput(): void {
+/** 评论框输入：回写评论；增高与定位由气泡组件自己处理 */
+function onNoteUpdate(value: string): void {
+  note.value = value;
   syncEditingNote();
-  growNote(noteRef.value);
-  nextTick(placeBubble);
-}
-
-/** 角标浮层里的评论框：同样增高，并按角标位置重新定位 */
-function onBadgeInput(): void {
-  growNote(badgeNoteRef.value);
-  nextTick(placeBadgePanel);
 }
 
 /** 确认评论：卡片早就在暂存区了，这里只把评论写回去 */
@@ -360,23 +280,6 @@ function discardSelection(): void {
   closeBubble();
 }
 
-function onNewKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    commitNote();
-    return;
-  }
-  if (event.key !== 'Enter' || event.isComposing) {
-    return;
-  }
-  // Shift+Enter 保留：单行输入里没有换行，但不该吞掉用户的组合键
-  if (event.shiftKey) {
-    return;
-  }
-  event.preventDefault();
-  commitNote();
-}
-
 function badgeTitle(badge: ContextBadge): string {
   return badge.note ? `${badge.title} · ${badge.note}` : badge.title;
 }
@@ -389,33 +292,16 @@ function badgeStyle(badge: ContextBadge): Record<string, string> {
   };
 }
 
-/** 角标浮层复用气泡样式，但由角标位置反推，避免和「新选区」气泡抢位置 */
-function placeBadgePanel(): void {
-  const badge = activeBadge.value;
-  const el = panelRef.value;
-  if (!badge?.rect || !el) {
-    return;
-  }
-  const width = el.offsetWidth || 340;
-  const height = el.offsetHeight || 40;
-  const rect = badge.rect;
-  let top = rect.top - height - 6;
-  if (top < GAP) {
-    top = Math.min(rect.bottom + 6, window.innerHeight - height - GAP);
-  }
-  const left = Math.max(GAP, Math.min(rect.left, window.innerWidth - width - GAP));
-  panelStyle.value = { top: `${top}px`, left: `${left}px` };
-}
-
+/** 角标浮层由角标位置反推锚点，避免和「新选区」气泡抢位置 */
 function openBadgePanel(badge: ContextBadge): void {
   activeBadgeId.value = badge.itemId;
   badgeNote.value = badge.note;
   mode.value = 'badge';
-  nextTick(() => {
-    growNote(badgeNoteRef.value);
-    placeBadgePanel();
-    badgeNoteRef.value?.focus();
-  });
+}
+
+function closeBadgePanel(): void {
+  mode.value = null;
+  activeBadgeId.value = '';
 }
 
 function saveBadgeNote(): void {
@@ -428,21 +314,6 @@ function removeActiveBadge(): void {
   removeContext(activeBadgeId.value);
   mode.value = null;
   activeBadgeId.value = '';
-}
-
-function onBadgeKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    mode.value = null;
-    activeBadgeId.value = '';
-    return;
-  }
-  // Enter 等同点对勾：输入完直接保存，和上方新选区气泡一致
-  if (event.key !== 'Enter' || event.isComposing) {
-    return;
-  }
-  event.preventDefault();
-  saveBadgeNote();
 }
 
 /* ---------------- 选区与视口事件 ---------------- */
@@ -469,7 +340,7 @@ function onDocMouseDown(event: MouseEvent): void {
     return;
   }
   const target = event.target as Element | null;
-  if (target?.closest?.('.ctx-bubble--badge') || target?.closest?.('.ctx-badge')) {
+  if (target?.closest?.('.ctx-bubble') || target?.closest?.('.ctx-badge')) {
     return;
   }
   mode.value = null;
@@ -496,7 +367,8 @@ function onResize(): void {
 let rafId = 0;
 
 function scheduleViewportSync(hideBubble: boolean): void {
-  if (hideBubble && (mode.value === 'ask' || mode.value === 'comment')) {
+  // ask 态只是提示，滚动就收起；comment 态用户可能正在打字，保留并按新位置重算
+  if (hideBubble && mode.value === 'ask') {
     closeBubble();
   }
   if (rafId) {
@@ -506,10 +378,12 @@ function scheduleViewportSync(hideBubble: boolean): void {
     rafId = 0;
     refreshBadges();
     if (mode.value === 'ask' || mode.value === 'comment') {
-      placeBubble();
-    }
-    if (mode.value === 'badge') {
-      placeBadgePanel();
+      const anchor = rangeAnchor(pending.value?.range ?? null);
+      if (anchor) {
+        bubbleAnchorRect.value = anchor;
+      } else {
+        closeBubble();
+      }
     }
   });
 }
@@ -678,117 +552,6 @@ onBeforeUnmount(() => {
   z-index: 3000;
   /* 整层只负责定位，命中交给气泡与角标，否则挡住页面点击 */
   pointer-events: none;
-}
-
-.ctx-bubble {
-  position: absolute;
-  display: flex;
-  /* 评论框长高时按钮跟着落在底部，不跟着文字往上飘 */
-  align-items: flex-end;
-  gap: 2px;
-  width: 260px;
-  padding: 5px 5px 5px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--el-border-color-lighter, #ebeef5);
-  background: var(--el-bg-color-overlay, #fff);
-  box-shadow: var(--el-box-shadow-light, 0 6px 24px rgba(0, 0, 0, 0.12));
-  pointer-events: auto;
-}
-
-/* 确认态是两个图标钮，不需要评论框那 340px；
-   没有 textarea 兜底，分割线要跟着按钮垂直居中，不能继承底对齐 */
-.ctx-bubble--ask {
-  align-items: center;
-  width: auto;
-  padding: 4px;
-  gap: 2px;
-}
-
-/* 两个图标之间的灰色细分割线 */
-.ctx-ask__divider {
-  flex: none;
-  width: 1px;
-  height: 14px;
-  background: var(--el-border-color, #dcdfe6);
-}
-
-.ctx-bubble__input {
-  flex: 1;
-  min-width: 0;
-  min-height: 26px;
-  max-height: 88px;
-  padding: 4px 0;
-  border: none;
-  background: transparent;
-  color: var(--el-text-color-primary, #303133);
-  font-family: inherit;
-  font-size: 12px;
-  line-height: 18px;
-  resize: none;
-  outline: none;
-  overflow-y: auto;
-
-  &::placeholder {
-    color: var(--db-ink-muted, #6e6e73);
-  }
-}
-
-/* 后缀动作钮：纯图标，文案只走 title / aria-label */
-.ctx-act {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
-  border-radius: 7px;
-  background: transparent;
-  cursor: pointer;
-
-  :deep(svg) {
-    width: 15px;
-    height: 15px;
-  }
-}
-
-/* 两个图标钮同一套 hover，确认态里没有主次之分 */
-.ctx-act:hover {
-  background: rgba(120, 120, 128, 0.12);
-}
-
-.ctx-act--danger {
-  color: var(--el-color-danger, #f56c6c);
-
-  &:hover {
-    background: var(--el-color-danger-light-9, #fef0f0);
-  }
-}
-
-/* 还没动手时不显形但占着位，露出来的时候对勾不會跳位置 */
-.ctx-act.is-idle-hidden {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.ctx-act--primary {
-  background: var(--el-text-color-primary, #303133);
-  color: #fff;
-
-  &:hover {
-    background: #1f1f1f;
-  }
-}
-
-/* 评论为空时按钮只是变淡，仍可点：不带评论加入上下文是合法操作 */
-.ctx-act--primary.is-idle {
-  background: var(--el-fill-color, #f0f2f5);
-  color: var(--el-text-color-disabled, #a8abb2);
-
-  &:hover {
-    background: var(--el-fill-color-dark, #e6e8eb);
-  }
 }
 
 .ctx-badge {

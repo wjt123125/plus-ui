@@ -128,6 +128,8 @@ const LUCIDE_SUBSET: IconifyJSON = {
     copy: {
       body: `<g ${S}><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></g>`
     },
+    // 资源 hover 气泡「复制编码」：用等宽代码语义，区别于「复制内容」的 copy
+    code: { body: `<g ${S}><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></g>` },
     plus: { body: `<path ${S} d="M5 12h14m-7-7v14"/>` },
     // 空态/入口「新建」：一个圆角方块 + 加号，比「文件 + 加号」少一层内部细节
     'square-plus': {

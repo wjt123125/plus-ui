@@ -6,13 +6,15 @@
  * run 状态全归后端，前端只存会话 id，刷新后继续同一会话。
  *
  * 消息按「段」存（不是一整块字符串）：`text` 段走 Markdown，`thinking` 段折叠展示，
- * `notice` 段是系统提示，`card` 段是交互卡片（确认 / 选择 / 资源），新类型只需加一个段类型。
+ * `stage` 是当前阶段（一条可变状态行），`error` 是服务级失败（AI 消息里的一句话），
+ * `notice` 段是系统提示，`card` 段是交互卡片，新类型只需加一个段类型。
  *
  * 状态是**模块级单例、按会话分桶**：AI 栏收起时面板组件会整栏销毁，消息不能跟着丢；
  * 每个 conversationId 一份消息 / 运行态 / SSE 连接，切换会话不重复拉历史，多会话可并行。
  */
 import { computed, h, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
+import i18n from '@/lang';
 import {
   buildAgentStreamUrl,
   deleteAgentConversation,
@@ -29,19 +31,31 @@ import {
   startAgentChat,
   stopAgentRun
 } from '@/api/databus/agent';
-import type { AgentCard, AgentCardReply, AgentConversationVo, AgentSystemEvent } from '@/api/databus/agent/types';
+import type {
+  AgentCard,
+  AgentCardReply,
+  AgentConversationVo,
+  AgentErrorInfo,
+  AgentStepInfo,
+  AgentSystemEvent
+} from '@/api/databus/agent/types';
 import {
   AGENT_SSE_CARD,
   AGENT_SSE_DONE,
   AGENT_SSE_ERROR,
+  AGENT_SSE_STEP_END,
+  AGENT_SSE_STEP_START,
   AGENT_SSE_TEXT,
-  AGENT_SSE_THINKING
+  AGENT_SSE_THINKING,
+  AGENT_STEP_STATUS_DONE,
+  AGENT_STEP_STATUS_FAILED,
+  AGENT_STEP_STATUS_RUNNING
 } from '@/constants/databus-agent';
 import { AGENT_RUN_STATUS } from '@/constants/databus';
 import { DATABUS_CARD_ACTION_CANCEL } from '@/constants/databus-common';
 import type { AiSession, AiSessionGroup } from './ai.types';
 import type { AgentContextItem } from './contextTypes';
-import { parseRefsText, type AgentRefItem } from './useAgentRefs';
+import { parseRefsText, refToContext } from './useAgentRefs';
 import {
   activeConversationId,
   clearDraft,
@@ -51,9 +65,38 @@ import {
 
 export type AgentChatRole = 'user' | 'assistant' | 'system';
 
+/** 一次工具调用的轻量快照，仅供展开查看，不落库、不回放 */
+export interface AgentStageItem {
+  stepId: string;
+  /** 工具标题（来自服务端工具元数据） */
+  title: string;
+  status: 'running' | 'done' | 'failed';
+}
+
+/**
+ * 当前阶段：一条可变 segment，后续 step_start/step_end 就地更新，
+ * 不做步骤列表、不落库、不回放。
+ */
+export interface AgentStageSegment {
+  kind: 'stage';
+  /** 当前步骤 id，用来把 step_end 对回同一条阶段行 */
+  stepId: string;
+  /** 当前工具标题（来自工具元数据） */
+  title: string;
+  status: 'running' | 'done' | 'failed';
+  /** 已结束的步骤数（含失败） */
+  completed: number;
+  /** 其中失败的数量 */
+  failed: number;
+  /** 本次已发生的工具调用，展开时按顺序列出 */
+  items: AgentStageItem[];
+}
+
 export type AgentSegment =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; text: string }
+  | AgentStageSegment
+  | { kind: 'error'; error: AgentErrorInfo }
   | { kind: 'notice'; text: string; eventCode?: string }
   | { kind: 'card'; card: AgentCard; status: 'pending' | 'answered' | 'disabled'; picked?: string[]; cardText?: string };
 
@@ -61,14 +104,12 @@ export interface AgentChatMessage {
   id: string;
   role: AgentChatRole;
   segments: AgentSegment[];
-  /** 用户消息携带的引用卡；发送时另转成 resource 附件，气泡里只渲染芯片 */
-  refs?: AgentRefItem[];
-  /** 用户消息携带的上下文附件（划字摘录 / 资源）；正文里不再拼等价的引用段 */
+  /** 用户消息携带的上下文附件（划字摘录 / 整件资源）；正文里不再拼等价的引用段 */
   contexts?: AgentContextItem[];
   /** 这条提问来自卡片点选时的回执；回退时据此把原卡片恢复成可点 */
   cardReply?: AgentCardReply;
   /** assistant 气泡状态 */
-  status?: 'streaming' | 'done' | 'error';
+  status?: 'streaming' | 'done';
   /** 这一轮对应的后端 run 句柄（重试 / 删除 / 回退按轮定位用；未落库的本地消息为空） */
   runId?: string;
 }
@@ -208,21 +249,33 @@ function pushSystem(conversationId: string, content: string, eventCode?: string)
   });
 }
 
+/** 错误信封 → 用户可见的一行提示（附带日志关联编号，前端不做错误码映射） */
+function errorNoticeText(error: { message: string; referenceId?: string }): string {
+  return error.referenceId
+    ? `${error.message}（${i18n.global.t('ai.error.reference', { ref: error.referenceId })}）`
+    : error.message;
+}
+
 /**
- * 收尾失败：当前气泡标红 + 该会话追加一条 notice 系统行。
+ * 收尾失败：错误作为 AI 消息里的一个 `error` 段，不再另起系统告警行。
+ * 只接收后端下发的错误信封（或一句本地兜底文案），原始异常永远不会走到这里。
  */
-function failStreaming(conversationId: string, reason: string) {
+function failStreaming(conversationId: string, error: AgentErrorInfo | string) {
   const state = ensureSession(conversationId);
+  const notice: AgentErrorInfo = typeof error === 'string'
+    ? { code: 'UNKNOWN', category: 'unknown', retryable: false, message: error }
+    : error;
   const target = streamingMessage(state);
   if (target) {
-    if (!textOf(target)) {
-      target.segments.push({ kind: 'text', text: reason });
-    }
-    target.status = 'error';
+    interruptStage(target);
+    target.segments.push({ kind: 'error', error: notice });
+    target.status = 'done';
+  } else {
+    // 异常路径兜底：没有当前消息时才退回系统行
+    pushSystem(conversationId, errorNoticeText(notice), 'error');
   }
   closeStream(conversationId);
   state.running = false;
-  pushSystem(conversationId, reason, 'error');
 }
 
 /** 卡片到达：挂到本轮 assistant 消息末尾，等用户点选 */
@@ -236,6 +289,70 @@ function handleCard(conversationId: string, card: AgentCard | null | undefined) 
     return;
   }
   target.segments.push({ kind: 'card', card, status: 'pending' });
+}
+
+/**
+ * 阶段到达：一条消息只维护一条 stage 段。
+ * step_start 替换标题并置为运行中；step_end 累计完成/失败数，不再追加新行。
+ * 明细只记在 stage.items 里，供用户展开回看，不落库、刷新后不恢复。
+ */
+function handleStage(conversationId: string, step: AgentStepInfo | null | undefined) {
+  const state = sessions[conversationId];
+  if (!state || !step?.stepId) {
+    return;
+  }
+  const target = streamingMessage(state);
+  if (!target) {
+    return;
+  }
+  const stage = target.segments.find((s): s is AgentStageSegment => s.kind === 'stage');
+  if (step.status === AGENT_STEP_STATUS_RUNNING) {
+    if (stage) {
+      stage.stepId = step.stepId;
+      stage.title = step.title;
+      stage.status = AGENT_STEP_STATUS_RUNNING;
+      stage.items.push({ stepId: step.stepId, title: step.title, status: AGENT_STEP_STATUS_RUNNING });
+    } else {
+      target.segments.push({
+        kind: 'stage',
+        stepId: step.stepId,
+        title: step.title,
+        status: AGENT_STEP_STATUS_RUNNING,
+        completed: 0,
+        failed: 0,
+        items: [{ stepId: step.stepId, title: step.title, status: AGENT_STEP_STATUS_RUNNING }]
+      });
+    }
+    return;
+  }
+  if (!stage || stage.stepId !== step.stepId) {
+    return;
+  }
+  const failed = step.status === AGENT_STEP_STATUS_FAILED;
+  stage.completed += 1;
+  if (failed) {
+    stage.failed += 1;
+  }
+  stage.status = failed ? AGENT_STEP_STATUS_FAILED : AGENT_STEP_STATUS_DONE;
+  const item = stage.items.find((i) => i.stepId === step.stepId);
+  if (item) {
+    item.status = stage.status;
+  }
+}
+
+/** 流被中止（用户停止 / 连接断开）：运行中的阶段标成失败，避免一直扫光 */
+function interruptStage(message: AgentChatMessage) {
+  const stage = message.segments.find((s): s is AgentStageSegment => s.kind === 'stage');
+  if (!stage || stage.status !== AGENT_STEP_STATUS_RUNNING) {
+    return;
+  }
+  stage.completed += 1;
+  stage.failed += 1;
+  stage.status = AGENT_STEP_STATUS_FAILED;
+  const item = stage.items.find((i) => i.stepId === stage.stepId);
+  if (item) {
+    item.status = AGENT_STEP_STATUS_FAILED;
+  }
 }
 
 /** 新一轮开始：上一轮没点的卡一律失效，避免点开还在等旧 run */
@@ -341,10 +458,10 @@ function handleEvent(conversationId: string, type: string, data: string) {
         // 刷新回放时不会出现「流式看到的」和「历史拉回来的」两份不同文本。
         const finalText = (done ? (done.fullText ?? '') : data).trim();
         if (finalText) {
-          // 卡片是这一轮的暂停点，不能被收口正文冲掉：思考 → 正文 → 卡片
+          // 卡片是这一轮的暂停点，不能被收口正文冲掉：思考 / 阶段 → 正文 → 卡片
           const cards = target.segments.filter((s) => s.kind === 'card');
           target.segments = [
-            ...target.segments.filter((s) => s.kind === 'thinking'),
+            ...target.segments.filter((s) => s.kind === 'thinking' || s.kind === 'stage' || s.kind === 'error'),
             { kind: 'text', text: finalText },
             ...cards
           ];
@@ -359,8 +476,8 @@ function handleEvent(conversationId: string, type: string, data: string) {
     case AGENT_SSE_ERROR: {
       // 半截正文也是用户已经看到的，先落地再挂错误
       flushDeltas();
-      const err = parseJson<{ message?: string }>(data);
-      failStreaming(conversationId, err?.message || 'AI 服务异常，请稍后重试');
+      const err = parseJson<AgentErrorInfo>(data);
+      failStreaming(conversationId, err ?? 'AI 服务异常，请稍后重试');
       break;
     }
     default:
@@ -389,6 +506,10 @@ function openStream(conversationId: string, runId: string) {
       handleCard(conversationId, payload.data as AgentCard);
       return;
     }
+    if (type === AGENT_SSE_STEP_START || type === AGENT_SSE_STEP_END) {
+      handleStage(conversationId, payload.data as AgentStepInfo);
+      return;
+    }
     handleEvent(conversationId, type, typeof payload.data === 'string' ? payload.data : '');
   };
   es.onerror = () => {
@@ -397,36 +518,6 @@ function openStream(conversationId: string, runId: string) {
       return;
     }
     failStreaming(conversationId, '连接已断开，请重试');
-  };
-}
-
-/**
- * 引用卡转成统一附件：refs 与划字摘录走同一个 attachments 字段，
- * 后端不用区分两套结构，刷新回放也只认这一份。
- */
-function refToContext(ref: AgentRefItem): AgentContextItem {
-  return {
-    id: `ref_${ref.type}_${ref.id ?? ref.code ?? ''}`,
-    kind: 'resource',
-    type: ref.type,
-    title: ref.name,
-    note: '',
-    payload: { id: ref.id, code: ref.code },
-    fingerprint: `${ref.type}|${ref.id ?? ref.code ?? ''}`
-  };
-}
-
-/** 附件里「resource 且没有评论」的就是引用卡；refs 卡目前只认链路与组件 */
-function isRefContext(item: AgentContextItem): boolean {
-  return item.kind === 'resource' && !item.note && (item.type === 'chain' || item.type === 'component');
-}
-
-function contextToRef(item: AgentContextItem): AgentRefItem {
-  return {
-    type: item.type as AgentRefItem['type'],
-    name: item.title,
-    id: item.payload?.id,
-    code: item.payload?.code
   };
 }
 
@@ -466,16 +557,14 @@ function dropIfGone(conversationId: string, state: AgentSessionState) {
  * 发一句话：本地先定会话 id，把用户气泡与流式 assistant 气泡写进该会话桶，再建 run 拉流。
  *
  * @param content    用户原话（卡片点选时是选项文案；系统事件发起时为空）
- * @param refs       引用卡（转成 resource 附件，不再拼进正文）
+ * @param contexts   上下文暂存区（划字摘录 + 整件资源），与正文分开走 attachments
  * @param cardReply  卡片回执：点了哪张卡的哪一项，由后端校验后才认 userConfirmed
- * @param contexts   上下文暂存区（划字摘录 + 资源），与正文分开走 attachments
  * @param systemEvent 系统事件：用户界面之外发生的事实，只上报 code + payload，文案由后端生成
  */
-async function send(content: string, refs?: AgentRefItem[], cardReply?: AgentCardReply, contexts?: AgentContextItem[], systemEvent?: AgentSystemEvent) {
+async function send(content: string, contexts?: AgentContextItem[], cardReply?: AgentCardReply, systemEvent?: AgentSystemEvent) {
   const text = content.trim();
-  const refList = refs ?? [];
   const contextList = contexts ?? [];
-  if (!text && !refList.length && !contextList.length && !systemEvent) {
+  if (!text && !contextList.length && !systemEvent) {
     return;
   }
   const previous = activeId.value;
@@ -495,7 +584,6 @@ async function send(content: string, refs?: AgentRefItem[], cardReply?: AgentCar
     id: nextId(),
     role: 'user',
     segments: text ? [{ kind: 'text', text }] : [],
-    refs: refList.length ? refList : undefined,
     contexts: contextList.length ? contextList : undefined,
     cardReply
   };
@@ -511,7 +599,7 @@ async function send(content: string, refs?: AgentRefItem[], cardReply?: AgentCar
   state.running = true;
   try {
     // 正文只放用户敲的字；引用与摘录全部走 attachments，后端拼接时不会污染气泡
-    const attachments = [...refList.map(refToContext), ...contextList];
+    const attachments = contextList;
     const { data } = await startAgentChat({
       content: text,
       conversationId,
@@ -563,6 +651,7 @@ async function stop() {
   flushDeltas();
   const target = streamingMessage(state);
   if (target) {
+    interruptStage(target);
     if (!textOf(target)) {
       target.segments.push({ kind: 'text', text: '已停止' });
     }
@@ -875,15 +964,14 @@ async function restore(conversationId?: string) {
       // 老 run 没有 attachments，才需要从正文尾部拆「【引用】」段还原引用卡
       const stored = parseAttachments(run.attachments);
       let text = intent;
-      let refs: AgentRefItem[] = [];
       let contexts: AgentContextItem[] = [];
       if (stored) {
-        contexts = stored.filter((item) => !isRefContext(item));
-        refs = stored.filter(isRefContext).map(contextToRef);
+        contexts = stored;
       } else {
+        // 老 run 只有正文：把尾部「【引用】」段还原成资源附件，避免退化成一段文字
         const parsed = parseRefsText(intent);
         text = parsed.text;
-        refs = parsed.refs;
+        contexts = parsed.refs.map(refToContext);
       }
       // 该 run 若由点卡发起，回执记在它身上；带上才能在刷新后回退时把原卡片恢复成可点
       const ownReply = (run.cardReplies ?? [])
@@ -898,20 +986,22 @@ async function restore(conversationId?: string) {
         text = label ?? text.replace(/【卡片回执】[^。]*。/g, '').trim();
       }
       // 只有附件没有正文的轮次也要还原，否则刷新后丢卡片
-      if (!text && !refs.length && !contexts.length) {
+      if (!text && !contexts.length) {
         return;
       }
       restored.push({
         id: nextId(),
         role: 'user',
         segments: text ? [{ kind: 'text', text }] : [],
-        refs: refs.length ? refs : undefined,
         contexts: contexts.length ? contexts : undefined,
         cardReply: ownReply,
         runId: run.runId
       });
       const answer = reportText(run.report);
-      const segments: AgentSegment[] = answer ? [{ kind: 'text', text: answer }] : [];
+      const segments: AgentSegment[] = [];
+      if (answer) {
+        segments.push({ kind: 'text', text: answer });
+      }
       // 卡片不在内存里就靠这一步还原：已回执的标「已选」，只有最新一轮未回执的卡可点，其余置灰
       const latest = index === runs.length - 1 && run.status !== AGENT_RUN_STATUS.RUNNING;
       for (const raw of run.cards ?? []) {
@@ -927,6 +1017,13 @@ async function restore(conversationId?: string) {
           picked: picked?.actions,
           cardText: picked?.text
         });
+      }
+      // 错误回放成 AI 消息里的 error 段；原始异常不在历史里，刷新后仍是同一句人话 + 编号
+      for (const raw of run.errors ?? []) {
+        const err = parseJson<AgentErrorInfo>(raw);
+        if (err?.message) {
+          segments.push({ kind: 'error', error: err });
+        }
       }
       if (segments.length) {
         restored.push({ id: nextId(), role: 'assistant', segments, status: 'done', runId: run.runId });

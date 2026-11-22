@@ -105,7 +105,7 @@
         @node-drop="onNodeDrop"
       >
         <template #default="{ data }">
-          <span class="tree-node" :title="tipOf(data)">
+          <span class="tree-node" :title="rowTitle(data)" @mouseenter="onRowEnter(data, $event)" @mouseleave="onRowLeave">
             <!-- 链路类叶子（含收藏/最近里的链路条目）统一用确定性字母头像；模板靠分组区分身份 -->
             <span
               v-if="isAvatarNode(data)"
@@ -140,7 +140,7 @@
                   type="button"
                   class="tree-node__star"
                   :class="{ 'is-on': data.favorited }"
-                  :title="data.favorited ? '取消收藏' : '收藏'"
+                  :aria-label="data.favorited ? '取消收藏' : '收藏'"
                   @click.stop="toggleFav(data)"
                 >
                   <SvgIcon :icon-class="data.favorited ? 'lucide:star' : 'lucide:star-off'" />
@@ -165,6 +165,9 @@
       @command="onMenuCommand"
       @copy="onCopyCode"
     />
+
+    <!-- 行 hover：复制链路码/组件码 + 加入会话；与选中文字浮层共用同一套气泡 -->
+    <ResourceHoverBubble :controller="hover" />
 
     <!-- 目录编辑抽屉（重命名薄壳）：表单体与新建向导 create tab 共用 DirectoryFormBody（2026-10-21 新建路径已收敛到向导 tab） -->
     <el-drawer
@@ -252,6 +255,9 @@ import type {
 } from '../workbench.types';
 import ResourceTreeContextMenu from './ResourceTreeContextMenu.vue';
 import DirectoryFormBody from '../panel/DirectoryFormBody.vue';
+import ResourceHoverBubble from '@/views/databus/workbench/ai/ResourceHoverBubble.vue';
+import { useResourceHover } from '@/views/databus/workbench/ai/useResourceHover';
+import type { HoverResourceAction } from '@/views/databus/workbench/ai/useResourceActions';
 
 defineOptions({ name: 'ResourceTree' });
 
@@ -298,6 +304,57 @@ const keyword = ref('');
 const { groups } = useComponentTaxonomy();
 const { favorites, reload: reloadFavorites, isFavorited, add: addFav, remove: removeFav } =
   useFavorites();
+
+/* ---------------- 行 hover：复制编码 / 加入会话 ---------------- */
+
+const hover = useResourceHover();
+
+/**
+ * 行 → 可引用资源：按资源身份字段判断，而不是按节点类型，
+ * 这样目录树叶子、我的收藏、最近访问、系统组件、市场引用都走同一套。
+ */
+function resourceActionOf(node: ResourceTreeNode | null): HoverResourceAction | null {
+  if (!node) {
+    return null;
+  }
+  const chainCode = node.chainCode?.trim();
+  if (node.chainId != null && chainCode) {
+    return {
+      type: DATABUS_RESOURCE_TYPE_CHAIN,
+      id: node.chainId,
+      code: chainCode,
+      name: node.label,
+      codeLabel: '链路码'
+    };
+  }
+  const componentCode = node.componentCode?.trim();
+  if (componentCode) {
+    return {
+      type: DATABUS_RESOURCE_TYPE_COMPONENT,
+      id: node.dbId ?? undefined,
+      code: componentCode,
+      name: node.label,
+      codeLabel: '组件码'
+    };
+  }
+  return null;
+}
+
+function onRowEnter(node: ResourceTreeNode, event: MouseEvent): void {
+  hover.enter(resourceActionOf(node), event);
+}
+
+/**
+ * 行原生 title：有 hover 卡的资源叶不再挂，避免浏览器黑色 tooltip 和卡片叠两层；
+ * 目录/容器没有卡，继续用 title 补全被截断的名称与提示。
+ */
+function rowTitle(node: ResourceTreeNode): string | undefined {
+  return resourceActionOf(node) ? undefined : tipOf(node);
+}
+
+function onRowLeave(): void {
+  hover.leave();
+}
 
 /** el-tree 实例的最小结构化类型（避免深路径 import 内部类型） */
 interface TreeInstance {

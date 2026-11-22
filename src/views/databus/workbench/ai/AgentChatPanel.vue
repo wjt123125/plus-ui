@@ -13,12 +13,14 @@
       <div v-for="(m, i) in messages" :key="m.id" class="agent-chat__row" :class="`is-${m.role}`">
         <!-- 系统行：错误提示、画布更新被丢弃等结论性提示 -->
         <div v-if="m.role === 'system'" class="agent-chat__system" :class="{ 'is-error': isErrorNotice(m) }">
-          <SvgIcon
-            v-if="isErrorNotice(m)"
-            class="agent-chat__system-icon"
-            icon-class="lucide:circle-alert"
-          />
-          <span class="agent-chat__system-text">{{ noticeText(m) }}</span>
+          <span class="agent-chat__system-text">
+            <SvgIcon
+              v-if="isErrorNotice(m)"
+              class="agent-chat__system-icon"
+              icon-class="lucide:circle-alert"
+            />
+            <span class="agent-chat__system-body">{{ noticeText(m) }}</span>
+          </span>
         </div>
         <!-- 用户消息：原样纯文本，不解析 Markdown -->
         <div v-else-if="m.role === 'user'" class="agent-chat__col agent-chat__col--user">
@@ -27,23 +29,26 @@
             data-context-type="chat"
             :data-context-anchor="`msg-${m.id}`"
           >
-            <div v-if="m.refs?.length" class="agent-chat__refs is-bubble">
+            <!-- 整件资源引用：芯片形态与输入区一致，点击交给宿主跳转资源 -->
+            <div v-if="attachmentsOf(m.id).resources.length" class="agent-chat__refs is-bubble">
               <span
-                v-for="r in m.refs"
-                :key="`${r.type}-${r.id ?? r.code}`"
+                v-for="c in attachmentsOf(m.id).resources"
+                :key="c.id"
                 class="agent-chat__ref"
-                :style="{ '--ref-color': refMeta(r.type).color }"
-                :title="`打开${refMeta(r.type).label}：${r.name}`"
-                @click="openRef(r)"
+                :style="{ '--ref-color': refMeta(c.type).color }"
+                @mouseenter="onChipHoverEnter(c, $event)"
+                @mouseleave="chipHover.leave"
+                @click="openResourceDetail(c, $event)"
               >
-                <SvgIcon class="agent-chat__ref-icon" :icon-class="refMeta(r.type).icon" />
-                <span class="agent-chat__ref-name">{{ r.name }}</span>
+                <SvgIcon class="agent-chat__ref-icon" :icon-class="refMeta(c.type).icon" />
+                <span class="agent-chat__ref-name">{{ c.title }}</span>
+                <span v-if="c.note" class="agent-chat__ref-note">· {{ c.note }}</span>
               </span>
             </div>
             <!-- 上下文卡与正文同处一行内流：像 span 一样挨着文字，不单独占一行 -->
-            <p v-if="textOf(m) || m.contexts?.length" class="agent-chat__text">
+            <p v-if="textOf(m) || attachmentsOf(m.id).excerpts.length" class="agent-chat__text">
               <AgentContextCard
-                v-for="(c, ci) in m.contexts || []"
+                v-for="(c, ci) in attachmentsOf(m.id).excerpts"
                 :key="c.id"
                 :item="c"
                 :index="ci + 1"
@@ -73,7 +78,6 @@
           </div>
           <div
             class="agent-chat__bubble"
-            :class="{ 'is-error': m.status === 'error' }"
             data-context-type="chat"
             :data-context-anchor="`msg-${m.id}`"
           >
@@ -82,9 +86,33 @@
               <ThinkingBlock
                 v-if="seg.kind === 'thinking'"
                 :text="seg.text"
-                :streaming="m.status === 'streaming' && !hasText(m)"
+                :streaming="isLiveThinking(m, i)"
                 @toggle="pauseFollowing"
               />
+              <!-- 当前阶段：一条可变状态行，进行中白光胶囊，结束后收成一句，可展开看明细 -->
+              <AgentStageLine v-else-if="seg.kind === 'stage'" :stage="seg" @toggle="pauseFollowing" />
+              <!-- 错误：红图标 + 红文案；编号挂在图标上（hover 显示、点击复制），不占第二行 -->
+              <div v-else-if="seg.kind === 'error'" class="agent-chat__error">
+                <p class="agent-chat__error-text">
+                  <el-tooltip
+                    v-if="seg.error.referenceId"
+                    :content="t('ai.error.referenceCopy', { ref: seg.error.referenceId })"
+                    placement="top"
+                    :show-after="200"
+                  >
+                    <button
+                      type="button"
+                      class="agent-chat__error-icon"
+                      :aria-label="t('ai.error.reference', { ref: seg.error.referenceId })"
+                      @click="copyErrorRef(seg.error)"
+                    >
+                      <SvgIcon icon-class="lucide:circle-alert" />
+                    </button>
+                  </el-tooltip>
+                  <SvgIcon v-else class="agent-chat__error-icon is-static" icon-class="lucide:circle-alert" />
+                  <span>{{ seg.error.message }}</span>
+                </p>
+              </div>
               <p v-else-if="seg.kind === 'notice'" class="agent-chat__notice">{{ seg.text }}</p>
               <component
                 :is="cardViewOf(seg.card.kind)"
@@ -258,7 +286,7 @@
             v-else
             type="button"
             class="agent-chat__send"
-            :disabled="!draft.trim() && !refs.length && !contexts.length"
+            :disabled="!draft.trim() && !contexts.length"
             @click="submit"
           >
             <SvgIcon icon-class="lucide:send-filled" />
@@ -267,12 +295,16 @@
       </div>
     </div>
 
-    <!-- 卡片详情：引文 / 改评论 / 跳回原处（定位与闪烁由全局选区浮层承接） -->
+    <!-- 历史消息里的资源芯片：hover 出同一张卡，可复制编码或重新加入当前会话 -->
+    <ResourceHoverBubble :controller="chipHover" />
+
+    <!-- 卡片详情：改评论，再决定是否跳转（消息原位 / 链路、组件、连接器包） -->
     <ContextDetailDialog
       v-model:visible="detailVisible"
       :item="detailItem"
       :anchor="detailAnchor"
-      @reveal="revealContext"
+      :jump-label="detailJumpLabel"
+      @jump="onDetailJump"
     />
   </div>
 </template>
@@ -283,33 +315,40 @@
  *
  * 会话状态在 useAgentChat、附件暂存在 useAgentContext（按 conversationId 分桶，
  * 收起侧栏不丢，切会话各看各的）。
- * SnailAI 不可达或流断开时，错误以系统行呈现。
+ * SnailAI 不可达或流断开时，错误作为 AI 消息里的 `error` 段呈现，不再是系统告警行。
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useStickToBottom } from '@/hooks/scroll/useStickToBottom';
 import { getAgentApprovalMode, listAgentHistory, rollbackRun, updateAgentApprovalMode } from '@/api/databus/agent';
-import type { AgentApprovalMode, AgentCard, AgentCardOption } from '@/api/databus/agent/types';
+import type { AgentApprovalMode, AgentCard, AgentCardOption, AgentErrorInfo } from '@/api/databus/agent/types';
 import { useLucideSubset } from '../composables/useLucideSubset';
 import { AGENT_APPROVAL_MODE, AGENT_RUN_STATUS } from '@/constants/databus';
 import { DATABUS_CARD_ACTION_CANCEL, DATABUS_CARD_KIND_CHOICE, DATABUS_CARD_KIND_REF } from '@/constants/databus-common';
 import { cardViewOf } from './agentCardRegistry';
 import AgentContextCard from './AgentContextCard.vue';
 import ContextDetailDialog from './ContextDetailDialog.vue';
+import ResourceHoverBubble from './ResourceHoverBubble.vue';
+import { useResourceHover } from './useResourceHover';
+import type { HoverResourceAction } from './useResourceActions';
 import MarkdownBlock from './MarkdownBlock.vue';
 import MessageActionBar from './MessageActionBar.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
+import AgentStageLine from './AgentStageLine.vue';
 import type { MessageActionDeps } from './messageActions';
 import { useAgentChat, type AgentChatMessage } from './useAgentChat';
 import { useAgentContext } from './useAgentContext';
-import { useAgentRefs, type AgentRefItem } from './useAgentRefs';
+import { agentRefOf, type AgentRefItem } from './useAgentRefs';
 import AgentComposer, { type ComposerChip } from './AgentComposer.vue';
 import { refMeta } from './agentRefTypes';
-import type { AgentContextItem, AgentContextSource } from './contextTypes';
+import { isResourceContext, type AgentContextItem, type AgentContextSource } from './contextTypes';
 
 defineOptions({ name: 'AgentChatPanel' });
 
 useLucideSubset();
+
+const { t } = useI18n();
 
 /** 宿主传入的「当前草稿组件编码」：卡片播放钮据此判断，历史卡片缺 draft 字段也能露出 */
 defineProps<{
@@ -349,16 +388,44 @@ const {
   revertTurn
 } = useAgentChat();
 
-/** 引用卡：只暂存在本面板，发出去即清空；回退时把该轮提问带的卡放回暂存区 */
-const { refs, addRef, removeRef, clearRefs } = useAgentRefs();
-
-/** 上下文附件：划字摘录与画布资源共用一份暂存，发送时整批带出去 */
+/** 上下文附件：划字摘录与整件资源共用一份暂存，发送时整批带出去 */
 const { contexts, addContext, removeContext, clearContexts, clearBadges } = useAgentContext();
 
-/** 输入区已有卡片/引用时不再提示「@ 添加上下文」——它们本身就是已输入的内容 */
+/** 输入区已有卡片时不再提示「@ 添加上下文」——它们本身就是已输入的内容 */
 const inputPlaceholder = computed(() =>
-  contexts.value.length || refs.value.length ? '' : '@ 添加上下文，/ 使用命令和技能'
+  contexts.value.length ? '' : '@ 添加上下文，/ 使用命令和技能'
 );
+
+/* ---------------- 历史消息里的资源芯片：hover 操作卡 ---------------- */
+
+const chipHover = useResourceHover();
+
+/** 资源类型 → 复制按钮文案；未注册类型只说「编码」，不编造中文名 */
+const RESOURCE_CODE_LABEL: Record<string, string> = {
+  chain: '链路码',
+  component: '组件码',
+  connector: '连接器码'
+};
+
+/** 历史附件 → hover 资源；只有整件资源芯片可操作，文字摘录不挂 */
+function chipResourceOf(item: AgentContextItem | null): HoverResourceAction | null {
+  if (!item || !isResourceContext(item)) {
+    return null;
+  }
+  return {
+    type: item.type,
+    id: item.payload?.id,
+    code: item.payload?.code,
+    name: item.title,
+    codeLabel: RESOURCE_CODE_LABEL[item.type] ?? '编码',
+    connectorType: item.payload?.connectorType,
+    connectorVersion: item.payload?.connectorVersion
+  };
+}
+
+function onChipHoverEnter(item: AgentContextItem, event: MouseEvent): void {
+  chipHover.enter(chipResourceOf(item), event);
+}
 
 /**
  * 悬浮选择卡：待选的选择卡从消息流抽出来，整块顶替输入区。
@@ -379,48 +446,26 @@ const floatingCard = computed(() => {
   return null;
 });
 
-/** 引用卡与上下文卡统一成行内 token；顺序即输入框里的显示顺序 */
-const composerChips = computed<ComposerChip[]>(() => [
-  ...refs.value.map((r) => ({
-    key: `ref:${r.type}:${r.id ?? r.code ?? r.name}`,
-    kind: 'ref' as const,
-    label: `@${r.name}`,
-    title: `打开${refMeta(r.type).label}：${r.name}`
-  })),
-  ...contexts.value.map((c, ci) => ({
+/** 所有附件统一成同一种行内卡：序号 + 标题 + 可选评论，顺序即加入顺序 */
+const composerChips = computed<ComposerChip[]>(() =>
+  contexts.value.map((c, ci) => ({
     key: `ctx:${c.id}`,
-    kind: 'ctx' as const,
-    // 标题和评论分开传：卡片整体仍是一个长度上限，但会优先保证评论露出开头
     label: `${ci + 1}. ${c.title}`,
-    note: c.note || undefined,
-    title: c.note ? `${c.title}\n评论：${c.note}` : c.title
+    // 标题和评论分开传：卡片整体仍是一个长度上限，但会优先保证评论露出开头
+    note: c.note || undefined
   }))
-]);
+);
 
-/** 卡片删除：key 反查回源数组，refs 与 contexts 各清各的 */
+/** 卡片删除：key 回查上下文暂存区 */
 function onChipRemove(key: string) {
-  if (key.startsWith('ref:')) {
-    const ref = refs.value.find((r) => `ref:${r.type}:${r.id ?? r.code ?? r.name}` === key);
-    if (ref) {
-      removeRef(ref);
-    }
-    return;
-  }
   const context = contexts.value.find((c) => `ctx:${c.id}` === key);
   if (context) {
     removeContext(context);
   }
 }
 
-/** 点卡片本体：引用卡交给宿主跳转，上下文卡就地开详情浮层（锚点用卡片自身） */
+/** 点卡片本体：统一开详情浮层（改评论 + 再决定是否跳转），锚点用卡片自身 */
 function onChipOpen({ key, anchor }: { key: string; anchor: HTMLElement }) {
-  if (key.startsWith('ref:')) {
-    const ref = refs.value.find((r) => `ref:${r.type}:${r.id ?? r.code ?? r.name}` === key);
-    if (ref) {
-      openRef(ref);
-    }
-    return;
-  }
   const context = contexts.value.find((c) => `ctx:${c.id}` === key);
   if (context) {
     openContext(context, anchor);
@@ -439,14 +484,92 @@ function openContext(item: AgentContextItem, anchor?: HTMLElement) {
   detailVisible.value = true;
 }
 
+/**
+ * 浮层对应的条目是否还存在（暂存区或已发消息里）：
+ * 卡片被删（输入区叉号、清空暂存、删除整轮消息）后浮层必须跟着收，
+ * 否则会挂在一张已经不存在的卡上继续允许改评论。
+ */
+const detailItemExists = computed(() => {
+  const id = detailItem.value?.id;
+  if (!id) {
+    return false;
+  }
+  if (contexts.value.some((c) => c.id === id)) {
+    return true;
+  }
+  return messages.value.some((m) => (m.contexts ?? []).some((c) => c.id === id));
+});
+
+watch(detailItemExists, (exists) => {
+  if (!exists) {
+    detailVisible.value = false;
+    detailItem.value = null;
+  }
+});
+
+/**
+ * 详情浮层底部按钮：
+ * - 整件资源按类型给「打开链路 / 查看组件 / 打开连接器包」；
+ * - 文字摘录只有带来源锚点时才给「跳转到消息」。
+ */
+const detailJumpLabel = computed(() => {
+  const item = detailItem.value;
+  if (!item) {
+    return '';
+  }
+  if (isResourceContext(item)) {
+    return refMeta(item.type).openLabel;
+  }
+  return item.source?.anchor ? '跳转到消息' : '';
+});
+
+/** 浮层跳转：资源交宿主打开，摘录回原处并闪选中的那段文字 */
+function onDetailJump(text: string): void {
+  const item = detailItem.value;
+  if (!item) {
+    return;
+  }
+  if (isResourceContext(item)) {
+    openRef(agentRefOf(item));
+    return;
+  }
+  if (item.source) {
+    revealContext(item.source, text);
+  }
+}
+
 /** 「去看来处」交给全局选区浮层：它知道怎么按 anchor 定位、滚动并只闪选中那一段 */
 function revealContext(source: AgentContextSource, text: string) {
   window.dispatchEvent(new CustomEvent('databus:context:reveal', { detail: { ...source, text } }));
 }
 
-/** 点引用卡：交给宿主决定开画布还是开详情 */
+/** 点资源引用卡：交给宿主按资源类型决定跳转目标 */
 function openRef(item: AgentRefItem) {
   emit('ref-open', item);
+}
+
+/** 整件资源芯片：先弹详情改评论，再由用户点「打开链路/查看组件」跳转 */
+function openResourceDetail(item: AgentContextItem, event: MouseEvent) {
+  chipHover.close();
+  openContext(item, event.currentTarget as HTMLElement);
+}
+
+/** 同一消息的附件按「资源 / 摘录」分流：模板一次渲染要读多次，先按消息 id 预算好 */
+const EMPTY_ATTACHMENTS = { resources: [] as AgentContextItem[], excerpts: [] as AgentContextItem[] };
+const attachmentsMap = computed(() => {
+  const map = new Map<string, { resources: AgentContextItem[]; excerpts: AgentContextItem[] }>();
+  for (const message of messages.value) {
+    const list = message.contexts ?? [];
+    map.set(message.id, {
+      resources: list.filter(isResourceContext),
+      excerpts: list.filter((c) => !isResourceContext(c))
+    });
+  }
+  return map;
+});
+
+function attachmentsOf(id: string) {
+  return attachmentsMap.value.get(id) ?? EMPTY_ATTACHMENTS;
 }
 
 /** ref 卡只做跳转，不回执；缺资源信息就当普通链接忽略 */
@@ -477,11 +600,11 @@ function onCardPreview(card: AgentCard) {
   });
 }
 
-/** 把某一类段落拼成纯文本（用户气泡、系统行、空态判断都只要这一种；卡片不算文字） */
+/** 把某一类段落拼成纯文本（用户气泡、系统行、空态判断都只要这一种；卡片 / 工具阶段不算文字） */
 function segmentText(message: AgentChatMessage, kind: 'text' | 'thinking' | 'notice'): string {
   return message.segments
     .filter((s) => s.kind === kind)
-    .map((s) => (s.kind === 'card' ? '' : s.text))
+    .map((s) => (s.kind === 'text' || s.kind === 'thinking' || s.kind === 'notice' ? s.text : ''))
     .join('');
 }
 
@@ -501,6 +624,29 @@ const textMap = computed(() => {
 const textOf = (message: AgentChatMessage) => textMap.value.get(message.id) ?? '';
 const noticeText = (message: AgentChatMessage) => segmentText(message, 'notice');
 const hasText = (message: AgentChatMessage) => textOf(message).length > 0;
+
+/**
+ * 思考块只有「最后一个 segment 仍是思考」时才在扫光：
+ * 一旦出现正文 / 阶段 / 卡片，思考阶段已经结束。
+ */
+function isLiveThinking(message: AgentChatMessage, index: number): boolean {
+  return message.status === 'streaming'
+    && !hasText(message)
+    && index === message.segments.length - 1;
+}
+
+/** 错误图标点击：复制参考编号，供用户发给支持人员 */
+async function copyErrorRef(error: AgentErrorInfo): Promise<void> {
+  if (!error.referenceId) {
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(error.referenceId);
+    ElMessage.success(t('ai.error.copied'));
+  } catch {
+    ElMessage.warning(t('ai.error.copyFailed'));
+  }
+}
 /** 系统行里的错误提示（连接断开等）单独用警示色，与普通提示区分 */
 const isErrorNotice = (message: AgentChatMessage) =>
   message.segments.some((s) => s.kind === 'notice' && s.eventCode === 'error');
@@ -559,14 +705,12 @@ watch(floatingCard, (card) => {
   }
 });
 
-/** 把引用与上下文整批带出去；只选附件不打字也允许发 */
-function sendWithRefs(text: string) {
-  const picked = [...refs.value];
-  const pickedContexts = [...contexts.value];
+/** 把上下文整批带出去；只选附件不打字也允许发 */
+function sendWithContexts(text: string) {
+  const picked = [...contexts.value];
   draft.value = '';
-  clearRefs();
   clearContexts();
-  void send(text.trim(), picked, undefined, pickedContexts);
+  void send(text.trim(), picked);
 }
 
 /** 拆分按钮的作用域：本次执行不切档，另两档先改会话审批再放行 */
@@ -659,7 +803,7 @@ function pickSuggestion(text: string) {
   if (running.value || !text.trim()) {
     return;
   }
-  sendWithRefs(text);
+  sendWithContexts(text);
   // 发出去就是要看最新，显式恢复跟随（与上滑暂停区分开）
   toLatest();
   // 点完建议把光标交回输入框，接着打字不用再点一次
@@ -667,10 +811,10 @@ function pickSuggestion(text: string) {
 }
 
 function submit() {
-  if (running.value || (!draft.value.trim() && !refs.value.length && !contexts.value.length)) {
+  if (running.value || (!draft.value.trim() && !contexts.value.length)) {
     return;
   }
-  sendWithRefs(draft.value);
+  sendWithContexts(draft.value);
   toLatest();
 }
 
@@ -750,14 +894,13 @@ async function confirmDestructive(message: string, title: string, confirmText: s
 
 /**
  * 回退成功后把这一轮提问原样放回输入框：
- * 正文回填、引用卡与上下文卡回到暂存区。已有输入不覆盖，避免冲掉用户正在写的字。
+ * 正文回填、上下文卡（含整件资源）回到暂存区。已有输入不覆盖，避免冲掉用户正在写的字。
  */
 function restorePrompt(question: AgentChatMessage) {
   const text = segmentText(question, 'text');
   if (text && !draft.value.trim()) {
     draft.value = text;
   }
-  question.refs?.forEach((ref) => addRef(ref));
   question.contexts?.forEach((item) => addContext(item));
   void nextTick(() => inputRef.value?.focus());
 }
@@ -894,6 +1037,7 @@ defineExpose({ newSession });
   /* 引用类型色：新增类型在 agentRefTypes.ts 注册，这里补一个同名变量即可 */
   --db-ref-chain: #5457d6;
   --db-ref-component: #0f8f6f;
+  --db-ref-connector: #a371f7;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1212,13 +1356,6 @@ defineExpose({ newSession });
     border-radius: 12px;
     background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
   }
-
-  &.is-error {
-    padding: 9px 12px;
-    border-radius: 12px;
-    background: var(--el-color-danger-light-9, #fef0f0);
-    color: var(--el-color-danger, #f56c6c);
-  }
 }
 
 /* 段内提示（工具事件、能力限制）：比正文更轻，靠色阶和字号区分 */
@@ -1227,6 +1364,68 @@ defineExpose({ newSession });
   font-size: var(--db-fs-xs, 11px);
   line-height: 1.6;
   color: var(--db-ink-muted, #6e6e73);
+}
+
+/* 错误段：红图标 + 红文案，行内排版；编号挂在图标上，不占第二行 */
+.agent-chat__error {
+  margin: 0 0 8px;
+}
+
+.agent-chat__error-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--db-red, #ff3b30);
+  word-break: break-word;
+}
+
+/* 图标与文字同为 13px、同一颜色；盒子高度对齐首行行高，内部居中 */
+.agent-chat__error-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 1.75em;
+  margin-right: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  vertical-align: top;
+  cursor: pointer;
+}
+
+/* 悬停底色单独画一个圆，避免 18×行高 的盒子被拉成椭圆 */
+.agent-chat__error-icon::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 18px;
+  height: 18px;
+  margin: auto;
+  border-radius: 50%;
+  background: transparent;
+  transition: background-color 0.15s;
+  pointer-events: none;
+}
+
+.agent-chat__error-icon:hover::before,
+.agent-chat__error-icon:focus-visible::before {
+  background: rgba(255, 59, 48, 0.12);
+}
+
+.agent-chat__error-icon:focus-visible {
+  outline: none;
+}
+
+.agent-chat__error-icon.is-static {
+  cursor: default;
+}
+
+.agent-chat__error-icon.is-static:hover::before {
+  background: transparent;
 }
 
 .agent-chat__text {
@@ -1285,44 +1484,41 @@ defineExpose({ newSession });
   }
 }
 
-/* 系统行：整行浅底提示条，左对齐读得清；错误另用警示色并补图标 */
+/* 系统行：左侧细引导线 + 文案，宽度随内容，不做整行填充 */
 .agent-chat__system {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin: 10px 0;
-  font-size: var(--db-fs-xs, 11px);
+  max-width: 100%;
+  margin: 8px 0;
+  font-size: var(--db-fs-sm, 12px);
   line-height: 1.65;
   color: var(--db-ink-muted, #6e6e73);
 
   &.is-error {
-    color: var(--el-color-danger, #f56c6c);
+    color: var(--db-red, #ff3b30);
   }
+}
+
+.agent-chat__system-text {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 100%;
+  padding: 1px 0 1px 10px;
+  border-left: 2px solid var(--db-rule, rgba(60, 60, 67, 0.12));
+}
+
+.agent-chat__system.is-error .agent-chat__system-text {
+  border-left-color: var(--db-red, #ff3b30);
 }
 
 .agent-chat__system-icon {
   flex: none;
-  margin-top: 8px;
-  font-size: 13px;
+  margin-top: 2px;
+  font-size: 12px;
 }
 
-.agent-chat__system-text {
-  flex: 1;
+.agent-chat__system-body {
   min-width: 0;
-  padding: 6px 10px;
-  border-radius: var(--db-r-tag);
-  background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
   word-break: break-word;
-}
-
-.agent-chat__system.is-error .agent-chat__system-icon {
-  margin-top: 8px;
-}
-
-.agent-chat__system.is-error .agent-chat__system-text {
-  background: var(--el-color-danger-light-9, #fef0f0);
 }
 
 .agent-chat__input {
@@ -1592,6 +1788,17 @@ defineExpose({ newSession });
   white-space: nowrap;
 }
 
+/* 资源卡的评论：与标题同一行，标题先让位，评论始终露出开头 */
+.agent-chat__ref-note {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 72px;
+  overflow: hidden;
+  color: var(--db-ink-muted, #6e6e73);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agent-chat__toolbar {
   display: flex;
   align-items: center;
@@ -1704,13 +1911,14 @@ defineExpose({ newSession });
   }
 
   &.is-stop {
-    /* 运行中必须留住实底，否则只剩一个孤立方块，看起来像按钮"淡掉了" */
-    background: var(--db-ink, #1c1c1e);
-    /* 内描边取 currentColor：明暗主题共用一条规则 */
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 48%, transparent);
+    /* 运行中必须留住实底，否则只剩一个孤立方块，看起来像按钮"淡掉了"；
+       黑白主题下取亮色（白底 + 黑方块），不用墨底 + 内发光——那层描边就是塑料感的来源 */
+    background: var(--db-surface-solid, #ffffff);
+    color: var(--db-ink, #1c1c1e);
+    box-shadow: inset 0 0 0 1px var(--db-rule-strong, rgba(60, 60, 67, 0.24));
 
     &:hover {
-      background: var(--db-ink-secondary, #3a3a3c);
+      background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
     }
   }
 }

@@ -150,6 +150,12 @@ html.dark .cmp-picker-card__score {
   max-width: 260px;
 }
 
+/* tooltip 内容容器：留白口径与工作台其它浅色浮层一致 */
+.cmp-tip {
+  max-width: 320px;
+  padding: 9px 11px;
+}
+
 /* 全部走 app 主题变量：effect=light 的浮层在 light/dark 下背景由
    element-plus/_popper.scss 统一接管（--app-surface-bg），这里只管文字色，随主题自动换 */
 .cmp-tip__title {

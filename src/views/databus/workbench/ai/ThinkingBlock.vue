@@ -2,7 +2,7 @@
 <template>
   <div class="md-think" :class="{ 'is-open': open, 'is-live': streaming }">
     <button type="button" class="md-think__head" @click="toggle">
-      <span class="md-think__label">{{ label }}</span>
+      <span class="md-think__label" :class="{ 'db-live-chip': streaming }">{{ label }}</span>
       <span class="md-think__chev" />
     </button>
     <div v-if="open" class="md-think__body">{{ text }}</div>
@@ -11,6 +11,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 
 const props = withDefaults(
   defineProps<{
@@ -23,6 +24,9 @@ const props = withDefaults(
 
 /** 展开/收起会让整条消息的高度突变，宿主据此暂停贴底跟随，避免把用户拽回底部 */
 const emit = defineEmits<{ toggle: [open: boolean] }>();
+
+/** 标题是产品 UI 文案，走语言包（唯一出处），不散落在组件里 */
+const { t } = useI18n();
 
 const open = ref(props.streaming);
 const seconds = ref(0);
@@ -72,8 +76,10 @@ onMounted(() => {
 onBeforeUnmount(stopTimer);
 
 const label = computed(() => {
-  if (props.streaming) return '思考中';
-  return seconds.value ? `已深度思考（用时 ${seconds.value} 秒）` : '思考过程';
+  if (props.streaming) return t('ai.thinking.running');
+  return seconds.value
+    ? t('ai.thinking.done', { seconds: seconds.value })
+    : t('ai.thinking.idle');
 });
 </script>
 
@@ -108,18 +114,10 @@ const label = computed(() => {
   text-overflow: ellipsis;
 }
 
+/* 进行中：标题套上全局「运行中标题」胶囊（浅灰底 + 白光扫过），
+   与消息头 DB Copilot、工具阶段标题同一套黑白语言 */
 .md-think.is-live .md-think__label {
-  animation: md-think-breathe 1.6s ease-in-out infinite;
-}
-
-@keyframes md-think-breathe {
-  0%,
-  100% {
-    opacity: 0.55;
-  }
-  50% {
-    opacity: 1;
-  }
+  color: var(--db-ink-secondary, #3a3a3c);
 }
 
 /* 用边框画箭头，不引图标依赖 */

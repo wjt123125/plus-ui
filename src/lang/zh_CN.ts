@@ -61,6 +61,25 @@ export default {
       }
     }
   },
+  // AI 对话面板：思考阶段与工具阶段的 UI 文案（唯一出处）
+  ai: {
+    thinking: {
+      running: '思考中',
+      done: '已深度思考（用时 {seconds} 秒）',
+      idle: '思考过程'
+    },
+    stage: {
+      summary: '已完成 {completed} 个操作',
+      summaryFailed: '共 {completed} 个操作 · {failed} 个失败',
+      failed: '执行失败'
+    },
+    error: {
+      reference: '参考编号：{ref}',
+      referenceCopy: '参考编号：{ref}（点击复制）',
+      copied: '已复制参考编号',
+      copyFailed: '复制失败，请手动记录'
+    }
+  },
   // 导航栏国际化
   navbar: {
     full: '全屏',

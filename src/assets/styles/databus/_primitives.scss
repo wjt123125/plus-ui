@@ -389,6 +389,56 @@
   100% { background-position: -200% 0; }
 }
 
+/* —— 运行中标题（黑白主题）——
+   形态复刻消息头「DB Copilot」胶囊：浅灰底 + 一道白光自右向左扫过。
+   灰底上用白光才看得清「亮」，文字本身不变色，避免墨块/彩色带来的塑料感。 */
+.db-live-chip {
+  position: relative;
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 6px;
+  margin-left: -6px;
+  border-radius: var(--db-r-tag, 7px);
+  background: var(--db-bg-hover, rgba(120, 120, 128, 0.08));
+  overflow: hidden;
+}
+
+.db-live-chip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 36%,
+    #ffffff 50%,
+    rgba(255, 255, 255, 0) 64%
+  );
+  background-size: 240% 100%;
+  background-position: 130% 0;
+  mix-blend-mode: screen;
+  opacity: 0;
+  pointer-events: none;
+  animation: db-live-chip-sweep 2.2s cubic-bezier(0.33, 0, 0.2, 1) infinite;
+}
+
+@keyframes db-live-chip-sweep {
+  0%,
+  12% {
+    opacity: 0;
+    background-position: 130% 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  68%,
+  100% {
+    opacity: 0;
+    background-position: -30% 0;
+  }
+}
+
 /* —— 图标统一规则：SF Symbols 几何，禁止 emoji —— */
 .db-icon {
   width: 20px;

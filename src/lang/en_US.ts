@@ -61,6 +61,25 @@ export default {
       }
     }
   },
+  // AI chat panel: copy for the thinking stage and tool stages (single source)
+  ai: {
+    thinking: {
+      running: 'Thinking',
+      done: 'Thought for {seconds}s',
+      idle: 'Thought process'
+    },
+    stage: {
+      summary: '{completed} actions completed',
+      summaryFailed: '{completed} actions · {failed} failed',
+      failed: 'Failed'
+    },
+    error: {
+      reference: 'Reference: {ref}',
+      referenceCopy: 'Reference: {ref} (click to copy)',
+      copied: 'Reference copied',
+      copyFailed: 'Copy failed, please note it manually'
+    }
+  },
   // 导航栏国际化
   navbar: {
     full: 'Full Screen',

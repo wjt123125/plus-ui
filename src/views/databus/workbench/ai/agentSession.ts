@@ -6,8 +6,8 @@
  * - 输入草稿落 localStorage，切会话、收起侧栏、刷新页面回来都还在；
  * - 空白「新会话」不落会话 id，草稿暂存在 UNSAVED_CONVERSATION_KEY 下，
  *   点新建时清掉，切回历史会话则恢复该会话自己的草稿；
- * - 引用/上下文暂存区（useAgentRefs / useAgentContext）也从这里取当前会话 id，
- *   保持同一套归属，避免循环 import（useAgentChat 依赖 useAgentRefs）。
+ * - 上下文暂存区（useAgentContext）也从这里取当前会话 id，
+ *   保持同一套归属，避免循环 import（useAgentChat 依赖上下文类型）。
  */
 import { computed } from 'vue';
 import { usePersisted } from '../composables/usePersisted';

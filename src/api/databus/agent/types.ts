@@ -52,6 +52,42 @@ export interface AgentCardReply {
   display?: string;
 }
 
+/**
+ * 工具阶段事件（服务端 AgentStepEvent 同构）：只用于就地更新一条阶段行。
+ * 失败原因属于模型诊断信息，不会出现在这里。
+ */
+export interface AgentStepInfo {
+  /** run 内唯一的单次调用 id */
+  stepId: string;
+  /** 工具名（与后端 AgentConstants.TOOL_* 一致），仅排障用 */
+  tool?: string;
+  /** 阶段标题（服务端按工具元数据生成） */
+  title: string;
+  status: 'running' | 'done' | 'failed';
+}
+
+/** 错误类别（与后端 AgentErrorCategory 对应） */
+export type AgentErrorCategory =
+  | 'transient'
+  | 'user_action'
+  | 'config'
+  | 'permission'
+  | 'content'
+  | 'unknown';
+
+/**
+ * 用户可见的统一错误信封（与后端 AgentError 同构）。
+ * 前端只渲染 message / retryable / referenceId，不维护错误码到文案的映射。
+ */
+export interface AgentErrorInfo {
+  code: string;
+  category: AgentErrorCategory;
+  retryable: boolean;
+  retryAfterMs?: number;
+  message: string;
+  referenceId?: string;
+}
+
 /** 附件来源锚点；画布/日志面板按 dataset 约定填入 */
 export interface AgentContextSource {
   assetType?: string;
@@ -143,6 +179,8 @@ export interface AgentRunVo {
   cards?: string[];
   /** 本轮收到的卡片回执 JSON，按 seq 升序；回执落在点选后新建的 run 上，需按 cardId 跨 run 归位 */
   cardReplies?: string[];
+  /** 本轮用户可见错误（脱敏后的 AgentErrorInfo JSON）；刷新后据此还原错误提示 */
+  errors?: string[];
   /** 本轮附件 JSON 字符串（AgentContextItem[]），刷新后据此还原上下文卡 */
   attachments?: string;
   round?: number;

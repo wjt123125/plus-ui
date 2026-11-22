@@ -1,10 +1,11 @@
 /**
  * 会话上下文附件（§22）：暂存区 + 来源角标。
  *
- * 暂存区按 conversationId 分桶（与 useAgentRefs 同策略）：切会话各看各的，切回来还在；
+ * 暂存区按 conversationId 分桶：切会话各看各的，切回来还在；
  * 收起侧栏只是销毁 DOM，模块级状态不丢；刷新后暂存区清空，只保留消息里的 attachments。
  *
- * 选中文字只进暂存区，不立即发送；真正发出去由 AgentChatPanel 把整批 contexts
+ * 上下文条目统一涵盖「划字摘录」与「整件资源引用」（kind 区分）：
+ * 前者带来源角标，后者按引用卡渲染；真正发出去由 AgentChatPanel 把整批 contexts
  * 作为 attachments 交给后端。来源角标只管当次会话，DOM 被重建（Range 断开）后自动隐藏。
  */
 import { computed, reactive, ref } from 'vue';
@@ -37,6 +38,9 @@ export interface ResourceContextInput {
   code?: string;
   name?: string;
   note?: string;
+  /** 连接器专用：包定位身份（type + version） */
+  connectorType?: string;
+  connectorVersion?: string;
 }
 
 /** conversationId → 该会话暂存的上下文附件 */
@@ -165,9 +169,9 @@ function updateNote(item: AgentContextItem | string, note: string): void {
   }
 }
 
-/** 画布右键「加入会话」用：整件资源不截原文，只带主键/编码 */
+/** 画布 / 资源树 / 市场「加入会话」用：整件资源不截原文，只带主键/编码 */
 function resourceContext(input: ResourceContextInput): AgentContextItem {
-  const { type, id, code, name, note } = input;
+  const { type, id, code, name, note, connectorType, connectorVersion } = input;
   const meta = contextMeta(type);
   return {
     id: nextContextId(),
@@ -176,7 +180,7 @@ function resourceContext(input: ResourceContextInput): AgentContextItem {
     title: name || code || meta.label,
     preview: code ? `${meta.label} · ${code}` : meta.label,
     note: note ?? '',
-    payload: { id, code },
+    payload: { id, code, connectorType, connectorVersion },
     fingerprint: `${type}|${id ?? code ?? ''}`
   };
 }

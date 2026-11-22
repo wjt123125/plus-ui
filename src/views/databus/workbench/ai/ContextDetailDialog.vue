@@ -1,6 +1,8 @@
 <!--
   上下文详情浮层（§22.5）：点卡片后就近冒出来（带小三角），不做居中弹窗。
-  只回答「我当初引的是哪段、我写了什么评论」，再给一个跳回原处；类型 / 来源 / 偏移是给 AI 的元信息，不展示。
+  文字摘录展示引文；整件资源展示名称 + #编码。两种都可在原地改评论，
+  底部按钮的文案由父级按资源类型给出（跳转到消息 / 打开链路 / 查看组件 / 打开连接器包），
+  跳转语义留在父级，浮层只负责展示与收集评论。
 -->
 <template>
   <el-popover
@@ -13,7 +15,13 @@
     @update:visible="handleVisibleChange"
   >
     <div v-if="item" class="ctx-detail">
-      <div class="ctx-detail__quote">{{ quote }}</div>
+      <template v-if="resource">
+        <div class="ctx-detail__title">{{ item.title }}</div>
+        <div v-if="code" class="ctx-detail__code">
+          <span class="ctx-detail__hash" aria-hidden="true">#</span>{{ code }}
+        </div>
+      </template>
+      <div v-else class="ctx-detail__quote">{{ quote }}</div>
       <input
         v-model="note"
         class="ctx-detail__note"
@@ -22,8 +30,8 @@
         @blur="saveNote"
         @keydown.enter.prevent="handleVisibleChange(false)"
       />
-      <div v-if="canReveal" class="ctx-detail__foot">
-        <button type="button" class="ctx-detail__jump" @click="handleReveal">跳转到消息</button>
+      <div v-if="jumpLabel" class="ctx-detail__foot">
+        <button type="button" class="ctx-detail__jump" @click="handleJump">{{ jumpLabel }}</button>
       </div>
     </div>
   </el-popover>
@@ -31,7 +39,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import type { AgentContextItem, AgentContextSource } from './contextTypes';
+import { isResourceContext, type AgentContextItem } from './contextTypes';
 import { useAgentContext } from './useAgentContext';
 
 defineOptions({ name: 'ContextDetailDialog' });
@@ -41,12 +49,14 @@ const props = defineProps<{
   item: AgentContextItem | null;
   /** 浮层贴着哪张卡片冒出来；由点卡片的 DOM 事件带进来 */
   anchor: HTMLElement | null;
+  /** 底部跳转按钮文案；空串表示不显示。具体跳到哪由父级决定 */
+  jumpLabel?: string;
 }>();
 
 const emit = defineEmits<{
   'update:visible': [value: boolean];
-  /** 第二个参数是引文原文：回跳时要在目标容器里精确定位这段字，而不是整块闪 */
-  reveal: [source: AgentContextSource, text: string];
+  /** 点了跳转：回传引文原文，父级按资源类型决定是跳消息还是打开资源 */
+  jump: [text: string];
 }>();
 
 const { updateNote } = useAgentContext();
@@ -63,14 +73,15 @@ watch(
   { immediate: true }
 );
 
+/** 整件资源：展示名称 + 编码，不展示引文 */
+const resource = computed(() => (props.item ? isResourceContext(props.item) : false));
+const code = computed(() => props.item?.payload?.code ?? '');
+
 /** 只展示选中的那段；两行截断，原文再长也与用户无关 */
 const quote = computed(() => {
   const payload = props.item?.payload;
   return payload?.text || props.item?.preview || props.item?.title || '';
 });
-
-/** 资源引用没有可跳转的正文位置，就不给这个按钮 */
-const canReveal = computed(() => !!props.item?.source?.anchor);
 
 /**
  * 已发消息里的卡片不在暂存区，updateNote 查不到；
@@ -96,12 +107,12 @@ function handleVisibleChange(value: boolean): void {
   emit('update:visible', value);
 }
 
-function handleReveal(): void {
-  const source = props.item?.source;
-  if (!source) {
+function handleJump(): void {
+  if (!props.item) {
     return;
   }
-  emit('reveal', source, quote.value);
+  saveNote();
+  emit('jump', quote.value);
   handleVisibleChange(false);
 }
 </script>
@@ -111,6 +122,32 @@ function handleReveal(): void {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* 资源标题：与输入框同一套字，最多两行 */
+.ctx-detail__title {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.6;
+  word-break: break-word;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* 资源编码：等宽 + 弱化的 #，与 hover 卡同一口径 */
+.ctx-detail__code {
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--el-text-color-secondary);
+}
+
+.ctx-detail__hash {
+  margin-right: 2px;
+  color: var(--el-text-color-placeholder);
 }
 
 /* 灰色引文：像输入框里的占位提示，只露两行 */

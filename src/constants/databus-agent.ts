@@ -62,3 +62,20 @@ export const AGENT_SSE_ERROR = 'error';
 
 /** 交互卡片：与模型文字同序，data 是 AgentCard 对象而不是字符串 */
 export const AGENT_SSE_CARD = 'card';
+
+/** 工具阶段开始（运行中）：data 是 AgentStepInfo，前端插入一条阶段标题 */
+export const AGENT_SSE_STEP_START = 'step_start';
+
+/** 工具阶段结束（完成 / 失败）：data 是同一 stepId 的终态快照 */
+export const AGENT_SSE_STEP_END = 'step_end';
+
+/* ---------------- 工具阶段状态（AgentStepStatusEnum） ---------------- */
+
+/** 阶段运行中：标题扫光 */
+export const AGENT_STEP_STATUS_RUNNING = 'running';
+
+/** 阶段已完成 */
+export const AGENT_STEP_STATUS_DONE = 'done';
+
+/** 阶段失败 */
+export const AGENT_STEP_STATUS_FAILED = 'failed';

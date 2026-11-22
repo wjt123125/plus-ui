@@ -1,5 +1,5 @@
 <!--
-  会话输入框（contenteditable）：引用卡 / 上下文卡作为行内 token 与正文同处一条文本流，
+  会话输入框（contenteditable）：上下文卡作为行内 token 与正文同处一条文本流，
   卡片可以和文字挨着排在同一行，而不是各占一行；卡片本体不可编辑，点 × 删除、点本体打开详情。
 
   DOM 由本组件命令式维护：文字是 chip 之外的文本节点，卡片是 contenteditable=false 的
@@ -23,12 +23,10 @@
 </template>
 
 <script lang="ts">
-/** 一张行内卡片：key 全局唯一，用来和 refs / contexts 的增删对齐 */
+/** 一张行内卡片：key 全局唯一，用来和 contexts 的增删对齐 */
 export interface ComposerChip {
   key: string;
-  kind: 'ref' | 'ctx';
   label: string;
-  title?: string;
   /** 用户评论：单独占一段，保证长标题也不会把它完全挤掉 */
   note?: string;
 }
@@ -89,10 +87,9 @@ function emitText() {
 /** 卡片在 DOM 里靠 dataset.chip 认领；头部叉号是唯一可点的删除位 */
 function createChip(chip: ComposerChip): HTMLElement {
   const el = document.createElement('span');
-  el.className = `composer__chip is-${chip.kind}`;
+  el.className = 'composer__chip';
   el.dataset.chip = chip.key;
   el.contentEditable = 'false';
-  el.title = chip.title || chip.label;
 
   const head = document.createElement('span');
   head.className = 'composer__chip-head';
@@ -144,7 +141,6 @@ function syncChips() {
     if (note && note.textContent !== noteText) {
       note.textContent = noteText;
     }
-    node.title = chip.title || chip.label;
   });
 
   const missing = props.chips.filter((chip) => !have.has(chip.key));
@@ -335,11 +331,6 @@ defineExpose({ focus: focusEditor });
   background: var(--el-bg-color, #fff);
   vertical-align: middle;
   user-select: none;
-}
-
-.composer :deep(.composer__chip.is-ref) {
-  border-color: var(--el-color-primary-light-7, #a0cfff);
-  background: var(--el-color-primary-light-9, #ecf5ff);
 }
 
 /* 头部：和标签之间有一条分隔线，静止时就能看出「头 / 身体」两段 */

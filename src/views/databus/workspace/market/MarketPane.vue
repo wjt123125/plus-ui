@@ -85,15 +85,22 @@
       <template v-for="g in groups" :key="g.key">
         <div class="mkt__group-title">{{ g.label }}</div>
         <div class="mkt__grid">
-          <article v-for="it in g.items" :key="it.id" class="mkt-card db-float" @click="onCardClick(it)">
+          <article
+            v-for="it in g.items"
+            :key="it.id"
+            class="mkt-card db-float"
+            @click="onCardClick(it)"
+            @mouseenter="onCardEnter(it, $event)"
+            @mouseleave="hover.leave"
+          >
             <SvgIcon
               class="mkt-card__icon"
               :icon-class="itemIcon(it)"
               :style="{ color: it.color || 'var(--el-color-primary)' }"
             />
             <div class="mkt-card__meta">
-              <div class="mkt-card__name" :title="it.name">{{ it.name }}</div>
-              <div class="mkt-card__summary" :title="it.summary">{{ it.summary || it.codeDisplay }}</div>
+              <div class="mkt-card__name">{{ it.name }}</div>
+              <div class="mkt-card__summary">{{ it.summary || it.codeDisplay }}</div>
             </div>
             <div class="mkt-card__aside">
               <!-- 连接器（§15.3）：市场只做消费——安装＝写一条个人安装记录，卸载＝删这条记录，都不改 def 全局启停。
@@ -115,7 +122,6 @@
                     size="small"
                     :type="connectorHealthOf(it).type"
                     effect="plain"
-                    :title="connectorHealthOf(it).reason"
                   >
                     {{ connectorHealthOf(it).label }}
                   </el-tag>
@@ -179,6 +185,9 @@
       </template>
     </div>
 
+    <!-- 卡片 hover：复制组件码/链路码/连接器码 + 加入会话 -->
+    <ResourceHoverBubble :controller="hover" />
+
     <MarketInstallDialog
       v-model:visible="installVisible"
       :item="installItem"
@@ -201,6 +210,9 @@ import { useMarketData, marketNavIntent, showChainInstallResult } from './useMar
 import { connectorDefs, connectorHealthMeta, itemIcon, loadConnectorDefs } from './marketDisplay';
 import MarketInstallDialog from './MarketInstallDialog.vue';
 import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
+import ResourceHoverBubble from '@/views/databus/workbench/ai/ResourceHoverBubble.vue';
+import { useResourceHover } from '@/views/databus/workbench/ai/useResourceHover';
+import type { HoverResourceAction } from '@/views/databus/workbench/ai/useResourceActions';
 
 /** 物料类型段选项 */
 const TYPE_OPTIONS = [
@@ -233,6 +245,43 @@ const emit = defineEmits<{
 
 const market = useMarketData();
 const { categories, loading, activeType, activeChip, ownerCode, groups, installedCounts, mineCounts } = market;
+
+/* ---------------- 卡片 hover：复制编码 / 加入会话 ---------------- */
+
+const hover = useResourceHover();
+
+/** 市场资源类型 → 会话上下文类型；复制的是卡片上展示的编码 */
+const MARKET_CONTEXT_TYPE: Record<string, { type: string; codeLabel: string }> = {
+  [MARKET_RESOURCE_TYPE.CHAIN]: { type: 'chain', codeLabel: '链路码' },
+  [MARKET_RESOURCE_TYPE.COMPONENT]: { type: 'component', codeLabel: '组件码' },
+  [MARKET_RESOURCE_TYPE.CONNECTOR]: { type: 'connector', codeLabel: '连接器码' }
+};
+
+function marketResourceActionOf(item: DatabusMarketItemVo | null): HoverResourceAction | null {
+  if (!item) {
+    return null;
+  }
+  const meta = MARKET_CONTEXT_TYPE[item.resourceType];
+  const code = item.codeDisplay?.trim();
+  if (!meta || !code) {
+    return null;
+  }
+  const connector = item.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR;
+  return {
+    type: meta.type,
+    id: item.sourceId,
+    code,
+    name: item.name,
+    codeLabel: meta.codeLabel,
+    // 连接器包的身份是 type + version，点击引用卡时宿主据此开包详情
+    connectorType: connector ? (connectorTypeOf(item) ?? undefined) : undefined,
+    connectorVersion: connector ? item.version : undefined
+  };
+}
+
+function onCardEnter(item: DatabusMarketItemVo, event: MouseEvent): void {
+  hover.enter(marketResourceActionOf(item), event);
+}
 
 /** 切类型：沿用 market.switchType（重置 chip/关键词并重拉） */
 function onTypeChange(value: string | number) {

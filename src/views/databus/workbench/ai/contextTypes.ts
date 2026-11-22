@@ -1,8 +1,9 @@
 /**
  * 会话上下文附件（§22）：前后端共用的数据契约 + 类型名注册表。
  *
- * 附件单独走 attachments 字段，不拼进正文；新增一种可引用物只在这里补一条中文名，
- * 卡片/气泡/角标都按同一套模板渲染，不按类型换外观。
+ * 附件单独走 attachments 字段，不拼进正文；新增一种可引用物只在这里补一条中文名。
+ * 展示按 kind 分流：resource＝整件资源引用卡，excerpt＝带序号的文字上下文卡；
+ * 同一 kind 内不再按 type 换外观。
  */
 export type AgentContextKind = 'excerpt' | 'resource';
 
@@ -29,6 +30,9 @@ export interface AgentContextPayload {
   truncated?: boolean;
   id?: number | string;
   code?: string;
+  /** 连接器跳转所需：type 是定义类型，version 是包版本（二者才是连接器包的定位身份） */
+  connectorType?: string;
+  connectorVersion?: string;
 }
 
 export interface AgentContextItem {
@@ -55,6 +59,7 @@ type AgentContextType =
   | 'compile-error'
   | 'chain'
   | 'component'
+  | 'connector'
   | 'chat';
 
 export interface AgentContextMeta {
@@ -69,6 +74,7 @@ const CONTEXT_TYPES: Record<AgentContextType, AgentContextMeta> = {
   'compile-error': { label: '编译报错' },
   chain: { label: '链路' },
   component: { label: '组件' },
+  connector: { label: '连接器' },
   chat: { label: '会话消息' }
 };
 
@@ -77,4 +83,12 @@ const FALLBACK: AgentContextMeta = { label: '上下文' };
 
 export function contextMeta(type: string): AgentContextMeta {
   return CONTEXT_TYPES[type as AgentContextType] ?? FALLBACK;
+}
+
+/**
+ * 整件资源引用（链路 / 组件 / 连接器）：输入区与消息里按「引用卡」渲染，点击跳转资源；
+ * 其余 kind 都是文字摘录，按带序号的上下文卡渲染。
+ */
+export function isResourceContext(item: AgentContextItem): boolean {
+  return item.kind === 'resource';
 }

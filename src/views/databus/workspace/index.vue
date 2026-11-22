@@ -230,7 +230,8 @@ import AgentChatPanel from '@/views/databus/workbench/ai/AgentChatPanel.vue';
 import ContextSelectionBubble from '@/views/databus/workbench/ai/ContextSelectionBubble.vue';
 import AiHistoryRail from '@/views/databus/workbench/ai/AiHistoryRail.vue';
 import { HISTORY_MAX_WIDTH, HISTORY_MIN_WIDTH, useAiSessionHistory } from '@/views/databus/workbench/ai/useAiSessionHistory';
-import { useAgentRefs, type AgentRefItem } from '@/views/databus/workbench/ai/useAgentRefs';
+import { type AgentRefItem } from '@/views/databus/workbench/ai/useAgentRefs';
+import { useAgentContext } from '@/views/databus/workbench/ai/useAgentContext';
 import { useAgentChat } from '@/views/databus/workbench/ai/useAgentChat';
 import type { AiSession } from '@/views/databus/workbench/ai/ai.types';
 import { useAgentPush } from '@/views/databus/workbench/ai/useAgentPush';
@@ -689,7 +690,7 @@ function continueAfterDraftAdopted(payload: {
     appendSystem(awayText, undefined, ownerConversationId);
     return;
   }
-  void send('', undefined, undefined, undefined, systemEvent);
+  void send('', undefined, undefined, systemEvent);
 }
 
 /** 草稿采纳成功：关审阅 tab、刷台账/树，再开该组件详情 tab 看生效结果（Pane 已提示成功） */
@@ -731,7 +732,7 @@ function continueAfterDraftRejected(payload: { id: number | string; componentCod
     appendSystem(`组件草稿「${payload.componentCode}」已被拒绝；回到该会话后助手会继续。`, undefined, ownerConversationId);
     return;
   }
-  void send('', undefined, undefined, undefined, systemEvent);
+  void send('', undefined, undefined, systemEvent);
 }
 
 /** 草稿拒绝成功：草稿行已物理删除，关 tab、清最近访问并刷台账/树（Pane 已提示成功） */
@@ -1068,7 +1069,7 @@ function onHistorySearch(keyword: string) {
 }
 
 /**
- * AI 对话里点引用卡：链路开画布 tab，组件开详情 tab。
+ * AI 对话里点引用卡：链路开画布 tab、组件开详情 tab、连接器开包详情 tab。
  * 组件只带 code 时按台账反查，查不到（如未登记的内置件）只提示、不跳转。
  */
 function onAgentRefOpen(item: AgentRefItem) {
@@ -1078,6 +1079,14 @@ function onAgentRefOpen(item: AgentRefItem) {
       return;
     }
     openChainCanvas(item.id, item.name);
+    return;
+  }
+  if (item.type === 'connector') {
+    if (!item.connectorType || !item.connectorVersion) {
+      ElMessage.info(`连接器「${item.name}」缺少版本信息，暂无法打开包详情`);
+      return;
+    }
+    wb.openConnectorPackage(item.connectorType, item.connectorVersion);
     return;
   }
   void openComponentRef(item);
@@ -1195,8 +1204,8 @@ const {
   pinSession,
   removeSession
 } = useAgentChat();
-/** 引用卡：右键「加入会话」只暂存引用，发消息时由对话面板拼进问题 */
-const { addRef } = useAgentRefs();
+/** 资源「加入会话」：只暂存为上下文附件，发消息时由对话面板整批带出 */
+const { addContext, resourceContext } = useAgentContext();
 
 // 历史栏首屏数据：进工作台先拉一次会话列表（失败就走空态，不阻塞工作台）
 void refreshSessions();
@@ -1350,25 +1359,26 @@ function openResourceNode(node: ResourceTreeNode) {
 }
 
 /**
- * 右键「加入会话」：往引用卡里塞一条，不直接发消息。
+ * 右键「加入会话」：与 hover 气泡走同一条路——整件资源进上下文暂存区，不直接发消息。
  * 链路给 chainId，自建组件给 dbId，系统内置件没有 DB 行就只给 componentCode。
  */
 function addNodeToAgent(node: ResourceTreeNode) {
-  const ref = toAgentRef(node);
-  if (!ref) {
+  const item = treeResourceContext(node);
+  if (!item) {
     return;
   }
-  addRef(ref);
-  ElMessage.success(`已加入会话引用：${ref.name}`);
+  addContext(item);
+  ElMessage.success(`已加入会话：${item.title}`);
 }
 
-/** 树节点 → 引用卡条目；没有可引用主键/编码时返回 null */
-function toAgentRef(node: ResourceTreeNode): AgentRefItem | null {
+/** 树节点 → 上下文附件；没有可引用主键/编码时返回 null */
+function treeResourceContext(node: ResourceTreeNode) {
   if (node.type === DATABUS_RESOURCE_TYPE_CHAIN) {
     const chainId = nodeChainId(node);
-    return chainId == null
-      ? null
-      : { type: DATABUS_RESOURCE_TYPE_CHAIN, id: chainId, code: node.chainCode, name: node.label };
+    if (chainId == null) {
+      return null;
+    }
+    return resourceContext({ type: DATABUS_RESOURCE_TYPE_CHAIN, id: chainId, code: node.chainCode, name: node.label });
   }
   if (node.type !== DATABUS_RESOURCE_TYPE_COMPONENT && node.type !== DATABUS_RESOURCE_TYPE_SYSTEM_LEAF && node.type !== DATABUS_RESOURCE_TYPE_MARKET_REF) {
     return null;
@@ -1376,12 +1386,12 @@ function toAgentRef(node: ResourceTreeNode): AgentRefItem | null {
   if (!node.componentCode) {
     return null;
   }
-  return {
+  return resourceContext({
     type: DATABUS_RESOURCE_TYPE_COMPONENT,
     id: node.dbId ?? undefined,
     code: node.componentCode,
-    name: node.label,
-  };
+    name: node.label
+  });
 }
 
 /** 资源树业务动作统一入口：树内只派发不闭环（对标旧两菜单上抛） */

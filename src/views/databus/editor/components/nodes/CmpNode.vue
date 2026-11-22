@@ -5,26 +5,20 @@
   │ [icon] 类型名   │  顶行：data.label（粗体冷灰，永远显）
   │        业务标题 │  次行：data.title（品牌色压深，空或与 label 相同则隐藏）
   └────────────────┘
-  数据空间 cmpId 为技术标识，不占默认态版面，仅在 hover 浮层 / 属性面板 / 步骤表可见。
+  数据空间 cmpId 为技术标识，不占默认态版面，仅在 hover 信息卡 / 属性面板 / 步骤表可见。
   品牌色统一由根节点 --brand 变量驱动（图标 tint 底、图标色、标题色同源）。
-  hover 浮层只补画布缺失信息（被截断的 title + 数据空间），画布上完整显示的标题不重复；
-用 el-tooltip 浅色卡片浮层（250ms 延迟防闪烁），开始/结束圆点无补充信息则不出浮层。
+  可引用的业务节点（canDrill）hover 时出统一信息卡：名称 + #编码 + 复制/加入会话；
+  这是节点唯一的 hover 浮层，不再额外挂 el-tooltip。
   卡片尺寸 150×56 保持不变。
 -->
 <template>
-  <el-tooltip
-    placement="top"
-    effect="light"
-    :show-after="250"
-    :disabled="dragging || !tipVisible"
-    popper-class="cmp-node-popper"
-  >
+  <div class="cmp-node-host">
     <div
       class="cmp-node"
       :class="{ 'is-selected': selected, 'is-virtual': data.virtual, 'has-title': showTitle }"
       :style="rootStyle"
-      @mouseenter="hover = true"
-      @mouseleave="hover = false"
+      @mouseenter="onNodeEnter"
+      @mouseleave="onNodeLeave"
     >
       <CmpContextPad v-if="!data.junctionOf && !data.placeholderOf" :node-id="id" :hover="hover" :selected="selected" />
       <Handle v-if="data.defType !== 'start'" type="target" :position="Position.Left" />
@@ -36,25 +30,20 @@
           {{ data.label }}
           <span v-if="isChain" class="cmp-node__status-dot" :style="{ background: statusDotColor }" />
         </div>
-        <div v-if="showTitleOverride" ref="titleRef" class="cmp-node__title">{{ displayTitle }}</div>
+        <div v-if="showTitleOverride" class="cmp-node__title">{{ displayTitle }}</div>
       </div>
       <Handle v-if="data.defType !== 'end'" type="source" :position="Position.Right" />
-      <span v-if="canDrill && hover" class="cmp-node__open-hint" :title="isChain ? '双击打开子流程' : '双击查看组件详情'">↗</span>
+      <!-- ↗ 只作可下钻的视觉暗示；说明放进 hover 信息卡，避免再挂一层黑色原生 title -->
+      <span v-if="canDrill && hover" class="cmp-node__open-hint" aria-hidden="true">↗</span>
     </div>
-    <template #content>
-      <div class="cmp-tip">
-        <div v-if="showTipTitle" class="cmp-tip__title">{{ displayTitle }}</div>
-        <div v-if="!data.virtual && data.cmpId" class="cmp-tip__space" :class="{ 'is-first': !showTipTitle }">
-          <span class="cmp-tip__space-k">{{ isChain ? '子链编码' : '数据空间' }}</span>
-          {{ data.cmpId }}
-        </div>
-      </div>
-    </template>
-  </el-tooltip>
+
+    <!-- 组件码 / 链路码 + 加入会话：与选中文字浮层同一套气泡，Teleport 到 body 避免被画布 transform 影响 -->
+    <ResourceHoverBubble :controller="hoverActions" />
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import { Handle, Position, type NodeProps } from '@vue-flow/core';
 import { CHAIN_STATUS } from '@/constants/databus';
 import { DATABUS_CHAIN_DEF_TYPE } from '@/constants/databus-chain';
@@ -63,6 +52,9 @@ import type { CmpNodeData } from '../../composables/useElTreeModel';
 import { getDef, materialTick } from '../../cmp-defs';
 import { useChainOptions } from '../../composables/useChainOptions';
 import CmpContextPad from './CmpContextPad.vue';
+import ResourceHoverBubble from '@/views/databus/workbench/ai/ResourceHoverBubble.vue';
+import { useResourceHover } from '@/views/databus/workbench/ai/useResourceHover';
+import type { HoverResourceAction } from '@/views/databus/workbench/ai/useResourceActions';
 
 const props = defineProps<NodeProps<CmpNodeData>>();
 
@@ -89,16 +81,6 @@ const showTitle = computed(() => {
   if (t === props.data.label?.trim()) return false;
   return true;
 });
-
-/** 画布标题元素引用，用于检测是否被省略号截断 */
-const titleRef = ref<HTMLElement | null>(null);
-const isTitleTruncated = ref(false);
-
-/** 检测画布标题是否溢出被截断（scrollWidth > clientWidth 即文字比可见区域宽） */
-const checkTruncation = () => {
-  const el = titleRef.value;
-  isTitleTruncated.value = !!el && el.scrollWidth > el.clientWidth;
-};
 
 // ── CHAIN 子流程卡片专属：中文名 + 状态色点 ──
 // cmpId 存的是子链 chainCode，从共享链路选项缓存解析出名称/状态；
@@ -128,6 +110,43 @@ const displayTitle = computed(() => {
   return props.data.title?.trim() || '';
 });
 
+/* ---------------- hover 操作：复制编码 / 加入会话 ---------------- */
+
+const hoverActions = useResourceHover();
+
+/** 当前节点可引用的资源：CHAIN 节点是链路，其余业务组件按组件处理 */
+function resourceActionOf(data: CmpNodeData): HoverResourceAction | null {
+  if (!canDrill.value) {
+    return null;
+  }
+  const title = displayTitle.value || data.label;
+  if (isChain.value) {
+    const code = data.cmpId?.trim();
+    return code ? { type: 'chain', code, name: title, codeLabel: '链路码' } : null;
+  }
+  const code = data.defType?.trim();
+  return code
+    ? {
+        type: 'component',
+        code,
+        name: data.title?.trim() || data.label,
+        codeLabel: '组件码',
+        // 卡片上展示数据空间；没有 cmpId 时退回组件类型码，避免信息区空着
+        infoCode: data.cmpId?.trim() || code
+      }
+    : null;
+}
+
+function onNodeEnter(event: MouseEvent) {
+  hover.value = true;
+  hoverActions.enter(resourceActionOf(props.data), event);
+}
+
+function onNodeLeave() {
+  hover.value = false;
+  hoverActions.leave();
+}
+
 /** 状态色点色值：已发布绿、草稿灰、已下线橙；解析不到时灰色 */
 const statusDotColor = computed(() => {
   if (!isChain.value) return '';
@@ -149,20 +168,14 @@ const showTitleOverride = computed(() => {
   if (t === props.data.label?.trim()) return false;
   return true;
 });
-
-// 标题截断检测：必须放在 showTitleOverride/displayTitle 声明之后（watch 注册时会立即读源收集依赖，
-// 放前面会命中 showTitleOverride 的暂时性死区抛 ReferenceError）
-watch([showTitleOverride, displayTitle], () => nextTick(checkTruncation));
-onMounted(() => nextTick(checkTruncation));
-
-/** 浮层中是否显示标题：仅当画布上被截断时才补全，避免与画布重复 */
-const showTipTitle = computed(() => showTitleOverride.value && isTitleTruncated.value);
-
-/** 浮层显隐：有截断标题需补全 或 有数据空间需展示；两者皆无则不出浮层 */
-const tipVisible = computed(() => showTipTitle.value || (!props.data.virtual && !!props.data.cmpId));
 </script>
 
 <style scoped>
+/* 节点组件必须有单一根节点（外层 transition 限制）；display:contents 让外壳不参与布局 */
+.cmp-node-host {
+  display: contents;
+}
+
 .cmp-node {
   position: relative;
   display: flex;
@@ -394,73 +407,5 @@ html.dark .cmp-node__icon {
 html.dark .cmp-node__title {
   /* 浅色基调混入品牌色：暗底上的浅彩字，与图标呼应 */
   color: color-mix(in srgb, var(--brand, #6b7280) 65%, #e5eaf3);
-}
-</style>
-
-<!-- 非 scoped：tooltip 浮层 teleport 到 body，scoped 选择器命中不了。
-     仅用 .cmp-node-popper 类名限定，不污染全局 el-tooltip。
-     Stripe/Notion/macOS 风卡片浮层：表面色 + 浅边框 + 柔影，明暗主题各走变量。 -->
-<style>
-.cmp-node-popper.el-popper.is-light {
-  padding: 0;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 10px;
-  box-shadow:
-    0 8px 24px rgba(16, 24, 40, 12%),
-    0 2px 6px rgba(16, 24, 40, 6%);
-}
-
-/* 箭头与卡片同底同边，消除默认灰边感 */
-.cmp-node-popper.el-popper.is-light .el-popper__arrow::before {
-  background: var(--el-bg-color);
-  border-color: var(--el-border-color-light);
-}
-
-.cmp-tip {
-  max-width: 320px;
-  padding: 9px 11px;
-}
-
-/* 完整业务标题：浮层主信息，画布截断处在此看全。
-   显式声明全部防截断属性，避免 .el-popper 默认 word-break:normal
-   在某些 CSS 加载顺序下覆盖 .cmp-tip__title 的 break-all 导致超长无空格串溢出被裁。 */
-.cmp-tip__title {
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.45;
-  color: var(--el-text-color-primary);
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-  word-break: break-all;
-  overflow-wrap: anywhere;
-}
-
-/* 数据空间：有 title 时在分隔线下方；无 title 时（is-first）直接显，不画线 */
-.cmp-tip__space {
-  display: flex;
-  gap: 6px;
-  align-items: baseline;
-  margin-top: 7px;
-  padding-top: 7px;
-  border-top: 1px solid var(--el-border-color-lighter);
-  font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--el-text-color-regular);
-}
-
-.cmp-tip__space.is-first {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: none;
-}
-
-.cmp-tip__space-k {
-  flex-shrink: 0;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  color: var(--el-text-color-secondary);
 }
 </style>
