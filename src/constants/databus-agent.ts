@@ -63,6 +63,12 @@ export const AGENT_SSE_ERROR = 'error';
 /** 交互卡片：与模型文字同序，data 是 AgentCard 对象而不是字符串 */
 export const AGENT_SSE_CARD = 'card';
 
+/** 会话标题生成完成：run 开始时只依据用户问题生成，data 是 { title } */
+export const AGENT_SSE_TITLE = 'title';
+
+/** 追问建议生成完成：done 之后生成，data 是 string[]；服务端推完这条才关闭连接 */
+export const AGENT_SSE_FOLLOW_UPS = 'followups';
+
 /** 工具阶段开始（运行中）：data 是 AgentStepInfo，前端插入一条阶段标题 */
 export const AGENT_SSE_STEP_START = 'step_start';
 

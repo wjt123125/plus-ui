@@ -181,6 +181,8 @@ export interface AgentRunVo {
   cardReplies?: string[];
   /** 本轮用户可见错误（脱敏后的 AgentErrorInfo JSON）；刷新后据此还原错误提示 */
   errors?: string[];
+  /** 本轮追问建议（run 结束后异步生成，最多 3 条）；空数组表示不展示 */
+  followUps?: string[];
   /** 本轮附件 JSON 字符串（AgentContextItem[]），刷新后据此还原上下文卡 */
   attachments?: string;
   round?: number;

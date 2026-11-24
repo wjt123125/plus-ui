@@ -43,10 +43,12 @@ import {
   AGENT_SSE_CARD,
   AGENT_SSE_DONE,
   AGENT_SSE_ERROR,
+  AGENT_SSE_FOLLOW_UPS,
   AGENT_SSE_STEP_END,
   AGENT_SSE_STEP_START,
   AGENT_SSE_TEXT,
   AGENT_SSE_THINKING,
+  AGENT_SSE_TITLE,
   AGENT_STEP_STATUS_DONE,
   AGENT_STEP_STATUS_FAILED,
   AGENT_STEP_STATUS_RUNNING
@@ -112,6 +114,8 @@ export interface AgentChatMessage {
   status?: 'streaming' | 'done';
   /** 这一轮对应的后端 run 句柄（重试 / 删除 / 回退按轮定位用；未落库的本地消息为空） */
   runId?: string;
+  /** 本轮追问建议：run 结束后异步生成，点一下直接作为下一问发送 */
+  followUps?: string[];
 }
 
 /** 单个会话的全部前端状态 */
@@ -468,7 +472,7 @@ function handleEvent(conversationId: string, type: string, data: string) {
         }
         target.status = 'done';
       }
-      closeStream(conversationId);
+      // 连接不在这里关：服务端推完 done 还要生成并推送追问建议，推完才关闭
       state.running = false;
       void refreshSessions();
       break;
@@ -482,6 +486,47 @@ function handleEvent(conversationId: string, type: string, data: string) {
     }
     default:
       break;
+  }
+}
+
+/**
+ * 会话标题到达：服务端在 run 开始时只依据用户问题生成，生成完即时推送。
+ * 按 conversationId 定位，用户可能已经切走，不能改「当前项」。
+ */
+function handleTitle(conversationId: string, payload: { title?: string } | null | undefined) {
+  const title = payload?.title?.trim();
+  if (!title) {
+    return;
+  }
+  const session = remoteSessions.value.find((item) => item.conversationId === conversationId);
+  if (session) {
+    if (session.title !== title) {
+      session.title = title;
+    }
+  } else {
+    // 新会话还没进列表（首次 refresh 可能早于标题生成），补拉一次让标题跟上
+    void refreshSessions();
+  }
+}
+
+/**
+ * 追问建议到达：挂到本轮 AI 消息下方。
+ * 服务端推完这条才关闭连接，所以不需要再补拉。
+ */
+function handleFollowUps(conversationId: string, payload: string[] | null | undefined) {
+  const state = sessions[conversationId];
+  const items = (payload ?? []).map((item) => item.trim()).filter(Boolean);
+  if (!items.length) {
+    return;
+  }
+  const list = state?.messages ?? [];
+  // 从后往前找本轮 AI 消息：用户可能已经又发了一轮，不能用「最后一条」
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const item = list[i];
+    if (item.role === 'assistant' && (!state?.runId || item.runId === state.runId)) {
+      item.followUps = items;
+      break;
+    }
   }
 }
 
@@ -510,11 +555,25 @@ function openStream(conversationId: string, runId: string) {
       handleStage(conversationId, payload.data as AgentStepInfo);
       return;
     }
+    if (type === AGENT_SSE_TITLE) {
+      handleTitle(conversationId, payload.data as { title?: string });
+      return;
+    }
+    if (type === AGENT_SSE_FOLLOW_UPS) {
+      handleFollowUps(conversationId, payload.data as string[]);
+      return;
+    }
     handleEvent(conversationId, type, typeof payload.data === 'string' ? payload.data : '');
   };
   es.onerror = () => {
     // done / error 后由本端主动 close，此时连接已不是这条，直接忽略
     if (streams.get(conversationId) !== es) {
+      return;
+    }
+    // 服务端推完 done 和追问建议后主动关闭连接，EventSource 一律按 error 回调：
+    // 这时本轮已结束，本地关掉即可，不能当成断线，也不能让它自动重连
+    if (!sessions[conversationId]?.running) {
+      closeStream(conversationId);
       return;
     }
     failStreaming(conversationId, '连接已断开，请重试');
@@ -1026,7 +1085,15 @@ async function restore(conversationId?: string) {
         }
       }
       if (segments.length) {
-        restored.push({ id: nextId(), role: 'assistant', segments, status: 'done', runId: run.runId });
+        const followUps = (run.followUps ?? []).map((item) => item.trim()).filter(Boolean);
+        restored.push({
+          id: nextId(),
+          role: 'assistant',
+          segments,
+          status: 'done',
+          runId: run.runId,
+          followUps: followUps.length ? followUps : undefined
+        });
       }
     });
     // 拉历史期间用户可能已经开问，此时以新消息为准，不能把刚才的对话覆盖掉
@@ -1225,7 +1292,7 @@ function remoteSessionItem(item: AgentConversationVo): AiSession {
   const running = !!item.running || !!sessions[item.conversationId]?.running;
   return {
     id: item.conversationId,
-    title: item.title?.trim() || '未命名会话',
+    title: item.title?.trim() || '未命名任务',
     time: formatRelativeTime(item.lastTime),
     lastActiveAt: item.lastTime,
     running,

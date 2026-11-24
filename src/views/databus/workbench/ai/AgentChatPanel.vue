@@ -151,10 +151,10 @@
         </div>
       </div>
 
-      <!-- 建议：贴在最后一条回答末尾，点一下直接发送（形态对齐 Trae，内容仍是本地写死） -->
+      <!-- 追问建议：贴在最后一条回答末尾，点一下直接发送；内容由后端按本轮内容生成，空则不渲染 -->
       <div v-if="showFollowUps" class="agent-chat__followups">
         <button
-          v-for="s in suggestions"
+          v-for="s in followUps"
           :key="s"
           type="button"
           class="agent-chat__pill"
@@ -364,13 +364,17 @@ const emit = defineEmits<{
   'ref-preview': [ref: AgentRefItem];
 }>();
 
-/** 聚焦浮层的示例问题：v1 本地写死，后续换后端下发只替数据源 */
-const suggestions = [
-  '这条链路为什么跑不通？',
-  '解释一下当前组件的编排意图',
-  '脚本编译失败，帮我定位问题',
-  '这个连接器的参数该怎么填？'
-];
+/**
+ * 追问建议：run 结束后由后端按本轮内容生成，挂在最后一条 AI 消息上。
+ * 生成失败或本轮不值得追问时为空，整行不渲染。
+ */
+const followUps = computed(() => {
+  const last = messages.value[messages.value.length - 1];
+  if (last?.role !== 'assistant') {
+    return [];
+  }
+  return (last.followUps ?? []).filter((item) => !!item.trim());
+});
 
 const {
   conversationId,
@@ -785,9 +789,9 @@ function onFloatingCancel() {
   }
 }
 
-/** 只在「最后一条是已结束的 AI 回答」时给建议：跑的过程中和用户刚说完都不打扰 */
+/** 只在「最后一条是已结束的 AI 回答且有建议」时展示：跑的过程中和用户刚说完都不打扰 */
 const showFollowUps = computed(() => {
-  if (running.value) {
+  if (running.value || !followUps.value.length) {
     return false;
   }
   const last = messages.value[messages.value.length - 1];
