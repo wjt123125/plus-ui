@@ -19,7 +19,7 @@
       :console-count="consoleErrorCount"
     />
 
-    <div class="wsp">
+    <div ref="wspEl" class="wsp" :style="{ '--wsp-drawer-max': `${drawerMaxWidth}px` }">
       <!-- 栏 1：会话历史（AI 助手的兄弟栏）；点条目切会话，表头「＋新建」开新会话 -->
       <AiHistoryRail
         :collapsed="historyCollapsed"
@@ -121,6 +121,7 @@
           @create-filetype="onCreateFiletype"
           @open-execution="onOpenExecutionRecord"
           @execution-refresh="onExecutionRefresh"
+          @health-edit="onHealthEdit"
           @open-alert="wb.openAlertRecord"
         >
           <!-- tab 全关时的空白工作台：注入空态导航（打开/新建/树定位三类入口） -->
@@ -136,14 +137,20 @@
       <!-- 栏 4：右抽屉统一资源树（六 section 组织链路/组件/目录/收藏/模板）。
            折叠不收边销毁（宽度收 0 + overflow 裁剪），tab 停留位、树展开/搜索态全部保活；
            属性/EL/大纲读当前激活画布上报的名片（activePort），kind 决定三 tab 是否露出 -->
-      <Splitter v-if="!drawerCollapsed" v-model="drawerWidth" target="next" :reset-width="300" />
+      <Splitter
+        v-if="!drawerCollapsed"
+        v-model="drawerWidth"
+        target="next"
+        :min="DRAWER_MIN_WIDTH"
+        :max="drawerMaxWidth"
+        :reset-width="DRAWER_DEFAULT_WIDTH"
+      />
       <div class="wsp__drawer" :style="{ width: (drawerCollapsed ? 0 : drawerWidth) + 'px' }">
         <EditorDrawer
           :port="activePort"
           :kind="drawerKind"
           show-tree-tab
           default-tab="tree"
-          :style="{ width: drawerWidth + 'px' }"
           @fold="setDrawerCollapsed(true)"
         >
           <template #tree>
@@ -156,10 +163,12 @@
               :active-chain-id="activeChainId"
               :active-code="activeCode"
               :loading="loading"
+              @create="onCreateResource"
               @add-chain="onAddChain"
               @add-component="handleAdd"
               @add-directory="onAddDirectory"
               @command="onTreeCommand"
+              @open-health="wb.openRuntimeHealth()"
             />
           </template>
         </EditorDrawer>
@@ -340,6 +349,10 @@ function onLauncherCommand(cmd: LauncherCommand) {
     case 'admin-alert':
       wb.openAlertRecord();
       break;
+    // 运行健康（2026-11-26）：库存脚本件启动期失败件诊断页，树头角标同入口
+    case 'admin-health':
+      wb.openRuntimeHealth();
+      break;
     case 'admin-settings':
       wb.openSettings();
       break;
@@ -451,9 +464,57 @@ function onRevealAiRail(): void {
 /** 会话历史栏：与其它工作台共享同一单例，AI 收起/拖到最窄时单向连带收起 */
 const { collapsed: historyCollapsed, width: historyWidth, bindHistoryToAi } = useAiSessionHistory();
 bindHistoryToAi(aiCollapsed, aiWidth, AI_MIN_WIDTH);
-const { collapsed: drawerCollapsed, setCollapsed: setDrawerCollapsed } =
-  usePanelCollapse('databus.drawer.collapsed');
-const drawerWidth = usePersisted('databus.drawer.width', 300);
+const {
+  collapsed: drawerCollapsed,
+  setCollapsed: setDrawerCollapsed
+} = usePanelCollapse('databus.drawer.collapsed');
+
+/* —— 右抽屉宽度：JS 只算「用户想拖到哪」，上下限才是布局不变量 ——
+   下限：树的分支缩进 + 名称要读得出来；
+   上限：硬顶 520px，再按布局容器比例封顶，窄屏时不会把中栏画布挤没 */
+const DRAWER_DEFAULT_WIDTH = 300;
+const DRAWER_MIN_WIDTH = 240;
+const DRAWER_MAX_WIDTH = 520;
+const DRAWER_MAX_RATIO = 0.4;
+
+const wspEl = ref<HTMLElement | null>(null);
+const drawerWidth = usePersisted('databus.drawer.width', DRAWER_DEFAULT_WIDTH);
+const drawerMaxWidth = ref(DRAWER_MAX_WIDTH);
+
+// 持久化的宽度与当前上下限可能不一致（上限随容器宽度浮动），读回先夹一次
+drawerWidth.value = Math.min(Math.max(drawerWidth.value, DRAWER_MIN_WIDTH), DRAWER_MAX_WIDTH);
+
+let drawerResizeObserver: ResizeObserver | null = null;
+onMounted(() => {
+  const el = wspEl.value;
+  if (!el) {
+    return;
+  }
+  const syncMax = (containerWidth: number) => {
+    drawerMaxWidth.value = Math.max(
+      DRAWER_MIN_WIDTH,
+      Math.min(DRAWER_MAX_WIDTH, Math.floor(containerWidth * DRAWER_MAX_RATIO))
+    );
+  };
+  syncMax(el.clientWidth);
+  drawerResizeObserver = new ResizeObserver((entries) => {
+    const width = entries[0]?.contentRect.width ?? 0;
+    if (width > 0) {
+      syncMax(width);
+    }
+  });
+  drawerResizeObserver.observe(el);
+});
+onBeforeUnmount(() => {
+  drawerResizeObserver?.disconnect();
+  drawerResizeObserver = null;
+});
+// 容器变窄导致上限下调时，已存宽度一起收进来，避免抽屉超出上限
+watch(drawerMaxWidth, (max) => {
+  if (drawerWidth.value > max) {
+    drawerWidth.value = max;
+  }
+});
 
 /** 当前激活画布上报的抽屉名片（无画布时为 null，属性/EL/大纲显示空态） */
 const activePort = useActiveDrawerPort();
@@ -581,6 +642,16 @@ function handleOpenComponentRef(code: string, name: string) {
     return;
   }
   wb.openDetail({ code, name });
+}
+
+/** 运行健康页「去修复」：按 code 找台账行走既有编辑入口；找不到（无 DB 行）退化为看详情 */
+function onHealthEdit(code: string, name: string) {
+  const row = rowByCode(code);
+  if (row) {
+    handleEdit(row);
+    return;
+  }
+  handleOpenComponentRef(code, name);
 }
 
 /** 新建组件：收敛到向导 tab component 段（树目录右键携带 group/domain/归属目录 preset 预填） */
@@ -1521,12 +1592,17 @@ function copyShareLink(node: ResourceTreeNode) {
     .catch(() => ElMessage.warning('复制失败，请手动复制地址栏链接'));
 }
 
-/** 树头部/目录右键「新建链路」：收敛到向导 chain 段（preset 预填归属目录，null=未归组） */
+/** 树头部「+」：直接开新建向导 tab，资源类型在向导内分段点选（不经浮层；无 preset 不覆盖草稿） */
+function onCreateResource() {
+  wb.openCreate();
+}
+
+/** 目录右键「新建链路」：收敛到向导 chain 段（preset 预填归属目录，null=未归组） */
 function onAddChain(directoryId: string | number | null) {
   wb.openCreate(DATABUS_RESOURCE_TYPE_CHAIN, { directoryId: directoryId ?? null });
 }
 
-/** 树「新建目录」承接：头部钮=根级无 preset；目录右键=建子目录，preset 预填父目录（开向导 directory 段） */
+/** 目录右键「新建目录」：建子目录，preset 预填父目录（开向导 directory 段） */
 function onAddDirectory(preset?: FormPreset) {
   wb.openCreate(DATABUS_RESOURCE_TYPE_DIRECTORY, preset);
 }
@@ -1841,6 +1917,24 @@ onBeforeUnmount(() => {
   height: 100%;
   overflow: hidden;
   border-radius: var(--db-r-card);
+  /* 硬上限：inline width 与上限会短暂不同步（持久化值 / 拖拽预览），CSS 兜底，保证中栏不被吃掉 */
+  max-width: var(--wsp-drawer-max, 520px);
+  /* 注意：这里不能加 contain——栏内右键菜单是 position: fixed（按视口坐标定位），
+     一旦建立包含块会整体偏移 */
+  /* 只在开合这种离散动作上做过渡；拖拽时由 .is-resizing 关掉，避免宽度追指针 */
   transition: width 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wsp__drawer {
+    transition: none;
+  }
+}
+
+/* 拖拽中：相邻栏位的过渡全部暂停，且不再接收 hover（拖动期间树的 hover 样式重算是纯浪费）；
+   分隔条自身保持可命中，pointer capture 在它身上 */
+.wsp.is-resizing > :not(.wb-splitter) {
+  transition: none;
+  pointer-events: none;
 }
 </style>

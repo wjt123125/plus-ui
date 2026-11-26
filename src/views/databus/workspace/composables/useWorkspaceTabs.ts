@@ -43,6 +43,8 @@ export const CONNECTION_LIST_KEY = 'connection:list';
 export const EXECUTION_LIST_KEY = 'execution:list';
 export const MONITOR_OVERVIEW_KEY = 'monitor:overview';
 export const ALERT_RECORD_KEY = 'alert:record';
+/** 运行健康：库存脚本件启动期编译/注册状态（全局单例诊断页） */
+export const RUNTIME_HEALTH_KEY = 'runtime:health';
 export const SETTINGS_KEY = 'settings';
 
 export function canvasKey(chainId: WorkspaceTab['chainId']): string {
@@ -380,11 +382,11 @@ export function useWorkspaceTabs() {
     });
   }
 
-  /** 打开/聚焦新建向导 tab（全局单例：再点只聚焦，草稿不丢；换 filetype 只切分段，preset 未传保留原预设） */
-  function openCreate(filetype: CreateFileType = DATABUS_RESOURCE_TYPE_CHAIN, preset?: FormPreset): string {
+  /** 打开/聚焦新建向导 tab（全局单例：再点只聚焦，草稿不丢；不传 filetype 时保持当前分段，新开默认链路） */
+  function openCreate(filetype?: CreateFileType, preset?: FormPreset): string {
     const existed = wb.tabs.value.find((t) => t.key === CREATE_TAB_KEY);
     if (existed) {
-      if (filetype !== existed.filetype) {
+      if (filetype && filetype !== existed.filetype) {
         existed.filetype = filetype;
       }
       if (preset !== undefined) {
@@ -396,7 +398,7 @@ export function useWorkspaceTabs() {
       kind: 'create',
       title: '新建',
       code: '',
-      filetype,
+      filetype: filetype ?? existed?.filetype ?? DATABUS_RESOURCE_TYPE_CHAIN,
       dirty: false,
       preset
     });
@@ -512,6 +514,17 @@ export function useWorkspaceTabs() {
       key: ALERT_RECORD_KEY,
       kind: 'alert-record',
       title: '告警记录',
+      code: '',
+      dirty: false
+    });
+  }
+
+  /** 打开/聚焦运行健康 tab（全局单例；库存脚本件启动期失败件的诊断页） */
+  function openRuntimeHealth(): string {
+    return wb.open({
+      key: RUNTIME_HEALTH_KEY,
+      kind: 'runtime-health',
+      title: '运行健康',
       code: '',
       dirty: false
     });
@@ -653,6 +666,7 @@ export function useWorkspaceTabs() {
     openExecutionRecord,
     openMonitorOverview,
     openAlertRecord,
+    openRuntimeHealth,
     openSettings,
     closeByCode,
     closeOthers,

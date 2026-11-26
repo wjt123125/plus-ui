@@ -99,9 +99,6 @@
   /* 等宽栈：JetBrains Mono 没装时按平台落到 Menlo / Consolas，避免退化成 Courier */
   --db-font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, 'Cascadia Mono',
     'DejaVu Sans Mono', ui-monospace, monospace;
-
-  /* —— 焦点环（外发光，不是硬边框）—— */
-  --db-ring: 0 0 0 3px rgba(0, 122, 255, 0.22);
 }
 
 /* 深色：只覆写变量值，组件一行不用改 */
@@ -138,6 +135,4 @@ html.dark .db-app {
   --db-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 1px rgba(0, 0, 0, 0.3);
   --db-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.35);
   --db-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.4);
-
-  --db-ring: 0 0 0 3px rgba(10, 132, 255, 0.32);
 }

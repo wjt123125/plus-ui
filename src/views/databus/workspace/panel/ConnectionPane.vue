@@ -588,11 +588,6 @@ watch(
   border-radius: 12px;
   padding: 4px 4px 4px 14px;
   transition: all 0.2s ease;
-
-  &:focus-within {
-    border-color: var(--el-color-primary);
-    box-shadow: 0 0 0 3px rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.12);
-  }
 }
 
 .search-input-icon {

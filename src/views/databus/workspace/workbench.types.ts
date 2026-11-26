@@ -39,6 +39,9 @@ export type WorkspaceTabKind =
   | 'execution-record'
   | 'monitor-overview'
   | 'alert-record'
+  // 运行健康（2026-11-26）：库存脚本件启动期编译/注册状态。诊断页独立成 tab，
+  // 资源树只留树头角标，不再用警示条占用导航位（导航面 ↔ 诊断面分离）
+  | 'runtime-health'
   | 'settings'
   // 新建向导（单例 tab，顶部 filetype 分段四合一，2026-10-21 新建入口收敛）
   | 'create'
@@ -164,6 +167,8 @@ export type LauncherCommand =
   | 'admin-execution'
   | 'admin-monitor'
   | 'admin-alert'
+  // 运行健康（2026-11-26）：库存脚本件启动期失败件的诊断入口
+  | 'admin-health'
   | 'admin-settings';
 
 /** 工作面板 tab 右键菜单命令（WorkspaceWorkPanel 派发；关闭族语义由 useWorkspaceTabs 承接，「窗口」族由宿主承接，§6.4） */

@@ -173,6 +173,8 @@ const emit = defineEmits<{
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    /* 全局 border-box 下 .svg-icon 的 width:1em 会被 padding 吃掉，图形只剩几个像素 */
+    box-sizing: content-box;
     font-size: 32px;
     padding: 14px;
     border-radius: 14px;

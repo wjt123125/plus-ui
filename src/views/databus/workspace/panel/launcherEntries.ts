@@ -37,5 +37,7 @@ export const LAUNCHER_ENTRIES: LauncherEntry[] = [
   { key: 'admin-execution', label: '执行记录', icon: 'lucide:clock', color: '#4F8EF7' },
   { key: 'admin-monitor', label: '监控大盘', icon: 'lucide:layout-grid', color: '#A371F7' },
   { key: 'admin-alert', label: '告警记录', icon: 'lucide:circle-alert', color: '#FF8A5B' },
+  // 运行健康（2026-11-26）：库存脚本件启动期失败件的诊断页；gauge＝运行状态语义
+  { key: 'admin-health', label: '运行健康', icon: 'lucide:gauge', color: '#FF8A5B' },
   { key: 'admin-settings', label: '设置', icon: 'lucide:settings', color: '#2DD288' }
 ];

@@ -96,7 +96,7 @@
   box-shadow: 0 4px 12px rgba(0, 122, 255, 0.35);
 }
 
-/* —— 输入 / 选择器：0.5px 内描边 + 外发光焦点环 —— */
+/* —— 输入 / 选择器：0.5px 内描边 —— */
 .db-app .el-input__wrapper,
 .db-app .el-textarea__inner,
 .db-app .el-select__wrapper {
@@ -112,7 +112,8 @@
 .db-app .el-input__wrapper.is-focus,
 .db-app .el-select__wrapper.is-focused,
 .db-app .el-textarea__inner:focus {
-  box-shadow: inset 0 0 0 0.5px var(--db-blue), var(--db-ring);
+  /* 聚焦不换色、不外发光：保持与静止态一致，避免整页输入框聚焦时亮起 */
+  box-shadow: inset 0 0 0 0.5px var(--db-rule);
 }
 
 /* —— 表格：去掉重边框，靠 0.5px 分隔线 + 表头弱化 —— */

@@ -660,12 +660,6 @@ watch(
     box-shadow: 0 0 0 1.5px var(--el-border-color, #e8eaec) inset;
     transition: box-shadow 0.2s ease;
   }
-
-  &:focus-within :deep(.el-select__wrapper) {
-    box-shadow:
-      0 0 0 1.5px var(--el-color-primary) inset,
-      0 0 0 3px rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.12);
-  }
 }
 
 /* el-option 内容在本 SFC 模板内编译（自带 scope id），下拉虽 teleport 到 body 仍可命中，故不用 :deep */

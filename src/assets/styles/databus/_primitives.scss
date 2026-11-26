@@ -540,6 +540,14 @@
   outline-offset: 2px;
 }
 
+/* 文本类输入不画键盘焦点环：文本框鼠标聚焦同样命中 :focus-visible，
+   会和输入框自身描边叠成直角蓝框，看起来像第二层发光 */
+.db-app input:focus-visible,
+.db-app textarea:focus-visible,
+.db-app [contenteditable='true']:focus-visible {
+  outline: none;
+}
+
 .db-app button:focus:not(:focus-visible) {
   outline: none;
 }

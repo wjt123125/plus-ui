@@ -7,35 +7,39 @@
       数据源：目录 /list + 链路 /list（isTemplate=0）+ 组件台账（宿主 props.rows）+ 收藏 /list + 最近访问（localStorage）。
       交互：容器单击展开/收起、叶子单击打开、叶子右键派发、链路/组件叶子 hover 星标一键收藏、叶子/目录可拖入目录换归属。
       筛选（2026-10-18 中栏无网格）：树是全工作区唯一资源导航 + 筛选面——
-      头部搜索框按 名称/编码/短名/标签 过滤节点（真筛选）；启动期异常件在树头警示条与叶子 E 字母码双呈现。
+      头部搜索框按 名称/编码/短名/标签 过滤节点（真筛选）；启动期异常件只在树头给 E 装饰码
+      （与叶子同一个符号、同一套形制），详细诊断进「运行健康」tab
+      （导航面 ↔ 诊断面分离，长 javac 错误不再挤占导航位）。
       装饰（VS Code git decorations 惯例）：行尾色点承担生命周期（草稿/已发布/已下线），
       字母码承担装饰（E 异常/M 会话脏/D 废弃）可与色点并存；目录色点继承后代最差生命周期。
     -->
     <div class="res-tree__head">
       <span class="res-tree__tools">
-        <el-tooltip content="新建链路" placement="bottom">
-          <button
-            v-hasPermi="['databus:editor:add']"
-            class="res-tree__tool"
-            type="button"
-            @click="emit('add-chain', null)"
-          >
-            <SvgIcon icon-class="lucide:file-plus" />
-          </button>
-        </el-tooltip>
-        <el-tooltip content="新建根目录" placement="bottom">
-          <button
-            v-hasPermi="['databus:directory:add']"
-            class="res-tree__tool"
-            type="button"
-            @click="emit('add-directory')"
-          >
+        <!-- 「+」直达新建向导 tab，资源类型在向导内按权限分段点选 -->
+        <el-tooltip v-if="canCreate" content="新建" placement="bottom">
+          <button class="res-tree__tool" type="button" aria-label="新建" @click="emit('create')">
             <SvgIcon icon-class="lucide:plus" />
           </button>
         </el-tooltip>
         <el-tooltip content="刷新" placement="bottom">
           <button class="res-tree__tool" type="button" @click="reload()">
             <SvgIcon icon-class="lucide:refresh-cw" />
+          </button>
+        </el-tooltip>
+        <!-- 启动期失败件入口：复用叶子装饰码 E（同语义、同形制，不显数字），
+             详细诊断点开「运行健康」tab（导航面 ↔ 诊断面分离） -->
+        <el-tooltip
+          v-if="unhealthy?.length"
+          :content="`${unhealthy.length} 个脚本件启动期失败，查看运行健康`"
+          placement="bottom"
+        >
+          <button
+            class="res-tree__tool res-tree__tool--health"
+            type="button"
+            :aria-label="`${unhealthy.length} 个脚本件启动期失败`"
+            @click="emit('open-health')"
+          >
+            <span class="res-tree__mark is-error">E</span>
           </button>
         </el-tooltip>
       </span>
@@ -46,27 +50,6 @@
       <el-input v-model="keyword" placeholder="搜索名称 / 编码 / 标签" clearable>
         <template #prefix><SvgIcon icon-class="lucide:search" /></template>
       </el-input>
-    </div>
-
-    <!-- 启动期编译/注册失败的库存脚本件警示条（原组件库网格顶部红条搬入树）；点条目直达该叶子 -->
-    <div v-if="unhealthy?.length" class="res-tree__health">
-      <div class="res-tree__health-head">
-        <SvgIcon icon-class="lucide:circle-alert" />
-        <span>{{ unhealthy.length }} 个脚本件启动期失败</span>
-      </div>
-      <div class="res-tree__health-list">
-        <button
-          v-for="h in unhealthy"
-          :key="h.componentId"
-          type="button"
-          class="res-tree__health-item"
-          :title="h.error"
-          @click="focusSection(`cmp:${h.componentCode}`)"
-        >
-          <el-tag size="small" type="danger" effect="plain">{{ h.componentCode }}</el-tag>
-          <span class="res-tree__health-msg">{{ h.error }}</span>
-        </button>
-      </div>
     </div>
 
     <div ref="bodyRef" class="res-tree__body db-scroll">
@@ -228,6 +211,7 @@ import {
   DATABUS_TEMPLATE_FLAG_NO
 } from '@/constants/databus-common';
 import { useUserStore } from '@/store/modules/user';
+import { checkPermi } from '@/utils/permission';
 import { listInstalled, moveInstallDirectory } from '@/api/databus/market';
 import type { DatabusMarketInstallVo } from '@/api/databus/market/types';
 import {
@@ -268,7 +252,7 @@ const props = defineProps<{
   recent: RecentResource[];
   /** 本会话存在未保存草稿 tab 的组件编码（自建叶标橙点） */
   dirtyCodes?: string[];
-  /** 启动期编译/注册失败的库存脚本件（自建叶标 E 字母码 + 树头警示条） */
+  /** 启动期编译/注册失败的库存脚本件（自建叶标 E 字母码 + 树头失败计数角标） */
   unhealthy?: ScriptRuntime[];
   /** 当前激活画布的链路（树高亮 current） */
   activeChainId?: DatabusChainVo['id'] | null;
@@ -278,15 +262,28 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** 新建链路（头部钮=null 未归组；目录右键=该目录 id） */
+  /** 头部「+」：直接开新建向导 tab（资源类型在向导内分段点选） */
+  (e: 'create'): void;
+  /** 新建链路（目录右键=归属该目录 id；null=未归组） */
   (e: 'add-chain', directoryId: string | number | null): void;
-  /** 新建目录（头部钮=根级无 preset；目录右键=在该目录下建子目录）——宿主开向导 tab directory 段 */
+  /** 新建目录（目录右键=在该目录下建子目录，preset 预填父目录）——宿主开向导 tab directory 段 */
   (e: 'add-directory', preset?: FormPreset): void;
   /** 新建组件（目录右键携带归属目录预设） */
   (e: 'add-component', preset: FormPreset): void;
   /** 叶子业务动作（打开/编辑/复制/发布/下线/执行/删除/使用模板/查看/代码变更/启停）：宿主承接 */
   (e: 'command', command: ResourceMenuCommand, node: ResourceTreeNode): void;
+  /** 树头失败计数角标：打开「运行健康」诊断 tab */
+  (e: 'open-health'): void;
 }>();
+
+/** 头部「+」：至少持有一类资源的创建权限才展示（向导内再按分段权限过滤） */
+const canCreate = computed(
+  () =>
+    checkPermi(['databus:editor:add']) ||
+    checkPermi(['databus:component:add']) ||
+    checkPermi(['databus:directory:add']) ||
+    checkPermi(['databus:connection:add'])
+);
 
 useLucideSubset();
 
@@ -1542,60 +1539,25 @@ defineExpose({ reload, focusSection });
     padding: 0 8px 6px;
   }
 
-  /* 启动期失败件警示条：窄栏内紧凑列表，点击条目直达对应叶子 */
-  &__health {
-    flex-shrink: 0;
-    margin: 0 8px 6px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    background: var(--el-color-danger-light-9, #fef0f0);
-    border: 1px solid var(--el-color-danger-light-7, #fde2e2);
-  }
-
-  &__health-head {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--el-color-danger, #f56c6c);
-  }
-
-  &__health-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    max-height: 132px;
-    margin-top: 6px;
-    overflow-y: auto;
-  }
-
-  &__health-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-    padding: 0;
-    text-align: left;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-
-    &:hover .res-tree__health-msg {
+  /* 启动期失败件入口：按叶子装饰码 E 的语义色，不带数字 */
+  &__tool--health {
+    &:hover {
       color: var(--el-color-danger, #f56c6c);
-      text-decoration: underline;
+      background: var(--el-color-danger-light-9, #fef0f0);
     }
   }
 
-  &__health-msg {
-    flex: 1;
-    min-width: 0;
+  /* 树头 E 码：与叶子 .tree-node__mark.is-error 同形制（字号/字重/圆角/语义色），
+     让「E＝异常」在树头和树叶是同一个符号，而不是两套表达 */
+  &__mark {
+    min-width: 12px;
+    padding: 0 3px;
+    border-radius: 3px;
     font-size: 11px;
-    line-height: 1.4;
-    color: var(--el-text-color-secondary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-weight: 700;
+    line-height: 14px;
+    text-align: center;
+    color: var(--el-color-danger, #f56c6c);
   }
 
   &__body {

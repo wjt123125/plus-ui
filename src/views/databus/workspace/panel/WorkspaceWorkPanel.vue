@@ -259,6 +259,14 @@
             :active="tab.key === activeKey"
             :refresh-token="refreshTokens[tab.key] ?? 0"
           />
+          <!-- 运行健康：启动期编译/注册失败件的诊断页（自取数，激活即重取，避免旧快照残留） -->
+          <RuntimeHealthPane
+            v-else-if="tab.kind === 'runtime-health'"
+            :active="tab.key === activeKey"
+            :refresh-token="refreshTokens[tab.key] ?? 0"
+            @open-component="(code: string, name: string) => emit('open-component', code, name)"
+            @edit="(code: string, name: string) => emit('health-edit', code, name)"
+          />
           <SettingsPane
             v-else-if="tab.kind === 'settings'"
             :refresh-token="refreshTokens[tab.key] ?? 0"
@@ -306,6 +314,7 @@ import ConnectionPane from './ConnectionPane.vue';
 import ExecutionPane from './ExecutionPane.vue';
 import MonitorPane from './MonitorPane.vue';
 import AlertPane from './AlertPane.vue';
+import RuntimeHealthPane from './RuntimeHealthPane.vue';
 import SettingsPane from './SettingsPane.vue';
 import TabContextMenu from './TabContextMenu.vue';
 import MarketPane from '../market/MarketPane.vue';
@@ -349,6 +358,8 @@ const TAB_META: Record<WorkspaceTabKind, { icon: string; color: string }> = {
   'execution-record': { icon: 'lucide:clock', color: '#A371F7' },
   'monitor-overview': { icon: 'lucide:layout-grid', color: '#A371F7' },
   'alert-record': { icon: 'lucide:circle-alert', color: '#FF8A5B' },
+  // 运行健康（2026-11-26）：启动期失败件诊断页，与告警记录同色系但图标区分（gauge＝运行状态）
+  'runtime-health': { icon: 'lucide:gauge', color: '#FF8A5B' },
   settings: { icon: 'lucide:settings', color: '#2DD288' },
   // 新建向导（2026-10-21 新建入口收敛，decisions §10）
   create: { icon: 'lucide:file-plus', color: '#2DD288' }
@@ -425,6 +436,8 @@ const emit = defineEmits<{
   (e: 'execution-refresh'): void;
   /** 监控大盘「告警中」卡片：开告警记录 tab（路由壳下由宿主自己跳转，不在此 emit 语义内） */
   (e: 'open-alert'): void;
+  /** 运行健康：去修复（宿主按 code 找台账行开编辑 tab，找不到则退化为详情） */
+  (e: 'health-edit', code: string, name: string): void;
 }>();
 
 function rowOf(tab: WorkspaceTab): ComponentRegistryRow | undefined {
