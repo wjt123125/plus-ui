@@ -8,6 +8,7 @@ import type {
   AgentChatStartVo,
   AgentConversationVo,
   AgentMessageVo,
+  AgentRevertPreviewVo,
   AgentRollbackVo,
   AgentRunVo
 } from './types';
@@ -152,13 +153,13 @@ export function restoreAgentConversation(conversationId: string) {
 }
 
 /**
- * 回到这次对话前：按 run 整体回滚（新建的删掉、改过的写回对话前结构）。
- * POST /databus/agent/run/{runId}/rollback
+ * 该轮是否真正改过链路：前端据此决定是否显示「回退到本轮对话发起前」。
+ * GET /databus/agent/run/{runId}/changed
  */
-export function rollbackRun(runId: string): AxiosPromise<AgentRollbackVo[]> {
+export function getAgentRunChanged(runId: string): AxiosPromise<boolean> {
   return request({
-    url: `/databus/agent/run/${runId}/rollback`,
-    method: 'post'
+    url: `/databus/agent/run/${runId}/changed`,
+    method: 'get'
   });
 }
 
@@ -185,7 +186,18 @@ export function retryAgentRun(runId: string): AxiosPromise<AgentChatStartVo> {
 }
 
 /**
- * 回退到本轮对话发起前：撤销该轮及之后各轮的链路改动，并截断这些轮次的历史。
+ * 回退预检：只读算出「将撤销 / 将跳过 / 受影响」，前端据此决定是否出确认卡。
+ * POST /databus/agent/run/{runId}/revert/preview
+ */
+export function previewAgentRunRevert(runId: string): AxiosPromise<AgentRevertPreviewVo> {
+  return request({
+    url: `/databus/agent/run/${runId}/revert/preview`,
+    method: 'post'
+  });
+}
+
+/**
+ * 回退到本轮对话发起前：撤销该轮及之后各轮的链路/草稿改动，并截断这些轮次的历史。
  * POST /databus/agent/run/{runId}/revert
  */
 export function revertAgentRun(runId: string): AxiosPromise<AgentRollbackVo[]> {

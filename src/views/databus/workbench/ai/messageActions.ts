@@ -6,6 +6,7 @@
  */
 import { ElMessage } from 'element-plus';
 import { isHandledRequestError } from '@/utils/request';
+import type { AgentRollbackVo } from '@/api/databus/agent/types';
 import { textOf, type AgentChatMessage, type AgentChatRole } from './useAgentChat';
 
 export type MessageActionPlacement = 'inline' | 'more';
@@ -19,8 +20,8 @@ export interface MessageActionDeps {
   retryReply: (messageId: string) => Promise<void>;
   /** 删除一轮对话（提问 + 回复） */
   removeTurn: (messageId: string) => Promise<void>;
-  /** 回退到本轮对话发起前，返回被回滚的链路 */
-  revertTurn: (messageId: string) => Promise<{ chainId: number | string; deleted: boolean }[]>;
+  /** 回退到本轮对话发起前，返回回退结果（action=SKIP 的条目表示跳过） */
+  revertTurn: (messageId: string) => Promise<AgentRollbackVo[]>;
 }
 
 /** 动作执行上下文 */
@@ -148,8 +149,8 @@ registerMessageAction({
   icon: 'lucide:undo-2',
   role: 'user',
   order: 30,
-  // 本地还没落库的提问没有 run，回退无处可退
-  visible: ({ question }) => !!question?.runId,
+  // 只有真正改过链路（后端存在链路快照）的轮次才提供回退，纯问答轮不显示
+  visible: ({ question }) => !!question?.runId && question?.changed === true,
   disabled: ({ running }) => running,
   run: ({ message, deps }) =>
     guard(async () => {

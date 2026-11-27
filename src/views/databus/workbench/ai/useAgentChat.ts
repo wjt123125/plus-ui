@@ -20,6 +20,7 @@ import {
   deleteAgentConversation,
   deleteAgentRun,
   getActiveAgentRun,
+  getAgentRunChanged,
   listAgentConversations,
   listAgentHistory,
   pinAgentConversation,
@@ -36,6 +37,7 @@ import type {
   AgentCardReply,
   AgentConversationVo,
   AgentErrorInfo,
+  AgentRollbackVo,
   AgentStepInfo,
   AgentSystemEvent
 } from '@/api/databus/agent/types';
@@ -114,6 +116,8 @@ export interface AgentChatMessage {
   status?: 'streaming' | 'done';
   /** 这一轮对应的后端 run 句柄（重试 / 删除 / 回退按轮定位用；未落库的本地消息为空） */
   runId?: string;
+  /** 本轮是否真正改过链路：true 才显示「回退到本轮对话发起前」 */
+  changed?: boolean;
   /** 本轮追问建议：run 结束后异步生成，点一下直接作为下一问发送 */
   followUps?: string[];
 }
@@ -244,6 +248,31 @@ function closeStream(conversationId: string) {
   }
 }
 
+/**
+ * run 收尾后回填「这一轮是否真的改过链路」，决定消息工具栏是否提供回退入口。
+ * 查询失败保持不显示，刷新后由历史里的 changed 补齐。
+ */
+async function syncTurnChanged(conversationId: string, runId?: string) {
+  if (!runId) {
+    return;
+  }
+  const state = sessions[conversationId];
+  if (!state) {
+    return;
+  }
+  try {
+    const { data } = await getAgentRunChanged(runId);
+    const changed = data === true;
+    for (const message of state.messages) {
+      if (message.role === 'user' && message.runId === runId) {
+        message.changed = changed;
+      }
+    }
+  } catch {
+    /* 拉不到就保持不显示；刷新后由历史补齐 */
+  }
+}
+
 function pushSystem(conversationId: string, content: string, eventCode?: string) {
   const state = ensureSession(conversationId);
   state.messages.push({
@@ -266,6 +295,7 @@ function errorNoticeText(error: { message: string; referenceId?: string }): stri
  */
 function failStreaming(conversationId: string, error: AgentErrorInfo | string) {
   const state = ensureSession(conversationId);
+  const runId = state.runId;
   const notice: AgentErrorInfo = typeof error === 'string'
     ? { code: 'UNKNOWN', category: 'unknown', retryable: false, message: error }
     : error;
@@ -280,6 +310,8 @@ function failStreaming(conversationId: string, error: AgentErrorInfo | string) {
   }
   closeStream(conversationId);
   state.running = false;
+  // 失败/停流前可能已改过链路，收尾后补一次标记，避免回退入口被吞掉
+  void syncTurnChanged(conversationId, runId);
 }
 
 /** 卡片到达：挂到本轮 assistant 消息末尾，等用户点选 */
@@ -474,6 +506,7 @@ function handleEvent(conversationId: string, type: string, data: string) {
       }
       // 连接不在这里关：服务端推完 done 还要生成并推送追问建议，推完才关闭
       state.running = false;
+      void syncTurnChanged(conversationId, target?.runId);
       void refreshSessions();
       break;
     }
@@ -725,6 +758,8 @@ async function stop() {
       /* run 可能已自然结束，忽略 */
     }
   }
+  // 停止前可能已改过链路，收尾后补一次标记，避免回退入口被吞掉
+  void syncTurnChanged(conversationId, runId);
   void refreshSessions();
 }
 
@@ -817,9 +852,9 @@ async function pruneEmptySession(conversationId: string) {
  * 回退到本轮对话发起前：撤销该轮及之后各轮的链路改动，本地同步截断消息。
  *
  * @param messageId 这一轮里任意一条消息 id
- * @return 被回滚的链路（deleted=true 表示整条已删除）
+ * @return 回退结果（deleted=true 表示整条已删除，action=SKIP 表示跳过）
  */
-async function revertTurn(messageId: string): Promise<{ chainId: number | string; deleted: boolean }[]> {
+async function revertTurn(messageId: string): Promise<AgentRollbackVo[]> {
   const conversationId = activeId.value;
   const resolved = resolveTurn(messageId);
   if (!resolved) {
@@ -873,6 +908,8 @@ async function retryReply(messageId: string) {
   }
   question.runId = data.runId;
   reply.runId = data.runId;
+  // 新 run 的改动情况等收尾后重新回填
+  question.changed = false;
   reply.segments = [];
   reply.status = 'streaming';
   state.streamingId = reply.id;
@@ -1054,7 +1091,8 @@ async function restore(conversationId?: string) {
         segments: text ? [{ kind: 'text', text }] : [],
         contexts: contexts.length ? contexts : undefined,
         cardReply: ownReply,
-        runId: run.runId
+        runId: run.runId,
+        changed: run.changed === true
       });
       const answer = reportText(run.report);
       const segments: AgentSegment[] = [];

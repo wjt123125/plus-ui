@@ -185,17 +185,39 @@ export interface AgentRunVo {
   followUps?: string[];
   /** 本轮附件 JSON 字符串（AgentContextItem[]），刷新后据此还原上下文卡 */
   attachments?: string;
+  /** 本轮是否真正改过链路：true 才提供「回退到本轮对话发起前」入口 */
+  changed?: boolean;
   round?: number;
   expireTime?: string;
   createTime?: string;
 }
 
-/** 「回到这次对话前」的回滚结果 */
+/** 回退 / 预检共用的资源条目 */
 export interface AgentRollbackVo {
-  /** 被回滚的链路 id */
-  chainId: number | string;
-  /** true 表示本对话新建的链路已整条删除；false 表示结构已写回对话前 */
+  /** 资源类型：CHAIN 链路 / COMPONENT_DRAFT 组件草稿 */
+  resourceType: string;
+  /** 资源 id（链路 id 或草稿组件 id） */
+  resourceId: number | string;
+  /** 资源编码（链路编码 / 组件编码） */
+  resourceCode?: string;
+  /** 资源名称（链路名称 / 组件名称） */
+  resourceName?: string;
+  /** DELETE 删除 / RESTORE 写回 / SKIP 跳过 / REFERENCE 引用影响 */
+  action?: 'DELETE' | 'RESTORE' | 'SKIP' | 'REFERENCE';
+  /** true 表示整条已删除；false 表示已写回或跳过 */
   deleted: boolean;
+  /** 跳过或受影响的原因，直接展示给用户 */
+  reason?: string;
+}
+
+/** 回退预检结果：三份清单互不重叠，全空表示这一轮没有可回退的改动 */
+export interface AgentRevertPreviewVo {
+  /** 将撤销 */
+  revert: AgentRollbackVo[];
+  /** 将跳过（附原因） */
+  skip: AgentRollbackVo[];
+  /** 受影响的引用方链路 */
+  affected: AgentRollbackVo[];
 }
 
 /** 会话审批模式 */

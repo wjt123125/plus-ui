@@ -1206,13 +1206,21 @@ function onViewPreview(runId: number, title?: string) {
   wb.openPreviewResult(runId, title || '试运行结果');
 }
 
-// 台账刷新后剔除已不存在的「最近访问」自建组件项（链路项由资源树按链路表过滤）
+// 台账刷新后剔除已不存在的「最近访问」自建组件项（链路项由资源树按链路表过滤）；
+// 软退役（deprecated）件不再投放，同样从最近访问里清掉，避免占用名额却打不开
 watch(rows, (list) => {
   if (!list.length) {
     return;
   }
   const alive = new Set(list.map((r) => r.code));
-  pruneRecent((item) => !(item.type === DATABUS_RESOURCE_TYPE_COMPONENT && !alive.has(String(item.refId))));
+  const retired = new Set(list.filter((r) => r.deprecated).map((r) => r.code));
+  pruneRecent(
+    (item) =>
+      !(
+        item.type === DATABUS_RESOURCE_TYPE_COMPONENT &&
+        (!alive.has(String(item.refId)) || retired.has(String(item.refId)))
+      )
+  );
 });
 
 /* ---------------- 统一资源树命令承接 ---------------- */
@@ -1384,21 +1392,38 @@ useAgentPush((payload) => {
     .catch(() => notifyCanvasSkipped(evt.chainName, evt.runId, evt.conversationId));
 });
 
-/** 「回到这次对话前」完成：刷链树 + 逐个重建 / 关闭画布 */
-async function onAgentRolledBack(chains: { chainId: number | string; deleted: boolean }[]) {
-  void reloadTree();
-  let reloaded = false;
-  for (const chain of chains) {
-    if (chain.deleted) {
-      // 撤销新建：链路已被删掉，画布 tab 也一并关掉，不让用户对着空链路
-      wb.close(canvasKey(chain.chainId));
-    } else {
-      await workPanelRef.value?.reloadCanvas(chain.chainId);
-      reloaded = true;
+/** 「回退到本轮对话发起前」完成：刷资源树 + 重建 / 关闭被回退的链路画布，草稿只随树刷新 */
+async function onAgentRolledBack(
+  items: {
+    resourceType: string;
+    resourceId: number | string;
+    resourceCode?: string;
+    deleted: boolean;
+    action?: string;
+  }[]
+) {
+  await reloadTree();
+  // 组件台账是宿主持有的快照：回退删/改组件后必须重拉，否则树与「最近访问」仍按旧数据渲染
+  await getList();
+  for (const item of items) {
+    // SKIP 是后端明确没动的资源（如已归属他人），画布与树都不必跟着变
+    if (item.action === 'SKIP') {
+      continue;
     }
-  }
-  if (!reloaded && chains.length) {
-    ElMessage.success('AI 新建的链路已撤销');
+    if (item.resourceType === 'CHAIN') {
+      if (item.deleted) {
+        // 撤销新建：链路已被删掉，画布 tab 与最近访问条目一并清掉
+        wb.close(canvasKey(item.resourceId));
+        removeRecent(DATABUS_RESOURCE_TYPE_CHAIN, item.resourceId);
+      } else {
+        await workPanelRef.value?.reloadCanvas(item.resourceId);
+      }
+      continue;
+    }
+    // 组件：已删除的（草稿或已采纳）清掉最近访问；写回旧版本的保留条目，内容变化由 getList 带进树
+    if (item.deleted && item.resourceCode) {
+      removeRecent(DATABUS_RESOURCE_TYPE_COMPONENT, item.resourceCode);
+    }
   }
 }
 

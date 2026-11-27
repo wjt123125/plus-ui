@@ -10,7 +10,12 @@
         </p>
       </div>
 
-      <div v-for="(m, i) in messages" :key="m.id" class="agent-chat__row" :class="`is-${m.role}`">
+      <div
+        v-for="(m, i) in messages"
+        :key="m.id"
+        class="agent-chat__row"
+        :class="[`is-${m.role}`, { 'has-revert-card': revertCard?.messageId === m.id }]"
+      >
         <!-- 系统行：错误提示、画布更新被丢弃等结论性提示 -->
         <div v-if="m.role === 'system'" class="agent-chat__system" :class="{ 'is-error': isErrorNotice(m) }">
           <span class="agent-chat__system-text">
@@ -65,6 +70,15 @@
             :last-turn="lastTurnIndex === i"
             :running="running"
             :deps="messageActionDeps"
+          />
+          <!-- 回退影响清单：预检发现有跳过 / 引用时在提问下方就地确认，确认后才落库 -->
+          <RevertImpactCard
+            v-if="revertCard?.messageId === m.id"
+            class="agent-chat__revert"
+            :preview="revertCard.preview"
+            :busy="revertBusy"
+            @cancel="cancelRevert"
+            @confirm="confirmRevert"
           />
         </div>
         <!-- AI 消息：上方是身份行，正文按段渲染。text 段走 Markdown，thinking 折叠，notice 独立成块 -->
@@ -184,7 +198,7 @@
       />
     </div>
 
-    <!-- 输入区：整块灰底无边框，底部一行工具（工作区 / 审批模式 / 回滚）+ 发送按钮
+    <!-- 输入区：整块灰底无边框，底部一行工具（工作区 / 审批模式）+ 发送按钮
          有待选卡片时整块收起，不给用户绕开卡片继续说话的机会 -->
     <div v-else class="agent-chat__input">
       <!--
@@ -221,7 +235,7 @@
           @chip-remove="onChipRemove"
         />
         <div class="agent-chat__toolbar">
-          <!-- 左侧工具区：工作区、操作审批模式、回到这次对话前 -->
+          <!-- 左侧工具区：工作区、操作审批模式 -->
           <div class="agent-chat__tools">
             <el-dropdown trigger="click" placement="top-start" popper-class="db-menu-popper">
               <button type="button" class="agent-chat__tool" title="选择会话工作区">
@@ -268,16 +282,6 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-            <button
-              type="button"
-              class="agent-chat__tool"
-              title="回到这次对话前"
-              :disabled="running || rollbackRunning"
-              @click="backToBeforeConversation"
-            >
-              <SvgIcon icon-class="lucide:history" />
-              <span>回到这次对话前</span>
-            </button>
           </div>
           <button v-if="running" type="button" class="agent-chat__send is-stop" @click="stop">
             <SvgIcon icon-class="lucide:square" class="agent-chat__stop-icon" />
@@ -320,11 +324,23 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { isHandledRequestError } from '@/utils/request';
 import { useStickToBottom } from '@/hooks/scroll/useStickToBottom';
-import { getAgentApprovalMode, listAgentHistory, rollbackRun, updateAgentApprovalMode } from '@/api/databus/agent';
-import type { AgentApprovalMode, AgentCard, AgentCardOption, AgentErrorInfo } from '@/api/databus/agent/types';
+import {
+  getAgentApprovalMode,
+  previewAgentRunRevert,
+  updateAgentApprovalMode
+} from '@/api/databus/agent';
+import type {
+  AgentApprovalMode,
+  AgentCard,
+  AgentCardOption,
+  AgentErrorInfo,
+  AgentRevertPreviewVo,
+  AgentRollbackVo
+} from '@/api/databus/agent/types';
 import { useLucideSubset } from '../composables/useLucideSubset';
-import { AGENT_APPROVAL_MODE, AGENT_RUN_STATUS } from '@/constants/databus';
+import { AGENT_APPROVAL_MODE } from '@/constants/databus';
 import { DATABUS_CARD_ACTION_CANCEL, DATABUS_CARD_KIND_CHOICE, DATABUS_CARD_KIND_REF } from '@/constants/databus-common';
 import { cardViewOf } from './agentCardRegistry';
 import AgentContextCard from './AgentContextCard.vue';
@@ -336,6 +352,7 @@ import MarkdownBlock from './MarkdownBlock.vue';
 import MessageActionBar from './MessageActionBar.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
 import AgentStageLine from './AgentStageLine.vue';
+import RevertImpactCard from './RevertImpactCard.vue';
 import type { MessageActionDeps } from './messageActions';
 import { useAgentChat, type AgentChatMessage } from './useAgentChat';
 import { useAgentContext } from './useAgentContext';
@@ -356,8 +373,8 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** 回滚完成：宿主据此重建画布、关掉已删除链路的 tab */
-  'agent-rolled-back': [chains: { chainId: number | string; deleted: boolean }[]];
+  /** 回滚完成：宿主据此重建画布、关掉已删除链路的 tab；SKIP 条目已在面板侧过滤 */
+  'agent-rolled-back': [items: AgentRollbackVo[]];
   /** 点引用卡：跳转由宿主承接，面板不感知工作台内部路由 */
   'ref-open': [ref: AgentRefItem];
   /** 草稿卡「▶ 试运行」：开单节点预览链路（宿主判草稿态） */
@@ -835,51 +852,6 @@ onMounted(() => {
   void restore();
 });
 
-/* ---------------- 回到这次对话前（按 run 整体回滚） ---------------- */
-
-const rollbackRunning = ref(false);
-
-/**
- * 回滚只针对最近一次已结束的 run：撤销这次对话的改动，不跨 run。
- * 服务端对本 run 动过的每条链取最早一份快照，新建的删掉、改过的写回。
- */
-async function backToBeforeConversation() {
-  if (!conversationId.value) {
-    appendSystem('还没有对话记录，暂无可回滚的 AI 操作。', 'agent:rollback');
-    return;
-  }
-  rollbackRunning.value = true;
-  try {
-    const { data: runs } = await listAgentHistory(conversationId.value);
-    const last = (runs ?? []).toReversed().find((run) => run.status !== AGENT_RUN_STATUS.RUNNING);
-    if (!last) {
-      appendSystem('这次对话还没有可回滚的操作。', 'agent:rollback');
-      return;
-    }
-    try {
-      await ElMessageBox.confirm(
-        '将撤销这次对话对链路的全部改动：新建的链路会删除，改过的链路会写回对话前的结构。是否继续？',
-        '回到这次对话前',
-        { confirmButtonText: '回滚', cancelButtonText: '取消', type: 'warning' }
-      );
-    } catch {
-      return;
-    }
-    const { data } = await rollbackRun(last.runId);
-    const chains = data ?? [];
-    if (!chains.length) {
-      appendSystem('这次对话没有改动任何链路。', 'agent:rollback');
-      return;
-    }
-    ElMessage.success('已回到这次对话前');
-    emit('agent-rolled-back', chains);
-  } catch {
-    appendSystem('回滚失败，链路未被改动。', 'agent:rollback');
-  } finally {
-    rollbackRunning.value = false;
-  }
-}
-
 /* ---------------- 消息工具栏动作（删除 / 重试 / 回退） ---------------- */
 
 /** 破坏性动作先确认；取消时返回 false */
@@ -909,6 +881,59 @@ function restorePrompt(question: AgentChatMessage) {
   void nextTick(() => inputRef.value?.focus());
 }
 
+/* ---------------- 回退：先预检出卡告知影响，确认后才执行 ---------------- */
+
+/** 待确认的回退：挂在被点的提问下方，不落库、不进 AgentCard 协议 */
+const revertCard = ref<{ messageId: string; preview: AgentRevertPreviewVo } | null>(null);
+const revertBusy = ref(false);
+
+/** 真正执行回退：落库、截断消息、回填提问，并把可执行的结果抛给宿主 */
+async function applyRevert(messageId: string): Promise<AgentRollbackVo[]> {
+  const question = questionById(messageId);
+  revertBusy.value = true;
+  try {
+    const items = await revertTurn(messageId);
+    if (question) {
+      restorePrompt(question);
+    }
+    if (!items.length) {
+      appendSystem('这一轮没有可回退的改动。', 'agent:revert');
+      return items;
+    }
+    // 撤回是默认能力，SKIP 只剩「已归属他人 / 被回退范围外链路引用」两类，不让宿主去动它们
+    const applied = items.filter((item) => item.action !== 'SKIP');
+    if (applied.length) {
+      ElMessage.success('已回退到本轮对话发起前');
+    } else {
+      appendSystem('本轮改动均无法撤回（资源已归属他人，或被回退范围外的链路引用）。', 'agent:revert');
+    }
+    emit('agent-rolled-back', applied);
+    return items;
+  } finally {
+    revertBusy.value = false;
+  }
+}
+
+/** 确认影响清单后执行；请求类错误拦截器已提示过，这里只兜底本地异常 */
+async function confirmRevert() {
+  const pending = revertCard.value;
+  if (!pending || revertBusy.value) {
+    return;
+  }
+  revertCard.value = null;
+  try {
+    await applyRevert(pending.messageId);
+  } catch (error) {
+    if (!isHandledRequestError(error)) {
+      ElMessage.error(error instanceof Error ? error.message : '回退失败');
+    }
+  }
+}
+
+function cancelRevert() {
+  revertCard.value = null;
+}
+
 /**
  * 注入给工具栏的能力实现。
  * 具体有哪些按钮由 messageActions.ts 注册，这里只补「需要面板上下文」的部分：
@@ -927,27 +952,20 @@ const messageActionDeps: MessageActionDeps = {
     }
   },
   async revertTurn(messageId) {
-    const confirmed = await confirmDestructive(
-      '将撤销这一轮及之后各轮的链路改动，并删除这些对话记录。是否继续？',
-      '回退到本轮对话发起前',
-      '回退'
-    );
-    if (!confirmed) {
+    const runId = questionById(messageId)?.runId;
+    if (!runId) {
       return [];
     }
-    // 提问随后会被截断，先留一份原样，回退成功后放回输入框
-    const question = questionById(messageId);
-    const chains = await revertTurn(messageId);
-    if (question) {
-      restorePrompt(question);
+    // 预检只读：先算清哪些撤销、哪些跳过、哪些引用受影响，再把清单摊给用户
+    const { data } = await previewAgentRunRevert(runId);
+    const preview = data ?? { revert: [], skip: [], affected: [] };
+    if (!preview.revert.length && !preview.skip.length) {
+      appendSystem('这一轮没有可回退的改动。', 'agent:revert');
+      return [];
     }
-    if (!chains.length) {
-      appendSystem('这一轮没有改动任何链路。', 'agent:revert');
-      return chains;
-    }
-    ElMessage.success('已回退到本轮对话发起前');
-    emit('agent-rolled-back', chains);
-    return chains;
+    // 撤回不静默执行：只要有可撤项就出卡告知，用户确认后才真正落库
+    revertCard.value = { messageId, preview };
+    return [];
   }
 };
 
@@ -1154,6 +1172,18 @@ defineExpose({ newSession });
   flex-direction: column;
   align-items: flex-end;
   max-width: 86%;
+}
+
+/* 回退确认卡要占满整行：临时放开用户列的宽度限制，气泡仍靠右、卡片铺满 */
+.agent-chat__row.is-user.has-revert-card .agent-chat__col--user {
+  width: 100%;
+  max-width: 100%;
+}
+
+.agent-chat__revert {
+  align-self: stretch;
+  width: 100%;
+  margin-top: 8px;
 }
 
 /* 消息工具栏：整行悬停或键盘聚焦才出现，平时不抢注意力 */
@@ -1813,7 +1843,7 @@ defineExpose({ newSession });
   margin-top: 4px;
 }
 
-/* 左侧工具区：工作区是稳定入口，不随栏宽收缩；右侧按钮可退化成省略号 */
+/* 左侧工具区：两个下拉保持完整，文案过长时由内部 span 省略 */
 .agent-chat__tools {
   flex: 1;
   min-width: 0;
@@ -1821,7 +1851,7 @@ defineExpose({ newSession });
   align-items: center;
   gap: 2px;
 
-  /* 工作区是稳定入口，不随栏宽收缩；右侧回滚按钮可退化成省略号 */
+  /* 下拉钮不参与收缩：文案省略交给内部 span，避免按钮被压扁 */
   > .el-dropdown {
     flex-shrink: 0;
   }

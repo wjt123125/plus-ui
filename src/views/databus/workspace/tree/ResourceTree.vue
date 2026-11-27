@@ -647,7 +647,8 @@ function recentLeaf(item: RecentResource): ResourceTreeNode | null {
   }
   const code = String(item.refId);
   const row = rowByCode.value.get(code);
-  if (!row) {
+  // 软退役件（deprecated）已停止投放，存量链路还能跑但入口不再露出，最近访问一并剔除
+  if (!row || row.deprecated) {
     return null;
   }
   return {
