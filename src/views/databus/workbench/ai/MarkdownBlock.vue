@@ -19,7 +19,7 @@
       :width="190"
       :offset="4"
       :show-arrow="false"
-      popper-class="md-lang-popper"
+      popper-class="db-scope md-lang-popper"
     >
       <div class="md-lang-list">
         <button

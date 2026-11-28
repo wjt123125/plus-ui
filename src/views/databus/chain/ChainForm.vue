@@ -12,7 +12,7 @@
     destroy-on-close
     :with-header="false"
     :close-on-click-modal="true"
-    class="chain-form"
+    class="db-scope chain-form"
   >
     <ChainFormBody :chain-id="chainId" @saved="onSaved" @cancel="visible = false" />
   </el-drawer>

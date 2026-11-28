@@ -7,12 +7,22 @@
       </div>
     </header>
     <nav class="create__bar">
-      <DbSeg
+      <DbConfirmBubble
         v-if="visibleSegs.length"
-        :options="visibleSegs"
-        :model-value="currentFiletype"
-        @change="onSegChange"
-      />
+        ref="segBubbleRef"
+        trigger="manual"
+        content="当前分段存在未保存内容，切换类型后将丢弃。"
+        confirm-text="继续切换"
+        danger
+        @confirm="confirmSegSwitch"
+        @cancel="cancelSegSwitch"
+      >
+        <DbSeg
+          :options="visibleSegs"
+          :model-value="currentFiletype"
+          @change="onSegChange"
+        />
+      </DbConfirmBubble>
     </nav>
     <main class="create__body">
       <template v-if="visibleSegs.length">
@@ -69,7 +79,7 @@ import FormPane from './FormPane.vue';
 import DirectoryFormBody from './DirectoryFormBody.vue';
 import ConnectionFormBody from './ConnectionFormBody.vue';
 import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
-import modal from '@/plugins/modal';
+import DbConfirmBubble from '@/views/databus/components/DbConfirmBubble.vue';
 import { checkPermi } from '@/utils/permission';
 import {
   DATABUS_RESOURCE_TYPE_CHAIN,
@@ -119,25 +129,28 @@ const formPaneRef = ref<InstanceType<typeof FormPane> | null>(null);
 const directoryBodyRef = ref<InstanceType<typeof DirectoryFormBody> | null>(null);
 const connectionBodyRef = ref<InstanceType<typeof ConnectionFormBody> | null>(null);
 
+/** 待确认的切段目标：有未保存内容时先开气泡，确认后才真正切 */
+const pendingSeg = ref<CreateFileType | null>(null);
+const segBubbleRef = ref<InstanceType<typeof DbConfirmBubble> | null>(null);
+
 /**
  * 统一切段入口（seg 点击与外部 openCreate 突变 props 都走这里）：
- * 当前段有未保存内容先弹弃稿确认（decisions §10）；取消且属外部突变则回滚——
+ * 当前段有未保存内容先就地气泡确认（decisions §10）；取消且属外部突变则回滚——
  * 通知宿主改回旧值（回滚再触发 watch → 早退，无死循环）。确认后切段（v-if 销毁旧段即弃稿）。
  */
-async function switchFiletype(next: CreateFileType) {
+function switchFiletype(next: CreateFileType) {
   if (next === currentFiletype.value) {
     return;
   }
   if (currentDirty.value) {
-    try {
-      await modal.confirm('当前分段存在未保存内容，切换类型后将丢弃。是否继续？');
-    } catch {
-      if (next === props.filetype) {
-        emit('filetype-change', currentFiletype.value);
-      }
-      return;
-    }
+    pendingSeg.value = next;
+    segBubbleRef.value?.open();
+    return;
   }
+  applyFiletype(next);
+}
+
+function applyFiletype(next: CreateFileType) {
   currentFiletype.value = next;
   currentDirty.value = false;
   if (next !== props.filetype) {
@@ -145,9 +158,26 @@ async function switchFiletype(next: CreateFileType) {
   }
 }
 
+function confirmSegSwitch() {
+  const next = pendingSeg.value;
+  pendingSeg.value = null;
+  if (next) {
+    applyFiletype(next);
+  }
+}
+
+function cancelSegSwitch() {
+  const next = pendingSeg.value;
+  pendingSeg.value = null;
+  // 外部突变被取消：通知宿主把 tab.filetype 回滚到当前段，滑块随之回弹
+  if (next && next === props.filetype) {
+    emit('filetype-change', currentFiletype.value);
+  }
+}
+
 /** DbSeg 上抛的段值转资源类型，统一进 switchFiletype（脏确认取消时模型不动，滑块随之回弹） */
 function onSegChange(value: string | number) {
-  void switchFiletype(value as CreateFileType);
+  switchFiletype(value as CreateFileType);
 }
 
 /** 外部 openCreate 突变 tab.filetype：进统一切段（脏确认/回滚） */
@@ -155,7 +185,7 @@ watch(
   () => props.filetype,
   (next) => {
     if (next) {
-      void switchFiletype(next);
+      switchFiletype(next);
     }
   }
 );

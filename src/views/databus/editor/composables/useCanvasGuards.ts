@@ -22,7 +22,8 @@ export function useCanvasGuards(store: CanvasGuardsStore) {
   async function resetCanvas() {
     try {
       await ElMessageBox.confirm('清空将撤销当前画布上的全部组件与连线，确定继续？', '清空画布', {
-        type: 'warning'
+        type: 'warning',
+        customClass: 'db-scope'
       });
     } catch {
       return;

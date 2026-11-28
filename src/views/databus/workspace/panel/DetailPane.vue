@@ -194,15 +194,22 @@
     <!-- 底部操作条：面板常驻，无遮罩无「关闭抽屉」概念 -->
     <div class="detail-footer">
       <template v-if="row.db">
-        <el-button
-          v-hasPermi="['databus:component:remove']"
-          type="danger"
-          plain
-          size="small"
-          @click="emit('delete', row)"
+        <DbConfirmBubble
+          title="删除组件"
+          content="删除后不可恢复，引用该组件的链路需先调整。"
+          confirm-text="删除"
+          danger
+          @confirm="emit('delete', row)"
         >
-          删除
-        </el-button>
+          <el-button
+            v-hasPermi="['databus:component:remove']"
+            type="danger"
+            plain
+            size="small"
+          >
+            删除
+          </el-button>
+        </DbConfirmBubble>
         <el-button
           v-if="row.scripted"
           v-hasPermi="['databus:component:script:edit']"
@@ -235,6 +242,7 @@ import { Box, Clock, CopyDocument, Edit } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import SchemaFieldTree from '@/views/databus/component/detail/SchemaFieldTree.vue';
 import JsonCodeEditor from '@/views/databus/editor/components/common/JsonCodeEditor.vue';
+import DbConfirmBubble from '@/views/databus/components/DbConfirmBubble.vue';
 import type { ComponentRegistryRow } from '@/views/databus/component/model/registry';
 import { OWNER_TYPE } from '@/constants/databus';
 import { DATABUS_COMPONENT_SCRIPT_LANG_JAVA } from '@/constants/databus-component';

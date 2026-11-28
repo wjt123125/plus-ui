@@ -81,26 +81,33 @@
       </template>
     </div>
 
-    <!-- 底部操作条：仅草稿态出现，采纳后无操作 -->
+    <!-- 底部操作条：仅草稿态出现，采纳后无操作。左拒绝、右采纳，各自就地气泡确认 -->
     <div v-if="detail && isDraft" class="review-footer">
-      <el-button
-        text
-        class="review-btn review-btn--danger"
-        :loading="rejecting"
-        @click="onReject"
+      <DbConfirmBubble
+        title="拒绝草稿"
+        content="草稿将被删除，不可恢复。"
+        confirm-text="拒绝"
+        danger
+        @confirm="onReject"
       >
-        拒绝
-      </el-button>
+        <el-button text class="review-btn review-btn--danger" :loading="rejecting">拒绝</el-button>
+      </DbConfirmBubble>
       <div class="review-footer-spacer" />
-      <el-button
-        v-hasPermi="['databus:component:edit']"
-        text
-        class="review-btn review-btn--solid"
-        :loading="adopting"
-        @click="onAdopt"
+      <DbConfirmBubble
+        title="采纳草稿"
+        content="立即编译注册并全平台生效，失败自动回滚。"
+        confirm-text="采纳"
+        @confirm="onAdopt"
       >
-        采纳并生效
-      </el-button>
+        <el-button
+          v-hasPermi="['databus:component:edit']"
+          text
+          class="review-btn review-btn--solid"
+          :loading="adopting"
+        >
+          采纳并生效
+        </el-button>
+      </DbConfirmBubble>
     </div>
   </div>
 </template>
@@ -108,8 +115,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { Document, Loading } from '@element-plus/icons-vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import JavaCodeEditor from '@/views/databus/component/form/JavaCodeEditor.vue';
+import DbConfirmBubble from '@/views/databus/components/DbConfirmBubble.vue';
 import SchemaFieldTree from '@/views/databus/component/detail/SchemaFieldTree.vue';
 import JsonCodeEditor from '@/views/databus/editor/components/common/JsonCodeEditor.vue';
 import { adoptScriptDraft, getComponent, rejectScriptDraft } from '@/api/databus/component';
@@ -190,15 +198,6 @@ async function onAdopt() {
   if (!detail.value || !isDraft.value || adopting.value) {
     return;
   }
-  try {
-    await ElMessageBox.confirm(
-      '立即编译注册并全平台生效，失败自动回滚。',
-      '采纳草稿',
-      { type: 'warning', confirmButtonText: '采纳', cancelButtonText: '取消' }
-    );
-  } catch {
-    return;
-  }
   adopting.value = true;
   try {
     const { data } = await adoptScriptDraft(props.componentId);
@@ -222,15 +221,6 @@ async function onAdopt() {
 
 async function onReject() {
   if (!detail.value || !isDraft.value || rejecting.value) {
-    return;
-  }
-  try {
-    await ElMessageBox.confirm('草稿将被删除，不可恢复。', '拒绝草稿', {
-      type: 'warning',
-      confirmButtonText: '拒绝',
-      cancelButtonText: '取消'
-    });
-  } catch {
     return;
   }
   rejecting.value = true;
@@ -432,14 +422,14 @@ async function onReject() {
 
 /* 采纳：全面板唯一实心按钮，无投影 */
 .review-btn--solid.el-button {
-  background: var(--db-blue, #007aff);
+  background: var(--db-accent, #1c1c1e);
   box-shadow: none;
-  color: #fff;
+  color: var(--db-on-accent, #fff);
 }
 
 .review-btn--solid.el-button:not(.is-disabled):hover {
-  background: var(--db-blue-hover, #0068db);
+  background: var(--db-accent-hover, #3a3a3c);
   box-shadow: none;
-  color: #fff;
+  color: var(--db-on-accent, #fff);
 }
 </style>

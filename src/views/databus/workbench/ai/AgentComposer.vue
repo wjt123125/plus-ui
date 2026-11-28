@@ -115,7 +115,7 @@ function createChip(chip: ComposerChip): HTMLElement {
   return el;
 }
 
-/** 按 chips 增删卡片 DOM：焦点在输入框时插在光标处，否则放到最前面且不动光标 */
+/** 按 chips 增删卡片 DOM：焦点在输入框时插在光标处，否则追加到正文末尾且不动光标 */
 function syncChips() {
   const el = editorRef.value;
   if (!el) {
@@ -151,20 +151,23 @@ function syncChips() {
   const selection = window.getSelection();
   const focused = document.activeElement === el && selection?.rangeCount === 1;
   const range = focused ? selection!.getRangeAt(0).cloneRange() : null;
-  // 未聚焦时统一插到最前面：锚点只取一次，连续 insertBefore 才能保持顺序
-  const anchor = el.firstChild;
   for (const chip of missing) {
     const node = createChip(chip);
     if (range) {
       range.insertNode(node);
       range.setStartAfter(node);
     } else {
-      el.insertBefore(node, anchor);
+      // 未聚焦（划字「加入会话」、资源树/画布/市场添加等）一律追加到正文末尾：
+      // 插入顺序要和用户认知一致，不能挤到开头把已写的字顶到后面
+      el.appendChild(node);
     }
   }
   if (range) {
     selection!.removeAllRanges();
     selection!.addRange(range);
+  } else {
+    // 内容超过可视高度时，末尾的卡片默认在视口外，滚到底才能让用户看见刚加的卡
+    el.scrollTop = el.scrollHeight;
   }
 }
 

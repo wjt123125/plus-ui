@@ -158,12 +158,24 @@
                       >
                         <el-icon><Edit /></el-icon><span>编辑</span>
                       </el-dropdown-item>
+                      <!-- 破坏性动作就地确认：气泡挂在菜单项上，需阻止菜单项自带的收起
+                           （@click.prevent 让 el-dropdown-item 不关菜单），确认/取消后点外部自然收起 -->
                       <el-dropdown-item
                         v-hasPermi="['databus:connection:remove']"
                         class="db-menu-item is-danger"
-                        command="delete"
+                        @click.prevent
                       >
-                        <el-icon><Delete /></el-icon><span>删除</span>
+                        <DbConfirmBubble
+                          title="删除连接"
+                          :content="`删除连接「${row.connectionName}」后不可恢复。`"
+                          confirm-text="删除"
+                          danger
+                          @confirm="handleDelete(row)"
+                        >
+                          <span>
+                            <el-icon><Delete /></el-icon><span>删除</span>
+                          </span>
+                        </DbConfirmBubble>
                       </el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
@@ -207,6 +219,7 @@ import ConnectionFormBody from './ConnectionFormBody.vue';
 import { findMissingRequired } from './connectionSchema';
 import { useConnectorOptions } from './useConnectorOptions';
 import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
+import DbConfirmBubble from '@/views/databus/components/DbConfirmBubble.vue';
 import { versionLabel } from '../market/marketDisplay';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import { isBrandIconName } from '@/views/databus/workbench/composables/useBrandIcons';
@@ -291,8 +304,8 @@ const connectorIcon = (value?: string) => defOf(value)?.icon || 'lucide:database
 /** 品牌彩色图标（logos:）：自带配色，行图标不再叠哈希底色/着色 */
 const isBrandIcon = (value?: string) => isBrandIconName(defOf(value)?.icon);
 
-/** 兜底识别色板：按 type 哈希取色，稳定且不硬编码任何数据库类型；顺序即权重，首位为默认蓝 */
-const TINT_KEYS = ['--db-blue', '--db-green', '--db-orange', '--db-purple', '--db-red'];
+/** 兜底识别色板：按 type 哈希取色，稳定且不硬编码任何数据库类型；顺序即权重，首位为主色 */
+const TINT_KEYS = ['--db-accent', '--db-green', '--db-orange', '--db-purple', '--db-red'];
 
 /** 类型 → 图标底色。包声明品牌色后从这里优先返回即可，未声明时按 type 哈希稳定取色 */
 const connectorTint = (value?: string) => {
@@ -407,24 +420,17 @@ const toggleEnabled = async (row: SysDatabusConnectionVo) => {
   }
 };
 
-/** 删除按钮操作（单行） */
+/** 删除（单行）：确认由「更多」菜单项上的就地气泡完成 */
 const handleDelete = async (row: Partial<SysDatabusConnectionVo>) => {
-  const targetId = row.id;
-  const targetName = row.connectionName ?? String(targetId);
-  await modal.confirm('是否确认删除连接"' + targetName + '"？');
-  await delConnection(targetId as number);
+  await delConnection(row.id as number);
   await getList();
   modal.msgSuccess('删除成功');
 };
 
-/** 行尾「更多」菜单：编辑 / 删除。测试与启用开关是高频操作，留在行上不进菜单。 */
+/** 行尾「更多」菜单：编辑。删除在菜单项上走就地气泡确认，不经 command。 */
 const handleMoreCommand = (cmd: string, row: SysDatabusConnectionVo) => {
   if (cmd === 'edit') {
     handleUpdate(row);
-    return;
-  }
-  if (cmd === 'delete') {
-    void handleDelete(row);
   }
 };
 
@@ -568,7 +574,7 @@ watch(
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
   /* 浮起（位移/缩放/阴影/过渡）统一由 .db-float 提供（见 _primitives.scss），
      本页不再自写 transform / 阴影 / transition。 */
   --db-zoom: 1.015;
@@ -651,8 +657,8 @@ watch(
   border-radius: 8px;
   justify-content: center;
   font-size: 16px;
-  color: var(--conn-tint, var(--db-blue));
-  background: color-mix(in srgb, var(--conn-tint, var(--db-blue)) 14%, transparent);
+  color: var(--conn-tint, var(--db-ink-muted));
+  background: color-mix(in srgb, var(--conn-tint, var(--db-ink-muted)) 14%, transparent);
 }
 
 /* 连接ID与名称同一行：基元的 __code 默认是第三行，这里去掉上边距 */
@@ -672,8 +678,8 @@ watch(
   border-radius: 9999px;
   font-size: 12px;
   font-weight: 500;
-  background: rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.1);
-  color: var(--el-color-primary);
+  background: var(--db-accent-soft);
+  color: var(--db-accent);
 }
 
 /* 状态点 + 开关：基元的 __aside 是竖排，这里按一行排 */
@@ -703,8 +709,8 @@ watch(
   }
 
   &:hover {
-    background: rgba(var(--el-color-primary-rgb, 22, 104, 220), 0.1);
-    color: var(--el-color-primary);
+    background: var(--db-accent-soft);
+    color: var(--db-accent);
     opacity: 1;
   }
 

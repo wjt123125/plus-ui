@@ -78,7 +78,7 @@
             <el-dropdown
               trigger="click"
               placement="top-end"
-              popper-class="agent-scope-popper"
+              popper-class="db-scope agent-scope-popper"
               :disabled="status !== 'pending'"
               @command="pickScoped"
             >
@@ -696,8 +696,8 @@ const stateText = computed(() => {
 
 /* 待办高亮只给确认/选择卡的头部；资源卡的标签用资源类型色，不跟主色 */
 .agent-card.is-pending .agent-card__head .agent-card__chip {
-  background: rgba(0, 122, 255, 0.08);
-  color: var(--db-blue, #007aff);
+  background: var(--db-accent-soft, rgba(120, 120, 128, 0.12));
+  color: var(--db-accent, #1c1c1e);
 }
 
 .agent-card__title {
@@ -1178,7 +1178,7 @@ const stateText = computed(() => {
   .scope-item__check {
     flex: none;
     margin-top: 2px;
-    color: var(--db-blue, #007aff);
+    color: var(--db-accent, #1c1c1e);
     font-size: 15px;
   }
 

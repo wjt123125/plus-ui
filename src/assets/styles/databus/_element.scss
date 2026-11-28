@@ -3,19 +3,23 @@
    ------------------------------------------------------------
    优先用变量重绑（组件读 CSS 变量），少写具体选择器；
    确实要改结构的地方才写 .db-app .el-xxx。
-   注意：弹层默认 teleport 到 body，会跑出 .db-app，
-        这些组件请加 popper-class="db-popper"（样式见文件末尾）。
+   注意：弹层默认 teleport 到 body，会跑出 .db-app。下拉加 popper-class="db-popper"，
+        dialog / drawer 加 class="db-scope"，两者都会接上同一套令牌。
    ============================================================ */
 
-.db-app {
+.db-app,
+.db-scope,
+.db-popper,
+.db-select-popper,
+.db-menu-popper {
   /* —— 变量重绑：Element Plus 组件读的就是这些 —— */
-  --el-color-primary: var(--db-blue);
-  --el-color-primary-light-3: var(--db-blue-hover);
-  --el-color-primary-light-5: var(--db-blue-hover);
-  --el-color-primary-light-7: var(--db-blue-hover);
-  --el-color-primary-light-8: var(--db-blue-hover);
-  --el-color-primary-light-9: rgba(0, 122, 255, 0.08);
-  --el-color-primary-dark-2: var(--db-blue-active);
+  --el-color-primary: var(--db-accent);
+  --el-color-primary-light-3: var(--db-accent-hover);
+  --el-color-primary-light-5: var(--db-accent-hover);
+  --el-color-primary-light-7: var(--db-accent-hover);
+  --el-color-primary-light-8: var(--db-accent-soft);
+  --el-color-primary-light-9: var(--db-accent-soft);
+  --el-color-primary-dark-2: var(--db-accent-active);
 
   --el-color-success: var(--db-green);
   --el-color-danger: var(--db-red);
@@ -36,11 +40,16 @@
   --el-border-radius-small: var(--db-r-tag);
   --el-border-radius-round: var(--db-r-pill);
 
+  --el-font-family: var(--db-font);
+}
+
+/* 页面根独占：底色与阴影。弹层各自有玻璃/实色底，
+   不能被这里的空底和阴影覆盖，所以单独挂在 .db-app 上。 */
+.db-app {
   --el-bg-color: var(--db-bg-solid);
   --el-bg-color-overlay: var(--db-bg-solid);
   --el-fill-color-blank: transparent;
 
-  --el-font-family: var(--db-font);
   --el-box-shadow-light: var(--db-shadow-sm);
   --el-box-shadow: var(--db-shadow-md);
 
@@ -76,48 +85,78 @@
 }
 
 /* —— 按钮：hover 只做轻微缩放，不做位移/发光 —— */
-.db-app .el-button {
+.db-app .el-button,
+.db-scope .el-button {
   border-radius: var(--db-r-control);
   font-weight: 500;
   transition: transform var(--db-dur-fast) var(--db-spring),
               box-shadow var(--db-dur-fast) var(--db-spring),
               background-color var(--db-dur-fast) var(--db-ease);
 }
-.db-app .el-button:not(.is-text):not(.is-link):not(.is-disabled):hover {
+.db-app .el-button:not(.is-text):not(.is-link):not(.is-disabled):hover,
+.db-scope .el-button:not(.is-text):not(.is-link):not(.is-disabled):hover {
   transform: scale(1.02);
 }
-.db-app .el-button:not(.is-text):not(.is-link):not(.is-disabled):active {
+.db-app .el-button:not(.is-text):not(.is-link):not(.is-disabled):active,
+.db-scope .el-button:not(.is-text):not(.is-link):not(.is-disabled):active {
   transform: scale(0.97);
 }
-.db-app .el-button--primary {
-  box-shadow: 0 2px 6px rgba(0, 122, 255, 0.3);
+/* primary 按钮：填色/悬停/按下全部走 accent 令牌。
+   全局 vendors/_overrides.scss 把 .el-button--primary 的五个变量直接钉成 #409eff，
+   且写在按钮元素自身上，特异度压过祖先的 --el-color-primary，所以这里必须同级再写一遍。 */
+.db-app .el-button--primary,
+.db-scope .el-button--primary {
+  --el-button-bg-color: var(--db-accent);
+  --el-button-border-color: var(--db-accent);
+  --el-button-text-color: var(--db-on-accent);
+  --el-button-hover-bg-color: var(--db-accent-hover);
+  --el-button-hover-border-color: var(--db-accent-hover);
+  --el-button-hover-text-color: var(--db-on-accent);
+  --el-button-active-bg-color: var(--db-accent-active);
+  --el-button-active-border-color: var(--db-accent-active);
+  --el-button-active-text-color: var(--db-on-accent);
+  --el-button-disabled-bg-color: var(--db-accent-soft);
+  --el-button-disabled-border-color: transparent;
+  --el-button-disabled-text-color: var(--db-ink-muted);
+  /* 黑色按钮不加彩色光晕，抬升只靠轻微缩放 */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
-.db-app .el-button--primary:not(.is-disabled):hover {
-  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.35);
+.db-app .el-button--primary:not(.is-disabled):hover,
+.db-scope .el-button--primary:not(.is-disabled):hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
 }
 
 /* —— 输入 / 选择器：0.5px 内描边 —— */
 .db-app .el-input__wrapper,
 .db-app .el-textarea__inner,
-.db-app .el-select__wrapper {
+.db-app .el-select__wrapper,
+.db-scope .el-input__wrapper,
+.db-scope .el-textarea__inner,
+.db-scope .el-select__wrapper {
   border-radius: var(--db-r-control);
   background: var(--db-bg-solid);
   box-shadow: inset 0 0 0 0.5px var(--db-rule);
   transition: box-shadow var(--db-dur-fast) var(--db-ease);
 }
 .db-app .el-input__wrapper:hover,
-.db-app .el-select__wrapper:hover {
+.db-app .el-select__wrapper:hover,
+.db-scope .el-input__wrapper:hover,
+.db-scope .el-select__wrapper:hover {
   box-shadow: inset 0 0 0 0.5px var(--db-rule-strong);
 }
 .db-app .el-input__wrapper.is-focus,
 .db-app .el-select__wrapper.is-focused,
-.db-app .el-textarea__inner:focus {
+.db-app .el-textarea__inner:focus,
+.db-scope .el-input__wrapper.is-focus,
+.db-scope .el-select__wrapper.is-focused,
+.db-scope .el-textarea__inner:focus {
   /* 聚焦不换色、不外发光：保持与静止态一致，避免整页输入框聚焦时亮起 */
   box-shadow: inset 0 0 0 0.5px var(--db-rule);
 }
 
 /* —— 表格：去掉重边框，靠 0.5px 分隔线 + 表头弱化 —— */
-.db-app .el-table {
+.db-app .el-table,
+.db-scope .el-table {
   --el-table-border-color: var(--db-rule);
   --el-table-header-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
@@ -125,13 +164,15 @@
   background: transparent;
   font-size: 13px;
 }
-.db-app .el-table th.el-table__cell {
+.db-app .el-table th.el-table__cell,
+.db-scope .el-table th.el-table__cell {
   font-size: 12px;
   font-weight: 600;
   color: var(--db-ink-muted);
   background: transparent;
 }
-.db-app .el-table td.el-table__cell {
+.db-app .el-table td.el-table__cell,
+.db-scope .el-table td.el-table__cell {
   border-bottom: 0.5px solid var(--db-rule);
 }
 
@@ -144,31 +185,37 @@
 }
 
 /* —— 标签 / 徽标 —— */
-/* 形状（圆角/去边框/字重）归所有标签；蓝色底只给默认 primary 档，且走 Element Plus 的
-   类型变量——直接写 background/color 会凭优先级把 success/warning/danger 的语义色全压成蓝，
+/* 形状（圆角/去边框/字重）归所有标签；浅底只给默认 primary 档，且走 Element Plus 的
+   类型变量——直接写 background/color 会凭优先级把 success/warning/danger 的语义色全压成主色，
    故障态标签就再也看不出颜色了 */
-.db-app .el-tag {
+.db-app .el-tag,
+.db-scope .el-tag {
   border-radius: var(--db-r-tag);
   border: none;
   font-weight: 600;
 }
-.db-app .el-tag--primary {
-  --el-tag-bg-color: rgba(0, 122, 255, 0.08);
-  --el-tag-text-color: var(--db-blue);
+.db-app .el-tag--primary,
+.db-scope .el-tag--primary {
+  --el-tag-bg-color: var(--db-accent-soft);
+  --el-tag-text-color: var(--db-accent);
   --el-tag-border-color: transparent;
 }
 
 /* —— 弹窗 ——
    不写 background：玻璃底统一由 _popper.scss「玻璃浮层」组提供（.el-dialog 全局生效），
-   这里若再给实色（特异度 0,2,0 更高）会把玻璃盖死。 */
-.db-app .el-dialog {
+   这里若再给实色（特异度更高）会把玻璃盖死。
+   teleport 出体的弹窗带 class="db-scope"，选择器要同时覆盖。 */
+.db-app .el-dialog,
+.el-dialog.db-scope,
+.db-scope .el-dialog {
   border-radius: 18px;
   box-shadow: var(--db-shadow-lg);
 }
 
 /* ============================================================
-   teleport 到 body 的弹层：给组件加 popper-class="db-popper"
-   （dialog / drawer 也可用 append-to-body=false 留在 .db-app 内）
+   teleport 到 body 的弹层：
+   下拉加 popper-class="db-popper"；dialog / drawer 加 class="db-scope"。
+   三者都已在 _tokens.scss 里声明令牌，样式差异只剩各自的底色。
    ============================================================ */
 .db-popper {
   --el-bg-color-overlay: var(--db-bg-solid);
@@ -195,14 +242,14 @@
   background: var(--db-bg-hover);
 }
 .db-popper .el-select-dropdown__item.is-selected {
-  color: var(--db-blue);
+  color: var(--db-accent);
   font-weight: 600;
 }
 /* 下拉面板宽度跟随最长选项：EP 给下拉根节点写内联 min-width＝输入框宽，
    属性面板的 select 是 width:100%（约 370px），选项却普遍只有几个字，
    空面板浪费且分散视线。收宽到内容宽，!important 压内联值，max-width 兜超长选项。
-   单独用 db-select-popper 而非 db-popper：弹层 teleport 到 body，出了 .db-app
-   读不到 --db-* 令牌，套 db-popper 皮肤会丢圆角/阴影/底色，这里只改宽度。 */
+   单独用 db-select-popper 而非 db-popper：后者会套玻璃皮肤（圆角/阴影/底色），
+   这里只想要宽度收窄，令牌照常继承。 */
 .db-select-popper.el-select-dropdown {
   width: max-content !important;
   min-width: 96px !important;
@@ -279,4 +326,19 @@
 
 .db-menu-popper .el-dropdown-menu__item--divided::before {
   display: none;
+}
+
+/* —— 气泡二次确认（DbConfirmBubble）——
+   与菜单/下拉不同：保留小箭头指向触发处，实色底 + 细边，内容样式在组件内。 */
+.db-confirm-bubble.el-popover.el-popper {
+  padding: 10px 12px;
+  background: var(--db-bg-solid);
+  border: 1px solid var(--db-rule);
+  border-radius: var(--db-r-control);
+  box-shadow: var(--db-shadow-md);
+}
+
+.db-confirm-bubble .el-popper__arrow::before {
+  background: var(--db-bg-solid);
+  border-color: var(--db-rule);
 }

@@ -544,6 +544,8 @@ export function useWorkspaceTabs() {
   /** 关闭同组件的全部 tab（删除组件后调用） */
   function closeByCode(code: string): void {
     const remain = wb.tabs.value.filter((t) => t.code !== code);
+    // 必须落回 tabs：只算 remain 不赋值，tab 不会被真正移除
+    wb.tabs.value = remain;
     if (!remain.some((t) => t.key === wb.activeKey.value)) {
       wb.activeKey.value = remain[remain.length - 1]?.key ?? '';
     }
@@ -564,7 +566,7 @@ export function useWorkspaceTabs() {
           ? `「${dirty[0].title}」有未保存的改动，确认放弃并关闭？`
           : `${dirty.length} 个标签有未保存的改动，确认全部放弃并关闭？`;
       try {
-        await modal.confirm(msg);
+        await modal.confirm(msg, { customClass: 'db-scope' });
       } catch {
         return; // 用户取消，整批不关
       }

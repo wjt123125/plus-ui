@@ -61,7 +61,7 @@ export function useChainDocument(store: ChainDocumentStore) {
 
   /** 本次载入时的服务端 updateTime：试运行/切回 tab 时用它发现「AI 已落库但推送漏了」的版本差 */
   const loadedUpdateTime = ref<string | null>(null);
-  /** 当前链路创建人 id（P1 看得见：非本人链路画布置只读——审核者从审核详情打开他人链路仅查看；系统行 create_by 为空不拦） */
+  /** 当前链路创建人 id（非本人链路画布置只读——审核者从审核详情打开他人链路仅查看；系统行 create_by 为空不拦） */
   const chainOwner = ref<number | string | null>(null);
 
   /** 链路入参登记表（跟链路走；试运行按默认值预填，执行前按必填校验） */

@@ -323,7 +323,7 @@
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import { isHandledRequestError } from '@/utils/request';
 import { useStickToBottom } from '@/hooks/scroll/useStickToBottom';
 import {
@@ -854,20 +854,6 @@ onMounted(() => {
 
 /* ---------------- 消息工具栏动作（删除 / 重试 / 回退） ---------------- */
 
-/** 破坏性动作先确认；取消时返回 false */
-async function confirmDestructive(message: string, title: string, confirmText: string): Promise<boolean> {
-  try {
-    await ElMessageBox.confirm(message, title, {
-      confirmButtonText: confirmText,
-      cancelButtonText: '取消',
-      type: 'warning'
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * 回退成功后把这一轮提问原样放回输入框：
  * 正文回填、上下文卡（含整件资源）回到暂存区。已有输入不覆盖，避免冲掉用户正在写的字。
@@ -941,16 +927,8 @@ function cancelRevert() {
  */
 const messageActionDeps: MessageActionDeps = {
   retryReply: (messageId) => retryReply(messageId),
-  async removeTurn(messageId) {
-    const confirmed = await confirmDestructive(
-      '将删除这一轮提问与回答，历史里不再出现。是否继续？',
-      '删除对话',
-      '删除'
-    );
-    if (confirmed) {
-      await removeTurn(messageId);
-    }
-  },
+  // 确认已在消息工具栏的就地气泡完成（MessageActionBar），这里只执行
+  removeTurn,
   async revertTurn(messageId) {
     const runId = questionById(messageId)?.runId;
     if (!runId) {
@@ -1122,7 +1100,7 @@ defineExpose({ newSession });
   padding: 14px;
   border-radius: var(--db-r-card, 14px);
   color: var(--db-blue, #007aff);
-  background: rgba(0, 122, 255, 0.1);
+  background: var(--db-accent-soft, rgba(120, 120, 128, 0.12));
 }
 
 .agent-chat__welcome-title {
@@ -1249,9 +1227,9 @@ defineExpose({ newSession });
   border-radius: 50%;
   background: radial-gradient(
     circle,
-    rgba(10, 132, 255, 0.26) 0%,
-    rgba(10, 132, 255, 0.1) 38%,
-    rgba(10, 132, 255, 0) 72%
+    rgba(120, 120, 128, 0.26) 0%,
+    rgba(120, 120, 128, 0.1) 38%,
+    rgba(120, 120, 128, 0) 72%
   );
   opacity: 0;
   transform: scale(0.75);
@@ -1262,12 +1240,12 @@ defineExpose({ newSession });
 .agent-chat__who-icon {
   flex: none;
   font-size: var(--db-fs-md, 13px);
-  color: #0a84ff;
+  color: var(--db-blue, #007aff);
 }
 
 /* 回复中：胶囊底色微渐变，不加描边 */
 .agent-chat__who.is-streaming {
-  background: linear-gradient(180deg, rgba(10, 132, 255, 0.07), rgba(10, 132, 255, 0.02));
+  background: linear-gradient(180deg, rgba(120, 120, 128, 0.07), rgba(120, 120, 128, 0.02));
 }
 
 .agent-chat__who.is-streaming .agent-chat__who-spark {
@@ -1305,8 +1283,8 @@ defineExpose({ newSession });
   height: 5px;
   margin-left: 3px;
   border-radius: 50%;
-  background: #0a84ff;
-  box-shadow: 0 0 6px rgba(10, 132, 255, 0.45);
+  background: var(--db-accent, #1c1c1e);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--db-accent) 45%, transparent);
   animation: agent-live-dot 1.6s ease-in-out infinite;
 }
 

@@ -458,8 +458,8 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: rgba(0, 122, 255, 0.12);
-  color: var(--db-blue);
+  background: var(--db-accent-soft);
+  color: var(--db-accent);
 }
 
 /* 品牌彩色图标（manifest 里的 logos:mysql / logos:postgresql 等）：
@@ -535,8 +535,9 @@
    ------------------------------------------------------------
    只作用于键盘导航（:focus-visible），鼠标点击不出现；
    颜色取主色半透明外发光，不改变布局尺寸。 */
-.db-app :focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--db-blue) 60%, transparent);
+.db-app :focus-visible,
+.db-scope :focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--db-accent) 55%, transparent);
   outline-offset: 2px;
 }
 
@@ -544,11 +545,15 @@
    会和输入框自身描边叠成直角蓝框，看起来像第二层发光 */
 .db-app input:focus-visible,
 .db-app textarea:focus-visible,
-.db-app [contenteditable='true']:focus-visible {
+.db-app [contenteditable='true']:focus-visible,
+.db-scope input:focus-visible,
+.db-scope textarea:focus-visible,
+.db-scope [contenteditable='true']:focus-visible {
   outline: none;
 }
 
-.db-app button:focus:not(:focus-visible) {
+.db-app button:focus:not(:focus-visible),
+.db-scope button:focus:not(:focus-visible) {
   outline: none;
 }
 

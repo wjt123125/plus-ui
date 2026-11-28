@@ -43,14 +43,23 @@
       <span class="cf-head__spacer" />
       <!-- 启停是治理专属动作（databus:component:toggle），与「保存组件」拆权限：
            编辑态拨开关即调独立启停端点，不再随整包提交（后端 edit 已剥离 status）；新增态只是本地草稿 -->
-      <el-switch
-        v-hasPermi="['databus:component:toggle']"
-        :model-value="form.status"
-        :active-value="COMPONENT_STATUS.ENABLED"
-        :inactive-value="COMPONENT_STATUS.DISABLED"
-        size="small"
-        @update:model-value="onStatusSwitch"
-      />
+      <!-- 停用是破坏性动作：开关旁就地气泡确认；启用/新增态不需要确认，气泡禁用 -->
+      <DbConfirmBubble
+        :disabled="!isEdit || form.id == null || form.status === COMPONENT_STATUS.DISABLED"
+        content="停用后编辑器面板不再露出；已发布链路仍继续运行。"
+        confirm-text="停用"
+        danger
+        @confirm="applyStatus(COMPONENT_STATUS.DISABLED)"
+      >
+        <el-switch
+          v-hasPermi="['databus:component:toggle']"
+          :model-value="form.status"
+          :active-value="COMPONENT_STATUS.ENABLED"
+          :inactive-value="COMPONENT_STATUS.DISABLED"
+          size="small"
+          @update:model-value="onStatusSwitch"
+        />
+      </DbConfirmBubble>
     </header>
 
     <el-form
@@ -93,12 +102,13 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { addComponent, getComponent, toggleComponent, updateComponent } from '@/api/databus/component';
 import type { DatabusComponentForm, ScriptSaveResult } from '@/api/databus/component/types';
-import { COMPONENT_STATUS, type ComponentStatus } from '@/constants/databus';
+import { COMPONENT_STATUS } from '@/constants/databus';
 import {
   DATABUS_COMPONENT_DEPRECATED_NO,
   DATABUS_COMPONENT_SCRIPT_LANG_JAVA
 } from '@/constants/databus-component';
 import modal from '@/plugins/modal';
+import DbConfirmBubble from '@/views/databus/components/DbConfirmBubble.vue';
 import { defaultForm, TAB_OF, type ComponentFormModel, type TabName } from '@/views/databus/component/form/form.types';
 import { useFieldBuilder } from '@/views/databus/component/form/useFieldBuilder';
 import { validateJsonColumn } from '@/views/databus/component/form/validate';
@@ -435,27 +445,27 @@ async function handleSubmit() {
 /**
  * 卡头启停开关：编辑态直连独立启停端点（治理专属 databus:component:toggle），
  * 不再随「保存」整包提交——后端 edit 已剥离 status，靠保存改状态会静默失效；新增态只改本地草稿。
- * 停用与卡片/树开关同口径二次确认（停后编辑器面板不再投放该件，已发布链路继续跑）。
+ * 停用前就地气泡确认（停后编辑器和列表都不再投放该件，已发布链路继续跑）。
  */
 async function onStatusSwitch(val: string | number | boolean | undefined) {
-  const next: ComponentStatus = val === COMPONENT_STATUS.DISABLED ? COMPONENT_STATUS.DISABLED : COMPONENT_STATUS.ENABLED;
+  const next: 'ENABLED' | 'DISABLED' =
+    val === COMPONENT_STATUS.DISABLED ? COMPONENT_STATUS.DISABLED : COMPONENT_STATUS.ENABLED;
   if (!isEdit.value || form.value.id == null) {
     form.value.status = next;
     return;
   }
+  // 停用已在气泡里确认，这里只处理启用（无确认）
   if (next === COMPONENT_STATUS.DISABLED) {
-    const confirmed = await modal
-      .confirm(
-        `确认停用「${form.value.componentName || form.value.componentCode}」？` +
-          '停用后编辑器面板不再露出；已发布链路仍继续运行'
-      )
-      .then(
-        () => true,
-        () => false
-      );
-    if (!confirmed) {
-      return;
-    }
+    return;
+  }
+  await applyStatus(next);
+}
+
+/** 落库启停：确认已在触发处完成 */
+async function applyStatus(next: 'ENABLED' | 'DISABLED') {
+  if (form.value.id == null) {
+    form.value.status = next;
+    return;
   }
   const prev = form.value.status;
   form.value.status = next;

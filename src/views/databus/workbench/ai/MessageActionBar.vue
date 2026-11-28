@@ -13,13 +13,22 @@
       <SvgIcon :icon-class="action.icon" />
     </button>
     <!-- 「更多」常驻：这一期还没有更多动作，先留着入口，后续注册即可长出菜单项 -->
-    <el-dropdown
+    <DbConfirmBubble
       v-if="showMore"
-      trigger="click"
-      placement="bottom-end"
-      popper-class="db-menu-popper"
-      @command="runMore"
+      ref="deleteBubble"
+      trigger="manual"
+      title="删除对话"
+      content="将删除这一轮提问与回答，历史里不再出现。"
+      confirm-text="删除"
+      danger
+      @confirm="confirmPendingDelete"
     >
+      <el-dropdown
+        trigger="click"
+        placement="bottom-end"
+        popper-class="db-menu-popper"
+        @command="runMore"
+      >
       <button type="button" class="msg-actions__btn" title="更多" aria-label="更多">
         <!-- 实心横排三点（跨页规范）：直接内联 SVG，不吃图标字体/子集 -->
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -46,6 +55,7 @@
         </el-dropdown-menu>
       </template>
     </el-dropdown>
+    </DbConfirmBubble>
   </div>
 </template>
 
@@ -57,8 +67,9 @@
  * 的注册结果决定，因此新增工具不用改这个组件，也不用改调用方。
  * 显隐由所在消息行控制（hover 才出现），这里只负责布局与对齐。
  */
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import type { AgentChatMessage } from './useAgentChat';
+import DbConfirmBubble from '@/views/databus/components/DbConfirmBubble.vue';
 import {
   messageActionList,
   type MessageAction,
@@ -107,9 +118,20 @@ const moreActions = computed<MessageAction[]>(() =>
 
 const showMore = computed(() => isReply.value || moreActions.value.length > 0);
 
+/** 删除是当前唯一需要就地气泡确认的菜单项，确认后再执行注册项 */
+const deleteBubble = ref<InstanceType<typeof DbConfirmBubble> | null>(null);
+
 /** 「更多」菜单点选：按 key 找回注册项再执行 */
 function runMore(key: string) {
+  if (key === 'question-delete') {
+    deleteBubble.value?.open();
+    return;
+  }
   void moreActions.value.find((action) => action.key === key)?.run(ctx.value);
+}
+
+function confirmPendingDelete() {
+  void moreActions.value.find((action) => action.key === 'question-delete')?.run(ctx.value);
 }
 </script>
 

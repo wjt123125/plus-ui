@@ -564,8 +564,8 @@ onBeforeUnmount(() => {
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: var(--db-blue, #007aff);
-  color: #fff;
+  background: var(--db-accent, #1c1c1e);
+  color: var(--db-on-accent, #fff);
   font-family: inherit;
   font-size: 11px;
   font-weight: 600;
@@ -575,7 +575,7 @@ onBeforeUnmount(() => {
   pointer-events: auto;
 
   &:hover {
-    background: var(--db-blue-hover, #0068db);
+    background: var(--db-accent-hover, #3a3a3c);
   }
 }
 </style>

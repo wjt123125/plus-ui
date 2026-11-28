@@ -9,6 +9,7 @@
     title="手动执行链路"
     width="680px"
     append-to-body
+    class="db-scope"
     :close-on-click-modal="false"
     @update:model-value="emit('update:visible', $event)"
     @open="handleOpen"

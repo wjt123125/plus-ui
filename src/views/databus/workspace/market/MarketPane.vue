@@ -125,15 +125,20 @@
                   >
                     {{ connectorHealthOf(it).label }}
                   </el-tag>
-                  <el-button
-                    class="mkt-card__act"
-                    size="small"
-                    type="danger"
-                    plain
-                    @click.stop="onUninstallCard(it)"
-                  >
-                    <SvgIcon icon-class="lucide:trash" /><span>卸载</span>
-                  </el-button>
+                  <!-- 外层 span 只阻断卡片点击（气泡在 reference 上点击开合） -->
+                  <span @click.stop>
+                    <DbConfirmBubble
+                      :title="`卸载连接器「${it.name}」`"
+                      content="只删除你的安装记录，连接器本体与启停状态不受影响。"
+                      confirm-text="卸载"
+                      danger
+                      @confirm="onUninstallCard(it)"
+                    >
+                      <el-button class="mkt-card__act" size="small" type="danger" plain>
+                        <SvgIcon icon-class="lucide:trash" /><span>卸载</span>
+                      </el-button>
+                    </DbConfirmBubble>
+                  </span>
                 </template>
                 <!-- 未装：只有一个消费动作「安装」（上传者、治理者、普通用户都先落个人安装记录）；
                      已废弃的不给安装入口（废弃后不可运行） -->
@@ -157,7 +162,7 @@
                   size="small"
                   type="danger"
                   plain
-                  @click.stop="onUninstallCard(it)"
+                  @click.stop="onUninstallCardWithModal(it)"
                 >
                   <SvgIcon icon-class="lucide:trash" /><span>卸载</span>
                 </el-button>
@@ -209,6 +214,7 @@ import type { MarketScope } from '../workbench.types';
 import { useMarketData, marketNavIntent, showChainInstallResult } from './useMarketData';
 import { connectorDefs, connectorHealthMeta, itemIcon, loadConnectorDefs } from './marketDisplay';
 import MarketInstallDialog from './MarketInstallDialog.vue';
+import DbConfirmBubble from '@/views/databus/components/DbConfirmBubble.vue';
 import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
 import ResourceHoverBubble from '@/views/databus/workbench/ai/ResourceHoverBubble.vue';
 import { useResourceHover } from '@/views/databus/workbench/ai/useResourceHover';
@@ -473,23 +479,12 @@ function onUse(it: DatabusMarketItemVo) {
 }
 
 /**
- * 浏览卡片就地卸载（2026-10-24 级联缺口E：装在哪卸在哪，与管理 tab onUninstall 同端点）。
- * 连接器卸载只删个人安装记录，不动 def 本体；链路文案带级联回收说明
- * （后端 cascadeCleanClosureCopies：未引用且装完未碰的子链副本一并清）。
+ * 卡片就地卸载（装在哪卸在哪，与管理 tab onUninstall 同端点）。
+ * 连接器卸载只删个人安装记录、不动 def 本体，确认在气泡里完成；
+ * 组件 / 链路的全屏确认留在 onUninstallCardWithModal（链路带级联回收说明）。
  */
 async function onUninstallCard(it: DatabusMarketItemVo) {
   if (it.localResourceId == null) {
-    return;
-  }
-  let tip = `确认卸载「${it.name}」？`;
-  if (activeType.value === MARKET_RESOURCE_TYPE.CONNECTOR) {
-    tip = `确认卸载「${it.name}」？只删除你的安装记录，连接器本体与全局启停不受影响。`;
-  } else if (activeType.value === MARKET_RESOURCE_TYPE.CHAIN) {
-    tip = `确认卸载「${it.name}」？将删除你的本地副本（随它入目录、未引用且装完未碰的子链副本一并回收）；若该副本仍被你的其他链路引用，会被拒绝删除，请先移除引用。`;
-  }
-  try {
-    await modal.confirm(tip);
-  } catch {
     return;
   }
   try {
@@ -499,6 +494,23 @@ async function onUninstallCard(it: DatabusMarketItemVo) {
   } catch {
     /* 拦截器已提示 */
   }
+}
+
+/** 组件 / 链路卡片卸载：链路会删本地副本并回收未引用的子链副本，说明长，仍走全屏确认 */
+async function onUninstallCardWithModal(it: DatabusMarketItemVo) {
+  if (it.localResourceId == null) {
+    return;
+  }
+  const tip =
+    activeType.value === MARKET_RESOURCE_TYPE.CHAIN
+      ? `确认卸载「${it.name}」？将删除你的本地副本（随它入目录、未引用且装完未碰的子链副本一并回收）；若该副本仍被你的其他链路引用，会被拒绝删除，请先移除引用。`
+      : `确认卸载「${it.name}」？`;
+  try {
+    await modal.confirm(tip, { customClass: 'db-scope' });
+  } catch {
+    return;
+  }
+  await onUninstallCard(it);
 }
 </script>
 

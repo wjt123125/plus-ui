@@ -221,7 +221,7 @@ onMounted(() => {
 }
 
 .revert-card__dot.is-ref {
-  background: var(--db-blue, #007aff);
+  background: var(--db-accent, #1c1c1e);
 }
 
 .revert-card__name {

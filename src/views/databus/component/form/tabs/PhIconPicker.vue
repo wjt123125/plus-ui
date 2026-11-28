@@ -27,6 +27,7 @@
       title="选择图标（Phosphor）"
       width="620px"
       append-to-body
+      class="db-scope"
       :close-on-click-modal="false"
     >
       <div class="ph-picker__panel">

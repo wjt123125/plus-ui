@@ -9,6 +9,7 @@
     :title="mode === 'template' ? '从模板创建链路' : '复制链路'"
     width="520px"
     append-to-body
+    class="db-scope"
     destroy-on-close
     @closed="resetForm"
   >

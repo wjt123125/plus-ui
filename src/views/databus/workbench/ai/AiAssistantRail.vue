@@ -179,7 +179,7 @@ const emit = defineEmits<{
     padding: 14px;
     border-radius: 14px;
     color: var(--db-blue, #007aff);
-    background: rgba(0, 122, 255, 0.1);
+    background: var(--db-accent-soft, rgba(120, 120, 128, 0.12));
   }
 
   &__welcome-title {

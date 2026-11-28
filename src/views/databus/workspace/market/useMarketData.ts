@@ -215,7 +215,7 @@ export function useMarketData() {
     await Promise.all([loadPending(), refresh()]);
   }
 
-  /** 审核详情（P1 解「干审」）：内容预览＋闭包依赖状态树（权限 databus:market:review） */
+  /** 审核详情：内容预览＋闭包依赖状态树（权限 databus:market:review），用真实内容替代只看上架说明的「干审」 */
   async function reviewDetail(id: string | number): Promise<MarketReviewDetailVo | undefined> {
     const { data } = await getMarketReviewDetail(id);
     return data;

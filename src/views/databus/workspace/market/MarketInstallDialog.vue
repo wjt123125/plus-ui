@@ -13,6 +13,7 @@
     title="安装物料"
     width="480px"
     append-to-body
+    class="db-scope"
     @update:model-value="(v: boolean) => emit('update:visible', v)"
   >
     <div class="mkt-install">
@@ -39,7 +40,7 @@
             check-strictly
             highlight-current
             default-expand-all
-            popper-class="mkt-install-popper"
+            popper-class="db-scope mkt-install-popper"
             style="width: 100%"
             placeholder="选择安装分组"
           >

@@ -135,15 +135,22 @@
                 >
                   编辑
                 </el-button>
-                <el-button
-                  v-hasPermi="['databus:alert:remove']"
-                  link
-                  type="danger"
-                  size="small"
-                  @click="handleDelete(row as DatabusAlertRuleVo)"
+                <DbConfirmBubble
+                  title="删除确认"
+                  :content="`确认删除告警规则「${row.ruleName}」？已产生的告警记录会保留，便于历史追溯。`"
+                  confirm-text="删除"
+                  danger
+                  @confirm="handleDelete(row as DatabusAlertRuleVo)"
                 >
-                  删除
-                </el-button>
+                  <el-button
+                    v-hasPermi="['databus:alert:remove']"
+                    link
+                    type="danger"
+                    size="small"
+                  >
+                    删除
+                  </el-button>
+                </DbConfirmBubble>
               </template>
             </el-table-column>
             <template #empty>
@@ -222,7 +229,7 @@
 
 <script setup name="SettingsPane" lang="ts">
 import { Plus } from '@element-plus/icons-vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import { useDark, useStorage } from '@vueuse/core';
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import { useUserStore } from '@/store/modules/user';
@@ -236,6 +243,7 @@ import type { DatabusAlertRuleQuery, DatabusAlertRuleVo } from '@/api/databus/al
 import { useLoading } from '@/hooks/async/useLoading';
 import AlertRuleForm from '@/views/databus/alert/AlertRuleForm.vue';
 import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
+import DbConfirmBubble from '@/views/databus/components/DbConfirmBubble.vue';
 import { FLAG } from '@/constants/databus';
 import { usePaneRefresh } from '../composables/usePaneRefresh';
 
@@ -366,11 +374,6 @@ const handleUpdate = (row: DatabusAlertRuleVo) => {
 };
 
 const handleDelete = async (row: DatabusAlertRuleVo) => {
-  await ElMessageBox.confirm(
-    `确认删除告警规则「${row.ruleName}」？已产生的告警记录会保留，便于历史追溯。`,
-    '删除确认',
-    { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
-  );
   await delAlertRule(row.id as number | string);
   await getRuleList();
   ElMessage.success('删除成功');

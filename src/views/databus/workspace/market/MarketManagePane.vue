@@ -102,14 +102,40 @@
               </div>
               <div class="db-row__ops" @click.stop>
                 <!-- 启停仅对组件有意义（链路生命周期由发布/下线管），故链路只留卸载 -->
-                <el-switch
+                <!-- 停用有重启语义，就地气泡确认；before-change 先拦下翻转，确认后才走宿主启停 -->
+                <DbConfirmBubble
                   v-if="row.resourceType === MARKET_RESOURCE_TYPE.COMPONENT"
-                  v-hasRoles="['databus_gov']"
-                  :model-value="row.enabled !== false"
-                  size="small"
-                  @change="(v: string | number | boolean) => onToggle(row, Boolean(v))"
-                />
-                <el-button v-hasRoles="['databus_gov']" size="small" type="danger" plain @click="onUninstall(row)">
+                  :ref="(el) => setToggleBubble(row.id, el)"
+                  trigger="manual"
+                  title="停用组件"
+                  :content="`停用「${row.name}」后编辑器面板不再露出，已发布链路仍继续运行。`"
+                  confirm-text="停用"
+                  danger
+                  @confirm="confirmDisable"
+                >
+                  <el-switch
+                    v-hasRoles="['databus_gov']"
+                    :model-value="row.enabled !== false"
+                    size="small"
+                    :before-change="() => beforeToggle(row)"
+                    @change="(v: string | number | boolean) => onToggle(row, Boolean(v))"
+                  />
+                </DbConfirmBubble>
+                <!-- 共享组件 / 连接器卸载只动安装记录，就地气泡确认；
+                     链路与组件 FORK 副本会删本地资源、后果说明长，仍走全屏弹窗 -->
+                <DbConfirmBubble
+                  v-if="canUninstallByBubble(row)"
+                  :title="uninstallBubbleTitle(row)"
+                  :content="uninstallBubbleContent(row)"
+                  confirm-text="卸载"
+                  danger
+                  @confirm="onUninstall(row)"
+                >
+                  <el-button v-hasRoles="['databus_gov']" size="small" type="danger" plain>
+                    <SvgIcon icon-class="lucide:trash" /><span>卸载</span>
+                  </el-button>
+                </DbConfirmBubble>
+                <el-button v-else v-hasRoles="['databus_gov']" size="small" type="danger" plain @click="onUninstallWithModal(row)">
                   <SvgIcon icon-class="lucide:trash" /><span>卸载</span>
                 </el-button>
               </div>
@@ -162,12 +188,28 @@
                 <div v-if="row.modifyNote" class="db-row__remark">修改说明：{{ row.modifyNote }}</div>
               </div>
               <div class="db-row__ops" @click.stop>
-                <el-button v-if="row.status === MARKET_STATUS.ONLINE" size="small" @click="onUnpublish(row)">
-                  <SvgIcon icon-class="lucide:arrow-down-to-line" /><span>下架</span>
-                </el-button>
-                <el-button size="small" type="danger" plain @click="onDeleteItem(row)">
-                  <SvgIcon icon-class="lucide:trash" /><span>删除</span>
-                </el-button>
+                <DbConfirmBubble
+                  v-if="row.status === MARKET_STATUS.ONLINE"
+                  :title="`下架「${row.name}」`"
+                  content="下架后市场不再展示，你的源资源不受影响。"
+                  confirm-text="下架"
+                  @confirm="onUnpublish(row)"
+                >
+                  <el-button size="small">
+                    <SvgIcon icon-class="lucide:arrow-down-to-line" /><span>下架</span>
+                  </el-button>
+                </DbConfirmBubble>
+                <DbConfirmBubble
+                  title="删除物料"
+                  :content="`删除「${row.name}」后不可恢复，不影响你的源资源。`"
+                  confirm-text="删除"
+                  danger
+                  @confirm="onDeleteItem(row)"
+                >
+                  <el-button size="small" type="danger" plain>
+                    <SvgIcon icon-class="lucide:trash" /><span>删除</span>
+                  </el-button>
+                </DbConfirmBubble>
               </div>
               <SvgIcon class="db-row__chevron" icon-class="lucide:chevron-right" />
             </li>
@@ -188,7 +230,7 @@
           />
           <ul v-if="!isGroupCollapsed(grp.type)" class="db-list db-list--framed">
             <!-- 整行可点＝开物料审核 tab（信息头＋内容预览＋依赖树＋底部通过/驳回，唯一入口；
-                 行内不再放「详情」按钮，也不放通过/驳回：B 口径要求通过前看依赖树，审核动作一律进 tab 就地完成）。
+                 行内不放「详情」按钮，也不放通过/驳回：通过前要看依赖树，审核动作一律进 tab 就地完成）。
                  禁自审：自己上架的项整行不可点（不只是禁用按钮）——口径「前端看不到的，一定不能操作」，
                  作者要回看自己的件走「我的上架」视角（decisions §七-7.1）；但其 @作者仍可点（导航非审核动作） -->
             <li
@@ -325,6 +367,7 @@ import { isBrandIconName } from '@/views/databus/workbench/composables/useBrandI
 import StatusDot from '../components/StatusDot.vue';
 import SessionMoreMenu from '@/views/databus/workbench/components/SessionMoreMenu.vue';
 import DbSeg, { type DbSegOption } from '@/views/databus/workspace/components/DbSeg.vue';
+import DbConfirmBubble from '@/views/databus/components/DbConfirmBubble.vue';
 import MarketGroupHeader from './MarketGroupHeader.vue';
 import MarketCategoryPane from './MarketCategoryPane.vue';
 import type { MarketScope } from '../workbench.types';
@@ -660,29 +703,59 @@ function onToggle(row: DatabusMarketInstallVo, enabled: boolean) {
   emit('toggle-local', row.localResourceId, enabled);
 }
 
+/** 每行开关旁的确认气泡：停用前拦一次，避免误触导致组件面板下线 */
+const toggleBubbles = new Map<string | number, InstanceType<typeof DbConfirmBubble>>();
+let pendingDisable: DatabusMarketInstallVo | null = null;
+
+function setToggleBubble(id: string | number, el: unknown) {
+  if (el) {
+    toggleBubbles.set(id, el as InstanceType<typeof DbConfirmBubble>);
+  } else {
+    toggleBubbles.delete(id);
+  }
+}
+
+/** 开关变更前置：开→关弹气泡并拦下翻转；关→开直接放行 */
+function beforeToggle(row: DatabusMarketInstallVo): boolean {
+  if (row.enabled === false) {
+    return true;
+  }
+  pendingDisable = row;
+  toggleBubbles.get(row.id)?.open();
+  return false;
+}
+
+function confirmDisable() {
+  const row = pendingDisable;
+  pendingDisable = null;
+  if (row) {
+    onToggle(row, false);
+  }
+}
+
+/** 卸载是否就地气泡确认：连接器与组件 SHARED 只删安装记录，不动本体；
+ *  链路与组件 FORK 副本要删本地资源、可能被引用拒绝，后果说明长，仍走全屏弹窗 */
+function canUninstallByBubble(row: DatabusMarketInstallVo): boolean {
+  return (
+    row.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR ||
+    (row.resourceType === MARKET_RESOURCE_TYPE.COMPONENT && row.mode === MARKET_MODE.SHARED)
+  );
+}
+
+function uninstallBubbleTitle(row: DatabusMarketInstallVo): string {
+  return row.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR ? `卸载连接器「${row.name}」` : `卸载组件「${row.name}」`;
+}
+
+function uninstallBubbleContent(row: DatabusMarketInstallVo): string {
+  return row.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR
+    ? '只移除你的安装记录，连接器本体与启停状态不受影响。'
+    : '只移除你的安装记录，不影响组件本体。';
+}
+
+/** 卸载落地（确认已完成）：删除安装记录，本体资源不动 */
 async function onUninstall(row: DatabusMarketInstallVo) {
   if (row.localResourceId == null) {
     return;
-  }
-  // 共用本体（组件 SHARED / 连接器）：卸载仅移除自己的安装记录，不动本体；
-  // 只有链路与组件 FORK 副本才是删本地资源
-  if (row.resourceType === MARKET_RESOURCE_TYPE.CONNECTOR) {
-    try {
-      await modal.confirm(`确认卸载「${row.name}」？只移除你的安装记录，连接器本体与启停状态不受影响。`);
-    } catch {
-      return;
-    }
-  } else {
-    const shared = row.resourceType === MARKET_RESOURCE_TYPE.COMPONENT && row.mode === MARKET_MODE.SHARED;
-    try {
-      await modal.confirm(
-        shared
-          ? `确认卸载「${row.name}」？`
-          : `确认卸载「${row.name}」？将删除你的本地副本；若该副本仍被你的其他链路引用，会被拒绝删除，请先移除引用。`
-      );
-    } catch {
-      return;
-    }
   }
   try {
     await market.uninstall(row.localResourceId);
@@ -691,6 +764,22 @@ async function onUninstall(row: DatabusMarketInstallVo) {
   } catch {
     /* 拦截器已提示 */
   }
+}
+
+/** 链路 / 组件 FORK 副本卸载：删本地副本、可能被其他链路引用，文案长仍走全屏确认 */
+async function onUninstallWithModal(row: DatabusMarketInstallVo) {
+  if (row.localResourceId == null) {
+    return;
+  }
+  try {
+    await modal.confirm(
+      `确认卸载「${row.name}」？将删除你的本地副本；若该副本仍被你的其他链路引用，会被拒绝删除，请先移除引用。`,
+      { customClass: 'db-scope' }
+    );
+  } catch {
+    return;
+  }
+  await onUninstall(row);
 }
 
 /* ---------------- 连接器 def 治理（治理视角） ---------------- */
@@ -801,7 +890,8 @@ async function onToggleDef(row: ConnectorDefVo, enabled: boolean) {
 async function onDeprecateDef(row: ConnectorDefVo) {
   try {
     await modal.confirm(
-      `确认废弃连接器「${row.label || row.type}」？废弃后立即停机（存量连接失效），且为终态不可逆：不能再启用，同一版本也不能再上传覆盖，只能卸载。`
+      `确认废弃连接器「${row.label || row.type}」？废弃后立即停机（存量连接失效），且为终态不可逆：不能再启用，同一版本也不能再上传覆盖，只能卸载。`,
+      { customClass: 'db-scope' }
     );
   } catch {
     return;
@@ -823,7 +913,8 @@ async function onUninstallDef(row: ConnectorDefVo) {
     await modal.confirm(
       dev
         ? `确认卸载连接器「${row.label || row.type}」？只删台账记录，不动 target 编译产物；dev-plugin-dir 配置还在的话，重启后会被重新装载。`
-        : `确认卸载连接器「${row.label || row.type}」？将删除 def 行与包文件。`
+        : `确认卸载连接器「${row.label || row.type}」？将删除 def 行与包文件。`,
+      { customClass: 'db-scope' }
     );
   } catch {
     return;
@@ -839,7 +930,8 @@ async function onUninstallDef(row: ConnectorDefVo) {
   if (inUse > 0) {
     try {
       await modal.confirm(
-        `「${row.label || row.type}」存在 ${inUse} 条在用连接，是否强制卸载？存量连接将悬空，可能影响链路运行。`
+        `「${row.label || row.type}」存在 ${inUse} 条在用连接，是否强制卸载？存量连接将悬空，可能影响链路运行。`,
+        { customClass: 'db-scope' }
       );
     } catch {
       return;
@@ -910,13 +1002,8 @@ function onInspectDefPackage(row: ConnectorDefVo) {
 
 /* ---------------- 我的上架操作 ---------------- */
 
-/** 下架自己的在线物料 */
+/** 下架自己的在线物料（确认已在气泡里完成） */
 async function onUnpublish(row: DatabusMarketItemVo) {
-  try {
-    await modal.confirm(`确认下架「${row.name}」？下架后市场不再展示，你的源资源不受影响。`);
-  } catch {
-    return;
-  }
   try {
     await market.unpublish(row.id);
     ElMessage.success('已下架');
@@ -925,13 +1012,8 @@ async function onUnpublish(row: DatabusMarketItemVo) {
   }
 }
 
-/** 删除市场物料（作者主权，物理删；不影响源资源） */
+/** 删除市场物料（作者主权，物理删；不影响源资源；确认已在气泡里完成） */
 async function onDeleteItem(row: DatabusMarketItemVo) {
-  try {
-    await modal.confirm(`确认删除市场物料「${row.name}」？删除后不可恢复（不影响你的源资源）。`);
-  } catch {
-    return;
-  }
   try {
     await market.removeItem(row.id);
     ElMessage.success('已删除');
@@ -945,8 +1027,8 @@ async function onDeleteItem(row: DatabusMarketItemVo) {
    由宿主开 tab；提交与成功提示都在 MarketPublishPane 内完成，本 pane 经 refreshToken 令牌看到新单。 */
 
 /* ---------------- 待审核操作 ---------------- */
-/* 审核动作（通过/驳回、B 口径依赖知情确认、依赖查看留痕）已随详情 tab 化整体迁入
-   MarketReviewTab（2026-10-24）；本 pane 只负责开 tab 与审完刷新（refreshToken watch）。 */
+/* 审核动作（通过/驳回、依赖知情确认、依赖查看留痕）已随详情 tab 化整体迁入
+   MarketReviewTab；本 pane 只负责开 tab 与审完刷新（refreshToken watch）。 */
 </script>
 
 <style lang="scss" scoped>

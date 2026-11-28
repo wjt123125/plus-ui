@@ -94,7 +94,7 @@
             />
           </el-form-item>
 
-          <!-- P1 驳回-重提闭环：只有该源已存在上架记录（重提→重审）时才需要填写 -->
+          <!-- 驳回-重提闭环：只有该源已存在上架记录（重提→重审）时才需要填写 -->
           <el-form-item v-if="showModifyNote" label="修改说明（重提时填）" prop="modifyNote">
             <el-input
               v-model="form.modifyNote"

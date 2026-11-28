@@ -8,6 +8,7 @@
     title="试运行结果"
     width="860px"
     append-to-body
+    class="db-scope"
     :close-on-click-modal="true"
     @update:model-value="emit('update:visible', $event)"
   >

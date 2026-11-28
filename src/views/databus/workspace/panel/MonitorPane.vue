@@ -577,7 +577,7 @@ const metricCards = computed<MetricCard[]>(() => {
       label: '执行总次数',
       icon: 'chart-line',
       spark: series.total,
-      sparkColor: 'var(--db-blue, #007aff)',
+      sparkColor: 'var(--db-ink-muted, #8e8e93)',
       value: formatInt(o?.totalCount),
       suffix: '',
       valueClass: '',
@@ -613,7 +613,7 @@ const metricCards = computed<MetricCard[]>(() => {
       label: '平均耗时',
       icon: 'timer',
       spark: series.duration,
-      sparkColor: 'var(--db-blue, #007aff)',
+      sparkColor: 'var(--db-ink-muted, #8e8e93)',
       value: formatDuration(o?.avgDuration),
       suffix: '',
       valueClass: '',
@@ -625,7 +625,7 @@ const metricCards = computed<MetricCard[]>(() => {
       label: 'P95 耗时',
       icon: 'gauge',
       spark: series.p95,
-      sparkColor: 'var(--db-blue, #007aff)',
+      sparkColor: 'var(--db-ink-muted, #8e8e93)',
       value: formatDuration(o?.p95Duration),
       suffix: '',
       valueClass: '',
@@ -637,7 +637,7 @@ const metricCards = computed<MetricCard[]>(() => {
       label: 'P99 耗时',
       icon: 'alarm-clock',
       spark: series.p99,
-      sparkColor: 'var(--db-blue, #007aff)',
+      sparkColor: 'var(--db-ink-muted, #8e8e93)',
       value: formatDuration(o?.p99Duration),
       suffix: '',
       valueClass: '',
@@ -726,6 +726,10 @@ const legendSkin = (skin: ChartSkin) => ({
   textStyle: { color: skin.inkMuted, fontSize: 11 }
 });
 
+/** 图表主曲线色固定取 --db-ink-muted（#6e6e73）：ECharts 画布读不到 CSS 变量，只能写定值 */
+const CHART_LINE = '#6E6E73';
+const CHART_LINE_RGB = '110, 110, 115';
+
 /** 面积渐变：顶部有色 → 底部透明 */
 const areaFill = (rgb: string, alpha = 0.18) =>
   new echarts.graphic.LinearGradient(0, 0, 0, 1, [
@@ -743,7 +747,7 @@ const renderVolumeChart = () => {
   const points = trend.value;
   volumeInstance.setOption(
     {
-      color: ['#007AFF', '#FF3B30', '#34C759'],
+      color: [CHART_LINE, '#FF3B30', '#34C759'],
       grid: { left: 8, right: 8, top: 34, bottom: 4, containLabel: true },
       tooltip: {
         trigger: 'axis',
@@ -777,7 +781,7 @@ const renderVolumeChart = () => {
           symbol: 'none',
           stack: 'count',
           lineStyle: { width: 2 },
-          areaStyle: { color: areaFill('0, 122, 255', 0.16) },
+          areaStyle: { color: areaFill(CHART_LINE_RGB, 0.16) },
           emphasis: { focus: 'series' },
           data: points.map((p) => p.successCount ?? 0)
         },
@@ -819,7 +823,7 @@ const renderSpeedChart = () => {
   const points = trend.value;
   speedInstance.setOption(
     {
-      color: ['#007AFF', '#FF9500', '#FF3B30'],
+      color: [CHART_LINE, '#FF9500', '#FF3B30'],
       grid: { left: 8, right: 8, top: 34, bottom: 4, containLabel: true },
       tooltip: {
         trigger: 'axis',
@@ -843,7 +847,7 @@ const renderSpeedChart = () => {
           symbol: 'none',
           connectNulls: true,
           lineStyle: { width: 2 },
-          areaStyle: { color: areaFill('0, 122, 255', 0.14) },
+          areaStyle: { color: areaFill(CHART_LINE_RGB, 0.14) },
           emphasis: { focus: 'series' },
           data: points.map((p) => p.avgDuration ?? null)
         },
@@ -937,8 +941,8 @@ const renderNodeBar = () => {
           itemStyle: {
             borderRadius: [0, 4, 4, 0],
             color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-              { offset: 0, color: 'rgba(0, 122, 255, 0.55)' },
-              { offset: 1, color: '#007AFF' }
+              { offset: 0, color: `rgba(${CHART_LINE_RGB}, 0.55)` },
+              { offset: 1, color: CHART_LINE }
             ])
           },
           data: nodes.map((n) => n.avgDuration ?? 0)

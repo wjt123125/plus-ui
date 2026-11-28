@@ -418,7 +418,7 @@ function nestedTitle(widget: WidgetKind): string {
   background: var(--el-color-primary-light-9, #ecf5ff);
   font-family: 'JetBrains Mono', Consolas, monospace;
   font-size: 11px;
-  color: var(--el-color-primary, #409eff);
+  color: var(--el-color-primary, #1c1c1e);
   white-space: pre-wrap;
   word-break: break-all;
 }

@@ -1,5 +1,5 @@
 <template>
-  <el-dialog :model-value="visible" title="试运行" width="620px" append-to-body @update:model-value="emit('update:visible', $event)">
+  <el-dialog :model-value="visible" title="试运行" width="620px" append-to-body class="db-scope" @update:model-value="emit('update:visible', $event)">
     <el-alert
       title="按当前画布生成 EL 并直接真执行（不落库）。下方 JSON 即链路入参，作为上下文文档根。"
       type="info"

@@ -4,6 +4,7 @@
     title="画布已转换为 LiteFlow EL"
     width="640px"
     append-to-body
+    class="db-scope"
     @update:model-value="emit('update:visible', $event)"
   >
     <el-descriptions :column="1" border size="small">

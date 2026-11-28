@@ -252,10 +252,6 @@ export interface ResourceTreeNode {
   /** 安装记录主键（挪动/卸载通道） */
   installId?: string | number;
 
-  /* —— 收藏条目 —— */
-  favoriteType?: 'chain' | 'component';
-  favoriteId?: string | number;
-
   /** 是否已收藏（叶子星标回显） */
   favorited?: boolean;
   /** 下辖叶子数徽标（目录/虚拟根；0 不渲染） */

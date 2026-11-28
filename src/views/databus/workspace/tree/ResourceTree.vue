@@ -161,7 +161,7 @@
       destroy-on-close
       :with-header="false"
       :close-on-click-modal="true"
-      class="res-tree__rename"
+      class="db-scope res-tree__rename"
     >
       <DirectoryFormBody
         :directory-id="renameDialog.directoryId"
@@ -171,7 +171,7 @@
     </el-drawer>
 
     <!-- 归属移动：链路/自建组件通用（选 0=移出为未归组） -->
-    <el-dialog v-model="moveDialog.visible" title="移动到目录" width="480px" append-to-body>
+    <el-dialog v-model="moveDialog.visible" title="移动到目录" width="480px" append-to-body class="db-scope">
       <div class="res-move">
         <div class="res-move__name">{{ moveDialog.name }}</div>
         <div class="res-move__from">{{ moveDialog.fromLabel }}</div>
@@ -591,18 +591,17 @@ function marketLeaf(it: DatabusMarketInstallVo): ResourceTreeNode | null {
 function favoriteLeaf(f: FavoriteVo): ResourceTreeNode {
   const name = f.resourceName || f.resourceCode || String(f.resourceId);
   if (f.resourceType === DATABUS_RESOURCE_TYPE_CHAIN) {
+    const c = chainMap.value.get(String(f.resourceId));
     return {
       id: `fav:chain:${f.resourceId}`,
       type: 'favorite',
       label: name,
-      directoryId: null,
+      directoryId: c?.directoryId ?? null,
       chainId: f.resourceId,
       chainCode: f.resourceCode ?? undefined,
-      status: chainMap.value.get(String(f.resourceId))?.status,
-      lifecycle: lifecycleOfChain(chainMap.value.get(String(f.resourceId))?.status),
+      status: c?.status,
+      lifecycle: lifecycleOfChain(c?.status),
       children: [],
-      favoriteType: DATABUS_RESOURCE_TYPE_CHAIN,
-      favoriteId: f.resourceId,
       favorited: true
     };
   }
@@ -611,16 +610,15 @@ function favoriteLeaf(f: FavoriteVo): ResourceTreeNode {
     id: `fav:cmp:${f.resourceId}`,
     type: 'favorite',
     label: name,
-    directoryId: null,
+    directoryId: row?.db?.directoryId ?? null,
     dbId: f.resourceId,
     componentCode: f.resourceCode ?? undefined,
     icon: f.icon ?? row?.icon ?? undefined,
     color: row?.color,
+    disabled: row?.disabled,
     lifecycle: row ? lifecycleOfComponent(row) : undefined,
     marks: row ? marksOfComponent(row) : undefined,
     children: [],
-    favoriteType: DATABUS_RESOURCE_TYPE_COMPONENT,
-    favoriteId: f.resourceId,
     favorited: true
   };
 }
@@ -636,7 +634,7 @@ function recentLeaf(item: RecentResource): ResourceTreeNode | null {
       id: `recent:chain:${item.refId}`,
       type: 'recent',
       label: item.title || c.chainName,
-      directoryId: null,
+      directoryId: c.directoryId ?? null,
       chainId: c.id,
       chainCode: c.chainCode,
       status: c.status,
@@ -655,11 +653,12 @@ function recentLeaf(item: RecentResource): ResourceTreeNode | null {
     id: `recent:cmp:${code}`,
     type: 'recent',
     label: item.title || row.name,
-    directoryId: null,
+    directoryId: row.db?.directoryId ?? null,
     dbId: row.db?.id ?? null,
     componentCode: code,
     icon: row.icon ?? item.icon,
     color: row.color,
+    disabled: row.disabled,
     lifecycle: lifecycleOfComponent(row),
     marks: marksOfComponent(row),
     children: [],
@@ -945,18 +944,18 @@ function onNodeContextMenu(event: MouseEvent, data: ResourceTreeNode) {
   menu.value = { visible: true, x, y, node: data };
 }
 
-/** 收藏目标（链路叶子→chain；自建组件/市场引用叶→component；收藏条目→其自身） */
+/**
+ * 收藏目标：按资源身份判定（链路 id / 组件 DB 行 id），
+ * 目录树 / 收藏 / 最近访问里同一个资源走同一套，不按分区类型另开分支。
+ */
 function favTargetOf(
   node: ResourceTreeNode
 ): { type: FavoriteResourceType; id: string | number } | null {
-  if (node.type === DATABUS_RESOURCE_TYPE_CHAIN) {
-    return node.chainId != null ? { type: DATABUS_RESOURCE_TYPE_CHAIN, id: node.chainId } : null;
+  if (node.chainId != null && node.chainId !== '') {
+    return { type: DATABUS_RESOURCE_TYPE_CHAIN, id: node.chainId };
   }
-  if (node.type === DATABUS_RESOURCE_TYPE_COMPONENT || node.type === DATABUS_RESOURCE_TYPE_MARKET_REF) {
-    return node.dbId != null ? { type: DATABUS_RESOURCE_TYPE_COMPONENT, id: node.dbId } : null;
-  }
-  if (node.type === 'favorite' && node.favoriteType != null && node.favoriteId != null) {
-    return { type: node.favoriteType, id: node.favoriteId };
+  if (node.dbId != null) {
+    return { type: DATABUS_RESOURCE_TYPE_COMPONENT, id: node.dbId };
   }
   return null;
 }
@@ -1080,7 +1079,7 @@ async function removeDirectory(node: ResourceTreeNode) {
     await ElMessageBox.confirm(
       `删除目录「${node.label}」？仅当目录下无子目录、无挂链路、无挂组件时可删。`,
       '删除目录',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消', customClass: 'db-scope' }
     );
   } catch {
     return; // 用户取消
@@ -1124,9 +1123,13 @@ function openMoveDialog(node: ResourceTreeNode) {
   if (node.type === DATABUS_RESOURCE_TYPE_MARKET_REF) {
     moveDialog.kind = 'install';
     moveDialog.id = node.installId as string | number;
+  } else if (node.dbId != null) {
+    // 组件按 DB 行 id 移动（收藏/最近里的组件条目同样带 dbId）
+    moveDialog.kind = DATABUS_RESOURCE_TYPE_COMPONENT;
+    moveDialog.id = node.dbId;
   } else {
-    moveDialog.kind = node.type === DATABUS_RESOURCE_TYPE_COMPONENT ? DATABUS_RESOURCE_TYPE_COMPONENT : DATABUS_RESOURCE_TYPE_CHAIN;
-    moveDialog.id = node.type === DATABUS_RESOURCE_TYPE_COMPONENT ? (node.dbId as number) : (node.chainId as string | number);
+    moveDialog.kind = DATABUS_RESOURCE_TYPE_CHAIN;
+    moveDialog.id = node.chainId as string | number;
   }
   moveDialog.name = node.label;
   moveDialog.fromLabel = `当前归属：${dir ? dir.directoryName : '未归组'}`;

@@ -8,6 +8,7 @@
     title="更换条件组件"
     width="360px"
     append-to-body
+    class="db-scope"
   >
     <el-radio-group v-model="slot.pendingConditionType.value" class="cmp-replace__radio-col">
       <el-radio

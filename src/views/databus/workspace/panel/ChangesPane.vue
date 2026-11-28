@@ -33,16 +33,24 @@
           <span v-else-if="v.remark" class="chg-item__remark">{{ v.remark }}</span>
           <span class="chg-item__time">{{ v.createTime || '' }}</span>
           <span class="chg-item__spacer" />
-          <el-button
+          <DbConfirmBubble
             v-if="v.versionNo !== current"
-            link
-            type="warning"
-            size="small"
-            :loading="rollingNo === v.versionNo"
-            @click.stop="handleRollback(v)"
+            title="回滚版本"
+            :content="`回滚到 v${v.versionNo}？源码将重新编译并保存为新版本，编译失败不影响当前版本。`"
+            confirm-text="回滚"
+            danger
+            @confirm="handleRollback(v)"
           >
-            回滚到此版本
-          </el-button>
+            <el-button
+              link
+              type="warning"
+              size="small"
+              :loading="rollingNo === v.versionNo"
+              @click.stop
+            >
+              回滚到此版本
+            </el-button>
+          </DbConfirmBubble>
         </div>
         <div v-show="expanded.has(v.versionNo)" class="chg-item__code">
           <JavaCodeEditor
@@ -64,6 +72,7 @@ import { listScriptVersions, rollbackScript } from '@/api/databus/component';
 import type { ScriptSaveResult, ScriptVersion } from '@/api/databus/component/types';
 import modal from '@/plugins/modal';
 import JavaCodeEditor from '@/views/databus/component/form/JavaCodeEditor.vue';
+import DbConfirmBubble from '@/views/databus/components/DbConfirmBubble.vue';
 
 defineOptions({ name: 'ComponentChangesPane' });
 
@@ -114,9 +123,6 @@ async function handleRollback(v: ScriptVersion) {
   if (rollingNo.value != null) {
     return;
   }
-  await modal.confirm(
-    `确认回滚到 v${v.versionNo}？该版本源码将重新编译并保存为新版本，编译失败不会影响当前运行版本。`
-  );
   rollingNo.value = v.versionNo;
   try {
     const { data } = await rollbackScript({ id: props.dbId, versionNo: v.versionNo });

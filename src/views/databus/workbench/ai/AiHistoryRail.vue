@@ -96,12 +96,21 @@
                 <span v-if="s.running">运行中</span>
               </div>
             </div>
-            <SessionMoreMenu
-              class="db-row__more ai-hist-rail__more"
-              :items="moreItems(s)"
-              aria-label="会话操作"
-              @command="(cmd: string) => onMore(s, cmd)"
-            />
+            <DbConfirmBubble
+              :ref="(el: unknown) => setDeleteBubble(s.id, el)"
+              trigger="manual"
+              content="删除后会话从列表移除，历史消息仍保留。"
+              confirm-text="删除"
+              danger
+              @confirm="emit('delete', s)"
+            >
+              <SessionMoreMenu
+                class="db-row__more ai-hist-rail__more"
+                :items="moreItems(s)"
+                aria-label="会话操作"
+                @command="(cmd: string) => onMore(s, cmd)"
+              />
+            </DbConfirmBubble>
           </li>
         </ul>
       </section>
@@ -128,6 +137,7 @@
  */
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
+import DbConfirmBubble from '@/views/databus/components/DbConfirmBubble.vue';
 import { usePersisted } from '../composables/usePersisted';
 import type { AiSession, AiSessionGroup } from './ai.types';
 import SessionMoreMenu from '../components/SessionMoreMenu.vue';
@@ -247,6 +257,17 @@ function moreItems(session: AiSession) {
   ];
 }
 
+/** 每条会话的删除气泡实例：菜单命令触发后用 open() 把气泡挂在对应会话行上 */
+const deleteBubbles = new Map<string, InstanceType<typeof DbConfirmBubble>>();
+
+function setDeleteBubble(id: string, el: unknown) {
+  if (el) {
+    deleteBubbles.set(id, el as InstanceType<typeof DbConfirmBubble>);
+  } else {
+    deleteBubbles.delete(id);
+  }
+}
+
 async function onMore(session: AiSession, command: string) {
   if (command === 'rename') {
     try {
@@ -267,17 +288,8 @@ async function onMore(session: AiSession, command: string) {
     return;
   }
   if (command === 'delete') {
-    try {
-      await ElMessageBox.confirm(`删除「${session.title}」？历史消息仍会保留。`, '删除会话', {
-        type: 'warning',
-        confirmButtonText: '删除',
-        cancelButtonText: '取消',
-        confirmButtonClass: 'el-button--danger'
-      });
-      emit('delete', session);
-    } catch {
-      /* 用户取消 */
-    }
+    // 下拉菜单点完即关，气泡改挂到该会话行的三点按钮上（箭头仍指向操作处）
+    deleteBubbles.get(session.id)?.open();
   }
 }
 </script>

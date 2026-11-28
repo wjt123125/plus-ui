@@ -1,8 +1,8 @@
 <!--
-  物料审核 tab 面板（kind=market-review，2026-10-24 由审核详情弹窗 tab 化）：
+  物料审核 tab 面板（kind=market-review）：
   三段式——物料信息头（名称/作者/类型/上架说明）→ 内容预览（链路画布节点清单 / 组件关键信息 /
   连接器查看（开连接器包查看 tab，下载原包在该 tab 头部））→ 闭包依赖状态树（依赖上下架状态 + 「查看」跳工作台 tab 看真身）。
-  操作栏钉 tab 底部：通过 / 驳回就地完成；禁自审；B 口径（2026-10-24 拍板）：链路通过前对
+  操作栏钉 tab 底部：通过 / 驳回就地完成；禁自审；链路通过前对
   「非 ONLINE 依赖」做未查看知情确认——ONLINE 依赖各有审核单背书豁免；全看过或无依赖走普通确认；
   审完 emit('reviewed') 由宿主关 tab 并刷新市场 pane 的待审核冒泡。
   面板零直连 API：数据与审核动作走 useMarketData。
@@ -28,7 +28,7 @@
               @{{ detail.item.ownerCode || detail.preview?.author || '-' }}
             </div>
             <div v-if="detail.item.summary" class="mrt__head-summary">{{ detail.item.summary }}</div>
-            <!-- 作者重提时的修改说明与上次驳回理由：审核者复核的第一眼上下文（P1 驳回-重提闭环） -->
+            <!-- 作者重提时的修改说明与上次驳回理由：审核者复核的第一眼上下文 -->
             <div v-if="detail.item.modifyNote" class="mrt__head-note">修改说明：{{ detail.item.modifyNote }}</div>
             <div v-if="detail.item.remark" class="mrt__head-note is-reject">上次驳回理由：{{ detail.item.remark }}</div>
           </div>
@@ -44,7 +44,7 @@
           <template v-if="detail.item.resourceType === MARKET_RESOURCE_TYPE.CHAIN">
             <h4 class="mrt__h">
               画布结构预览
-              <!-- P1 看得见：跳工作台画布 tab 看链路真身（宿主 openCanvas） -->
+              <!-- 跳工作台画布 tab 看链路真身（宿主 openCanvas） -->
               <el-button
                 v-if="detail.item.sourceId"
                 class="mrt__view"
@@ -107,7 +107,7 @@
           <template v-else>
             <h4 class="mrt__h">
               物料关键信息
-              <!-- P1 看得见：按源组件 code 跳工作台组件详情 tab（正本身份是 code） -->
+              <!-- 按源组件 code 跳工作台组件详情 tab（正本身份是 code） -->
               <el-button
                 v-if="detail.preview?.code"
                 class="mrt__view"
@@ -153,8 +153,8 @@
                   {{ statusLabel(d.marketStatus) }}
                 </span>
                 <span v-if="d.remark" class="mrt__dep-remark">（{{ d.remark }}）</span>
-                <!-- P1 看得见：依赖项同跳工作台 tab（链按 sourceId 开画布、组件按 code 开详情；悬空引用无 id 不显示）。
-                     点开即记入已查看集合（B 口径：非 ONLINE 依赖未查看，通过时弹知情确认） -->
+                <!-- 依赖项同跳工作台 tab（链按 sourceId 开画布、组件按 code 开详情；悬空引用无 id 不显示）。
+                     点开即记入已查看集合（非 ONLINE 依赖未查看，通过时弹知情确认） -->
                 <el-button
                   v-if="depViewable(d)"
                   class="mrt__view"
@@ -168,15 +168,16 @@
                 <!-- 闭包联审（2026-10-24）：依赖单据 PENDING 且非自审且前置清空（blockedBy 空）时行内就地审，
                      审完刷新本详情与待审核冒泡；前置未清时锁按钮只留「需先通过」提示，一层一层审 -->
                 <template v-if="depReviewable(d)">
-                  <el-button
-                    size="small"
-                    text
-                    type="success"
-                    :loading="actingDepKey === depKey(d)"
-                    @click="onApproveDep(d)"
+                  <DbConfirmBubble
+                    :title="depViewed(d) ? '' : '依赖未查看'"
+                    :content="depApproveContent(d)"
+                    :confirm-text="depViewed(d) ? '通过' : '知情并通过'"
+                    @confirm="onApproveDep(d)"
                   >
-                    通过
-                  </el-button>
+                    <el-button size="small" text type="success" :loading="actingDepKey === depKey(d)">
+                      通过
+                    </el-button>
+                  </DbConfirmBubble>
                   <el-button
                     size="small"
                     text
@@ -205,7 +206,14 @@
         </span>
         <template v-else>
           <span class="mrt__ops-hint">通过后立即在市场展示；连接器会同时完成首次启用。驳回需填写理由。</span>
-          <el-button type="primary" :loading="acting" @click="onApprove">通过</el-button>
+          <DbConfirmBubble
+            :title="unviewedDeps.length ? '依赖未查看' : ''"
+            :content="approveContent"
+            :confirm-text="unviewedDeps.length ? '知情并通过' : '通过'"
+            @confirm="onApprove"
+          >
+            <el-button type="primary" :loading="acting">通过</el-button>
+          </DbConfirmBubble>
           <el-button type="danger" plain :loading="acting" @click="onReject">驳回</el-button>
         </template>
       </template>
@@ -216,7 +224,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import modal from '@/plugins/modal';
+import DbConfirmBubble from '@/views/databus/components/DbConfirmBubble.vue';
 import { useUserStore } from '@/store/modules/user';
 import type {
   MarketItemStatus,
@@ -352,7 +360,7 @@ function statusLabel(status?: MarketItemStatus | null): string {
   )[status] ?? status;
 }
 
-/** P1 看得见：依赖项「查看」按钮可见性（链需 sourceId、组件需 code；悬空引用缺实体不可跳） */
+/** 依赖项「查看」按钮可见性（链需 sourceId、组件需 code；悬空引用缺实体不可跳） */
 function depViewable(d: MarketReviewDependency): boolean {
   if (d.resourceType === MARKET_RESOURCE_TYPE.CHAIN) {
     return d.sourceId != null;
@@ -360,7 +368,7 @@ function depViewable(d: MarketReviewDependency): boolean {
   return Boolean(d.code);
 }
 
-/** P1 看得见：「查看」上抛宿主开工作台 tab（审核者不隔玻璃审货） */
+/** 「查看」上抛宿主开工作台 tab（审核者不隔玻璃审货） */
 function emitOpenSource(
   resourceType: MarketResourceType,
   sourceId: string | number,
@@ -370,7 +378,7 @@ function emitOpenSource(
   emit('open-source', resourceType, sourceId, code, title);
 }
 
-/* ---------------- B 口径：依赖未查看知情确认（自 MarketPane 原样迁移） ---------------- */
+/* ---------------- 依赖未查看知情确认 ---------------- */
 
 /** 会话内已查看的依赖 key：tab 内一物一实例，key 只需依赖身份（源 id，悬空退化编码）。
  *  组件实例随 tab 存活（v-show 保活），刷新丢失＝只多弹一次确认，行为安全方向 */
@@ -441,24 +449,23 @@ function depReviewable(d: MarketReviewDependency): boolean {
   );
 }
 
-/** 依赖就地通过：B 口径适配——未「查看」过的先弹知情确认，查看过走普通确认；
+/** 依赖是否已在本次会话点开看过（未查看过的通过要先知情） */
+function depViewed(d: MarketReviewDependency): boolean {
+  return viewedDepKeys.value.has(depKey(d));
+}
+
+/** 依赖就地通过的气泡文案：未查看先告知，查看过走普通确认 */
+function depApproveContent(d: MarketReviewDependency): string {
+  return depViewed(d)
+    ? `通过依赖「${d.name}」的上架审核？通过后立即在市场展示。`
+    : `尚未查看依赖「${d.name}」的内容，确认已知情并通过？`;
+}
+
+/** 依赖就地通过：未「查看」过的气泡先告知知情，查看过走普通确认；
  *  审完刷新本详情（依赖状态树变 ONLINE）并通知宿主刷待审核冒泡，本 tab 不关 */
 async function onApproveDep(d: MarketReviewDependency) {
   if (actingDepKey.value) {
     return;
-  }
-  try {
-    if (!viewedDepKeys.value.has(depKey(d))) {
-      await ElMessageBox.confirm(
-        `尚未查看依赖「${d.name}」的内容。确认已知情并通过其上架审核？`,
-        '依赖未查看',
-        { confirmButtonText: '知情并通过', cancelButtonText: '先看看', type: 'warning' }
-      );
-    } else {
-      await modal.confirm(`通过依赖「${d.name}」的上架审核？通过后立即在市场展示。`);
-    }
-  } catch {
-    return; // 用户取消
   }
   actingDepKey.value = depKey(d);
   try {
@@ -504,7 +511,22 @@ async function onRejectDep(d: MarketReviewDependency) {
   }
 }
 
-/** 通过：直接上线。B 口径：非 ONLINE 依赖（ONLINE 豁免，各有审核单背书）有未点开看的弹知情确认；
+/** 非 ONLINE 且未查看过的依赖（通过前知情确认的计数对象） */
+const unviewedDeps = computed(() =>
+  (detail.value?.dependencies ?? []).filter(
+    (d) => d.marketStatus !== MARKET_STATUS.ONLINE && !viewedDepKeys.value.has(depKey(d))
+  )
+);
+
+/** 主链通过气泡文案：有未查看依赖先告知数量，否则普通确认 */
+const approveContent = computed(() => {
+  const n = unviewedDeps.value.length;
+  return n
+    ? `有 ${n} 个未上线依赖未查看，确认已知情并通过审核？`
+    : `通过审核「${detail.value?.item?.name ?? ''}」？通过后立即在市场展示。`;
+});
+
+/** 通过：直接上线。非 ONLINE 依赖（ONLINE 豁免，各有审核单背书）有未点开看的先气泡告知；
  *  全看过或无依赖走普通确认。依赖树即本 tab 已加载的详情（审核动作在 tab 内，树就是审核现场），
  *  详情缺失（拉取失败）退化为普通确认——真未上线依赖仍被终审 gate 拒，兜底安全。
  *  查看清单留痕跟嵌套审核交互分期一起做，本期未动。 */
@@ -512,22 +534,6 @@ async function onApprove() {
   const item = detail.value?.item;
   if (!item || acting.value) {
     return;
-  }
-  const unviewed = (detail.value?.dependencies ?? [])
-    .filter((d) => d.marketStatus !== MARKET_STATUS.ONLINE && !viewedDepKeys.value.has(depKey(d)))
-    .map((d) => `【${d.resourceType === MARKET_RESOURCE_TYPE.CHAIN ? '链' : '组件'}】${d.name}`);
-  try {
-    if (unviewed.length) {
-      await ElMessageBox.confirm(
-        `有 ${unviewed.length} 个未上线依赖未查看：${unviewed.slice(0, 5).join('、')}${unviewed.length > 5 ? ' 等' : ''}。确认已知情并通过审核？`,
-        '依赖未查看',
-        { confirmButtonText: '知情并通过', cancelButtonText: '再看看', type: 'warning' }
-      );
-    } else {
-      await modal.confirm(`通过审核「${item.name}」？通过后立即在市场展示。`);
-    }
-  } catch {
-    return; // 用户取消
   }
   acting.value = true;
   try {
@@ -678,7 +684,7 @@ async function onReject() {
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
-/* 「查看」跳工作台 tab 按钮（P1 看得见）：标题行右侧小字按钮 */
+/* 「查看」跳工作台 tab 按钮：标题行右侧小字按钮 */
 .mrt__view {
   font-size: 12px;
   font-weight: 400;

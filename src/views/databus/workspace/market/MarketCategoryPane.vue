@@ -76,7 +76,7 @@
       :visible="panelMode !== null"
       :virtual-ref="activeAnchor"
       virtual-triggering
-      popper-class="mcat__pop"
+      popper-class="db-scope mcat__pop"
       trigger="click"
       placement="bottom-end"
       :width="panelMode === 'delete' ? 180 : panelMode === 'merge' ? 200 : 260"
@@ -152,7 +152,7 @@
     </el-popover>
 
     <!-- 新增：字段含「适用类型」，且由页头主按钮触发，继续用弹窗 -->
-    <el-dialog v-model="dialogVisible" title="新增分类" width="420px" append-to-body>
+    <el-dialog v-model="dialogVisible" title="新增分类" width="420px" append-to-body class="db-scope">
       <el-form label-width="80px">
         <el-form-item label="名称" required>
           <el-input v-model="form.name" maxlength="100" show-word-limit placeholder="例如：数据处理" />

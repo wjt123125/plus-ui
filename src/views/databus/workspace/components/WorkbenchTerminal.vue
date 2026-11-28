@@ -170,7 +170,7 @@ useLucideSubset();
   z-index: 0;
   height: 2px;
   border-radius: 2px 2px 0 0;
-  background: var(--app-accent-strong, var(--el-color-primary));
+  background: var(--db-accent);
   opacity: 0;
   pointer-events: none;
   will-change: transform;

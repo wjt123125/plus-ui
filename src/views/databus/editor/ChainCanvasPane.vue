@@ -413,7 +413,7 @@ const {
 });
 
 // 只读态（只读分享态：单列画布，不渲染物料区/右抽屉，编辑动作与快捷键全部短路）：
-// P1 看得见（decisions §十四-7 扩展）并入「非本人链路只读」——审核者从审核详情打开
+// （decisions §十四-7 扩展）并入「非本人链路只读」——审核者从审核详情打开
 // 他人链路仅查看，硬拦截在后端 updateByBo owner 校验；系统行（create_by 空）不置只读
 const isReadonly = computed(
   () => props.readonly === true || (chainOwner.value != null && chainOwner.value !== useUserStore().userId)

@@ -25,7 +25,7 @@
     :show-close="false"
     :close-on-click-modal="true"
     modal-class="alert-rule-form-mask"
-    class="alert-rule-form"
+    class="db-scope alert-rule-form"
   >
     <template #header>
       <div class="alert-rule-form__header">

@@ -372,7 +372,7 @@
   }
 
   a {
-    color: var(--db-blue, #007aff);
+    color: var(--db-accent, #1c1c1e);
     text-decoration: none;
   }
 
@@ -567,7 +567,7 @@ html:not(.dark) .db-markdown .hljs-addition {
 }
 
 .md-lang-item.is-active {
-  color: var(--el-color-primary, #007aff);
+  color: var(--el-color-primary, #1c1c1e);
 }
 
 .md-lang-check {

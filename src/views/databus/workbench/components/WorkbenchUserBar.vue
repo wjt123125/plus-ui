@@ -13,7 +13,7 @@
     :show-timeout="0"
     class="wb-userbar"
     placement="top-start"
-    popper-class="wb-userbar-popper"
+    popper-class="db-scope wb-userbar-popper"
     @command="handleCommand"
   >
     <button ref="rowRef" type="button" class="wb-userbar__row" aria-haspopup="menu" aria-label="用户菜单">
@@ -154,7 +154,7 @@ function handleCommand(command: string) {
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    background: var(--el-color-primary, #409eff);
+    background: var(--el-color-primary, #1c1c1e);
     color: #fff;
     font-size: 13px;
     font-weight: 600;

@@ -95,7 +95,7 @@
           @rolled="handleRolled"
           @open-changes="handleOpenChanges"
           @edit="handleEdit"
-          @delete="handleDelete"
+          @delete="(row) => handleDelete(row, true)"
           @changes="handleChanges"
           @review-adopted="handleReviewAdopted"
           @review-rejected="handleReviewRejected"
@@ -249,15 +249,18 @@ import {
   DATABUS_RESOURCE_TYPE_CHAIN,
   DATABUS_RESOURCE_TYPE_COMPONENT,
   DATABUS_RESOURCE_TYPE_CONNECTION,
-  DATABUS_RESOURCE_TYPE_DIRECTORY,
-  DATABUS_RESOURCE_TYPE_MARKET_REF,
-  DATABUS_RESOURCE_TYPE_SYSTEM_LEAF
+  DATABUS_RESOURCE_TYPE_DIRECTORY
 } from '@/constants/databus-common';
 import type { CmpProperty } from '@/api/databus/el/types';
 import ChainForm from '../chain/ChainForm.vue';
 import type { ChainFormSuccessPayload } from '../chain/ChainFormBody.vue';
 import ChainCopyDialog from '../chain/ChainCopyDialog.vue';
-import { useWorkspaceTabs, canvasKey, EXECUTION_LIST_KEY } from './composables/useWorkspaceTabs';
+import {
+  useWorkspaceTabs,
+  canvasKey,
+  componentReviewKey,
+  EXECUTION_LIST_KEY
+} from './composables/useWorkspaceTabs';
 import { useRecentResources } from './composables/useRecentResources';
 import { useWorkspaceTerminal } from './composables/useWorkspaceTerminal';
 import WorkspaceWorkPanel from './panel/WorkspaceWorkPanel.vue';
@@ -303,7 +306,8 @@ function onLogout() {
   ElMessageBox.confirm('确定退出当前账号吗？', '退出登录', {
     confirmButtonText: '退出',
     cancelButtonText: '取消',
-    type: 'warning'
+    type: 'warning',
+    customClass: 'db-scope'
   })
     .then(async () => {
       await userStore.logout();
@@ -816,17 +820,20 @@ async function handleReviewRejected(tab: WorkspaceTab, payload: { id: number | s
   await getList();
 }
 
-async function handleDelete(row: ComponentRegistryRow) {
+async function handleDelete(row: ComponentRegistryRow, confirmed = false) {
   if (row.db?.id == null) {
     return;
   }
   // 草稿走拒绝端点（物理删行 + 清宿主残留），语义与通用删除不同：草稿从未生效、无链路引用
   const isDraft = row.db.status === COMPONENT_STATUS.DRAFT;
-  await modal.confirm(
-    isDraft
-      ? `是否确认删除草稿"${row.name}"（${row.code}）？草稿从未生效，删除后不可恢复。`
-      : `是否确认删除自定义组件"${row.name}"（${row.code}）？删除后不可恢复。`
-  );
+  // 详情页删除按钮已在气泡里确认（confirmed=true）；资源树右键菜单没有锚点，这里补一次全屏确认
+  if (!confirmed) {
+    try {
+      await modal.confirm(`确认删除「${row.name}」？删除后不可恢复。`, { customClass: 'db-scope' });
+    } catch {
+      return;
+    }
+  }
   if (isDraft) {
     await rejectScriptDraft(row.db.id);
   } else {
@@ -844,14 +851,16 @@ async function handleDelete(row: ComponentRegistryRow) {
  * 走独立启停端点（databus:component:toggle，治理专属）：不再借「修改组件」整包提交改 status，
  * 否则操作员凭 edit 权限也能停物料投放。入口显隐由 v-hasRoles(['databus_gov']) / v-hasPermi 同源门控。
  */
-async function toggleEnabled(row: ComponentRegistryRow, val: boolean) {
+async function toggleEnabled(row: ComponentRegistryRow, val: boolean, confirmed = false) {
   if (!row.db || togglingCode.value) {
     return;
   }
-  if (!val) {
+  // 市场管理页的开关已在触发处用气泡确认（confirmed=true），这里不再重复弹窗
+  if (!val && !confirmed) {
     await modal.confirm(
       `确认停用「${row.name}」？停用后编辑器面板不再露出；已发布链路仍继续运行` +
-        (row.scripted ? '，但服务重启后该脚本件不会重新注册（重启用即恢复）。' : '。')
+        (row.scripted ? '，但服务重启后该脚本件不会重新注册（重启用即恢复）。' : '。'),
+      { customClass: 'db-scope' }
     );
   }
   togglingCode.value = row.code;
@@ -895,11 +904,11 @@ async function onMarketInstalled() {
   bumpMarketTokens();
 }
 
-/** 启停本地组件副本：复用卡片开关同一路径（停用有二次确认与重启语义） */
+/** 启停本地组件副本：复用卡片开关同一路径；确认已在市场行开关的气泡完成 */
 function onMarketToggle(localResourceId: string | number, enabled: boolean) {
   const row = rowById(localResourceId);
   if (row) {
-    void toggleEnabled(row, enabled);
+    void toggleEnabled(row, enabled, true);
   }
 }
 
@@ -955,7 +964,7 @@ function onMarketDepReviewed() {
   bumpMarketTokens();
 }
 
-/** P1 看得见（decisions §十四-7 扩展）：审核详情「查看」开工作台 tab 看物料真身——
+/** （decisions §十四-7 扩展）审核详情「查看」开工作台 tab 看物料真身——
  *  链路按源 id 开画布 tab；组件按源 code 开详情 tab（正本身份是 code，pane 自取数）。
  *  源资源非当前用户所有：链路保存被后端 updateByBo owner 校验拦截（前端只读态另做） */
 function onMarketOpenSource(
@@ -1386,7 +1395,8 @@ useAgentPush((payload) => {
   ElMessageBox.confirm('AI 要更新这张画布，你未保存的改动会被覆盖，是否继续？', '画布有未保存改动', {
     confirmButtonText: '覆盖并重画',
     cancelButtonText: '丢弃本次更新',
-    type: 'warning'
+    type: 'warning',
+    customClass: 'db-scope'
   })
     .then(() => redrawAgentCanvas(evt))
     .catch(() => notifyCanvasSkipped(evt.chainName, evt.runId, evt.conversationId));
@@ -1420,10 +1430,22 @@ async function onAgentRolledBack(
       }
       continue;
     }
-    // 组件：已删除的（草稿或已采纳）清掉最近访问；写回旧版本的保留条目，内容变化由 getList 带进树
-    if (item.deleted && item.resourceCode) {
-      removeRecent(DATABUS_RESOURCE_TYPE_COMPONENT, item.resourceCode);
+    // 组件：撤销新建后行可能已物理删除（被引用时转软退役），同组件的详情/编辑/变更 tab 一并关掉；
+    // 审阅 tab 与草稿预览画布的 key 认草稿 id，closeByCode 按 code 匹配抓不到，需单独处理。
+    // 写回旧版本的（RESTORE）行仍在，关 tab 反而打断正在看的现场，只刷新内容。
+    if (item.deleted) {
+      // code 为空时不能调 closeByCode：它会按 code='' 把所有无 code 的 tab 一起关掉
+      if (item.resourceCode) {
+        wb.closeByCode(item.resourceCode);
+        removeRecent(DATABUS_RESOURCE_TYPE_COMPONENT, item.resourceCode);
+      }
+      wb.close(componentReviewKey(item.resourceId));
+      wb.closePreviewCanvas(item.resourceId);
+      continue;
     }
+    // 组件写回旧版本：编辑面板与审阅 tab 重取；详情/变更读台账快照，随 getList 自动更新
+    refreshByKind('form', (t) => t.code === item.resourceCode);
+    refresh(componentReviewKey(item.resourceId));
   }
 }
 
@@ -1467,17 +1489,11 @@ function addNodeToAgent(node: ResourceTreeNode) {
   ElMessage.success(`已加入会话：${item.title}`);
 }
 
-/** 树节点 → 上下文附件；没有可引用主键/编码时返回 null */
+/** 树节点 → 上下文附件：按资源身份取可引用主键/编码（与所在分区无关），都没有时返回 null */
 function treeResourceContext(node: ResourceTreeNode) {
-  if (node.type === DATABUS_RESOURCE_TYPE_CHAIN) {
-    const chainId = nodeChainId(node);
-    if (chainId == null) {
-      return null;
-    }
+  const chainId = nodeChainId(node);
+  if (chainId != null) {
     return resourceContext({ type: DATABUS_RESOURCE_TYPE_CHAIN, id: chainId, code: node.chainCode, name: node.label });
-  }
-  if (node.type !== DATABUS_RESOURCE_TYPE_COMPONENT && node.type !== DATABUS_RESOURCE_TYPE_SYSTEM_LEAF && node.type !== DATABUS_RESOURCE_TYPE_MARKET_REF) {
-    return null;
   }
   if (!node.componentCode) {
     return null;
@@ -1579,7 +1595,8 @@ async function handleUninstallMarket(node: ResourceTreeNode) {
   }
   try {
     await modal.confirm(
-      `确认卸载「${node.label}」？`
+      `确认卸载「${node.label}」？`,
+      { customClass: 'db-scope' }
     );
   } catch {
     return;
@@ -1599,11 +1616,9 @@ async function handleUninstallMarket(node: ResourceTreeNode) {
 function copyShareLink(node: ResourceTreeNode) {
   const origin = window.location.origin;
   let href: string | null = null;
-  if (node.type === DATABUS_RESOURCE_TYPE_CHAIN) {
-    const chainId = nodeChainId(node);
-    if (chainId != null) {
-      href = `${origin}/databus/standalone/editor/canvas/${chainId}`;
-    }
+  const chainId = nodeChainId(node);
+  if (chainId != null) {
+    href = `${origin}/databus/standalone/editor/canvas/${chainId}`;
   } else if (node.componentCode) {
     href = `${origin}/databus/standalone/editor/detail/${encodeURIComponent(node.componentCode)}`;
   }
@@ -1732,7 +1747,8 @@ async function guidePublishAfterChain(result?: ChainPublishResultVo): Promise<vo
     await ElMessageBox.confirm(message, '发布成功 · 一并上架？', {
       confirmButtonText: '提交审核',
       cancelButtonText: '暂不上架',
-      type: 'success'
+      type: 'success',
+      customClass: 'db-scope'
     });
   } catch {
     modal.msgWarning('发布成功；物料暂未上架，可稍后在物料市场手动上架');
@@ -1770,7 +1786,7 @@ async function handleDeleteChain(node: ResourceTreeNode) {
     ElMessage.warning(`链路「${node.label}」画布有未保存改动，请先保存或关闭该画布 tab 后再删除`);
     return;
   }
-  await modal.confirm(`是否确认删除链路"${node.label}"？删除后不可恢复。`);
+  await modal.confirm(`是否确认删除链路"${node.label}"？删除后不可恢复。`, { customClass: 'db-scope' });
   await delChain(chainId);
   modal.msgSuccess('删除成功');
   if (opened) {

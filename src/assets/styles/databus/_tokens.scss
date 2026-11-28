@@ -1,16 +1,25 @@
 /* ============================================================
    databus 模块设计令牌
    ------------------------------------------------------------
-   作用域铁律：所有令牌只定义在 .db-app 上，禁止写到 :root。
-   .db-app 是 databus 页面根节点的统一类名，出了这个容器即失效。
+   作用域铁律：所有令牌只定义在 databus 作用域容器上，禁止写到 :root。
+   页面根用 .db-app，teleport 出体的弹层/下拉用 .db-scope。
    风格来源：ui-prototype.html 的 E 方案（Apple HIG 系统色 + Linear 式克制）
    ============================================================ */
 
+/* 页面根：只负责铺平底色 */
 .db-app {
   /* 壳外画布（独立窗体 / 管理页瘦壳）＝#f2f2f7 系统灰；工作台壳内另垫白，
      见 workspace/index.vue 的 .wsp-page（2026-11-01 用户反馈「颜色不正」后定案）。 */
   background-color: var(--db-bg);
+}
 
+/* 令牌作用域：页面根 .db-app + teleport 出体的弹层与下拉。
+   .db-scope 由 dialog/drawer 挂载，共用浮层类自带；这里只声明变量，不带任何视觉属性。 */
+.db-app,
+.db-scope,
+.db-popper,
+.db-select-popper,
+.db-menu-popper {
   /* —— 画布 —— */
   --db-bg: #f2f2f7;                       /* iOS 系统底色 */
   --db-bg-card: rgba(255, 255, 255, 0.72); /* 卡片底（配毛玻璃） */
@@ -27,6 +36,7 @@
   --db-rule-strong: rgba(60, 60, 67, 0.24);
 
   /* —— 系统色（Apple 精确值，不要在页面里写十六进制）—— */
+  /* 蓝色只给 AI 标识图标（spark 等）用，普通 UI 主操作一律走 --db-accent */
   --db-blue: #007aff;
   --db-blue-hover: #0068db;
   --db-blue-active: #0059bd;
@@ -38,6 +48,15 @@
   --db-yellow: #ffcc00;
   --db-purple: #af52de;
   --db-gray: #8e8e93;
+
+  /* —— 主色（语义令牌，UI 主操作一律取这组，不要直接用系统色；AI 标识图标例外）——
+     定案：databus 主色＝墨黑/灰/白，与工作台会话面板一致。
+     换主题只改这 5 个值，组件与 Element 桥接层都不用动。 */
+  --db-accent: var(--db-ink);                    /* 主填充：浅色下墨黑 */
+  --db-accent-hover: var(--db-ink-secondary);    /* 悬停：深一档墨黑 */
+  --db-accent-active: #000000;                   /* 按下 */
+  --db-accent-soft: rgba(120, 120, 128, 0.12);   /* 主色浅底：图标底、标签底 */
+  --db-on-accent: #ffffff;                       /* 主色上的文字 */
 
   /* —— 圆角（五档，页面只允许取这五档）—— */
   --db-r-xs: 4px;
@@ -102,7 +121,11 @@
 }
 
 /* 深色：只覆写变量值，组件一行不用改 */
-html.dark .db-app {
+html.dark .db-app,
+html.dark .db-scope,
+html.dark .db-popper,
+html.dark .db-select-popper,
+html.dark .db-menu-popper {
   --db-bg: #1c1c1e;
   --db-canvas: #1c1c1e;
   --db-surface: #2c2c2e;
@@ -130,6 +153,13 @@ html.dark .db-app {
   --db-yellow: #ffd60a;
   --db-purple: #bf5af2;
   --db-gray: #8e8e93;
+
+  /* 深色下主色反白：白底 + 深色字 */
+  --db-accent: var(--db-ink);
+  --db-accent-hover: #d1d1d6;
+  --db-accent-active: #ffffff;
+  --db-accent-soft: rgba(255, 255, 255, 0.14);
+  --db-on-accent: #1c1c1e;
 
   --db-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
   --db-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 1px rgba(0, 0, 0, 0.3);

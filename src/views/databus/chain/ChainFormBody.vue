@@ -69,7 +69,15 @@
         <p v-if="templateMeta.isTemplate" class="template-desc-preview">{{ templateMeta.templateDesc }}</p>
         <div v-if="templateMeta.isTemplate" class="template-actions">
           <el-button size="small" @click="openTemplateDialog">保存模板设置</el-button>
-          <el-button size="small" type="danger" plain @click="handleUnmark">取消模板</el-button>
+          <DbConfirmBubble
+            title="取消精选模板"
+            content="取消后该链路回到普通草稿，历史副本不受影响。"
+            confirm-text="取消模板"
+            danger
+            @confirm="handleUnmark"
+          >
+            <el-button size="small" type="danger" plain>取消模板</el-button>
+          </DbConfirmBubble>
         </div>
         <template v-else>
           <el-button size="small" :disabled="templateMeta.status === CHAIN_STATUS.ENABLED" @click="openTemplateDialog">
@@ -101,6 +109,7 @@ import { addChain, getChain, unmarkTemplate, updateChain } from '@/api/databus/c
 import { CHAIN_STATUS, LOG_LEVEL } from '@/constants/databus';
 import { DATABUS_TEMPLATE_FLAG_YES } from '@/constants/databus-common';
 import modal from '@/plugins/modal';
+import DbConfirmBubble from '@/views/databus/components/DbConfirmBubble.vue';
 import TemplateMarkDialog from './TemplateMarkDialog.vue';
 import type { FormPreset } from '../workspace/workbench.types';
 
@@ -192,7 +201,6 @@ const openTemplateDialog = () => {
 
 const handleUnmark = async () => {
   if (!form.value.id) return;
-  await modal.confirm('取消后该链路回到普通草稿，历史副本不受影响。确认取消精选模板？');
   await unmarkTemplate(form.value.id);
   modal.msgSuccess('已取消精选模板');
   await handleTemplateChanged();

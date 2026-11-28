@@ -9,6 +9,7 @@
     :title="alreadyTemplate ? '保存模板设置' : '设为精选模板'"
     width="520px"
     append-to-body
+    class="db-scope"
     destroy-on-close
     @closed="resetForm"
   >

@@ -8,7 +8,7 @@
       @contextmenu.prevent
     >
       <!-- 链路叶子：打开画布/编辑/复制 · 发布或下线/执行 · 移动归属/收藏 · 复制编码 · 删除 -->
-      <template v-if="menu.node.type === DATABUS_RESOURCE_TYPE_CHAIN">
+      <template v-if="kind === DATABUS_RESOURCE_TYPE_CHAIN">
         <li class="res-tree-ctx__item is-primary" @click="onCommand('open')">
           <SvgIcon icon-class="lucide:spline" /><span>打开画布</span>
         </li>
@@ -73,7 +73,7 @@
       </template>
 
       <!-- 自建组件叶子：查看/编辑/代码变更 · 移动归属/收藏 · 启停 · 复制编码 · 删除 -->
-      <template v-else-if="menu.node.type === DATABUS_RESOURCE_TYPE_COMPONENT">
+      <template v-else-if="kind === DATABUS_RESOURCE_TYPE_COMPONENT">
         <li class="res-tree-ctx__item is-primary" @click="onCommand('view-component')">
           <SvgIcon icon-class="lucide:file-text" /><span>查看</span>
         </li>
@@ -123,7 +123,7 @@
       </template>
 
       <!-- 系统组件叶子（内置件只读）：查看 · 加入会话 -->
-      <template v-else-if="menu.node.type === 'system-leaf'">
+      <template v-else-if="kind === DATABUS_RESOURCE_TYPE_SYSTEM_LEAF">
         <li class="res-tree-ctx__item is-primary" @click="onCommand('view-component')">
           <SvgIcon icon-class="lucide:file-text" /><span>查看</span>
         </li>
@@ -140,7 +140,7 @@
       </template>
 
       <!-- 市场引用叶（SHARED 安装组件）：打开 / 移动归属 / 收藏 / 卸载（不动源组件本体） -->
-      <template v-else-if="menu.node.type === DATABUS_RESOURCE_TYPE_MARKET_REF">
+      <template v-else-if="kind === DATABUS_RESOURCE_TYPE_MARKET_REF">
         <li class="res-tree-ctx__item is-primary" @click="onCommand('open')">
           <SvgIcon icon-class="lucide:external-link" /><span>打开</span>
         </li>
@@ -168,7 +168,7 @@
       </template>
 
       <!-- 目录节点：新建链路（挂本目录）· 新建组件（挂本目录）· 新建子目录 · 重命名 · 删除 -->
-      <template v-else-if="menu.node.type === DATABUS_RESOURCE_TYPE_DIRECTORY">
+      <template v-else-if="kind === DATABUS_RESOURCE_TYPE_DIRECTORY">
         <li v-hasPermi="['databus:editor:add']" class="res-tree-ctx__item is-success" @click="onCommand('add-chain')">
           <SvgIcon icon-class="lucide:file-plus" /><span>新建链路</span>
         </li>
@@ -191,42 +191,47 @@
           <SvgIcon icon-class="lucide:trash" /><span>删除目录</span>
         </li>
       </template>
-
-      <!-- 收藏条目：打开 / 取消收藏 -->
-      <template v-else-if="menu.node.type === 'favorite'">
-        <li class="res-tree-ctx__item is-primary" @click="onCommand('open')">
-          <SvgIcon icon-class="lucide:external-link" /><span>打开</span>
-        </li>
-        <li class="res-tree-ctx__divider" />
-        <li class="res-tree-ctx__item" @click="onCommand('favorite-remove')">
-          <SvgIcon icon-class="lucide:star-off" /><span>取消收藏</span>
-        </li>
-      </template>
-
-      <!-- 最近访问条目：打开（星标 hover 在树行内联完成，不进菜单） -->
-      <template v-else-if="menu.node.type === 'recent'">
-        <li class="res-tree-ctx__item is-primary" @click="onCommand('open')">
-          <SvgIcon icon-class="lucide:external-link" /><span>打开</span>
-        </li>
-      </template>
     </ul>
   </template>
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue';
+import { computed, onBeforeUnmount, onMounted } from 'vue';
 import { CHAIN_STATUS } from '@/constants/databus';
 import {
   DATABUS_RESOURCE_TYPE_CHAIN,
   DATABUS_RESOURCE_TYPE_COMPONENT,
   DATABUS_RESOURCE_TYPE_DIRECTORY,
-  DATABUS_RESOURCE_TYPE_MARKET_REF
+  DATABUS_RESOURCE_TYPE_MARKET_REF,
+  DATABUS_RESOURCE_TYPE_SYSTEM_LEAF
 } from '@/constants/databus-common';
 import type { ResourceMenuCommand, ResourceMenuState } from '../workbench.types';
 
 defineOptions({ name: 'ResourceTreeContextMenu' });
 
 const props = defineProps<{ menu: ResourceMenuState }>();
+
+/**
+ * 菜单形态按「资源身份」判定，而不是按所在分区：收藏 / 最近访问只是展示位置，
+ * 同一个链路或组件无论出现在哪一节，右键看到的都是同一份菜单。
+ * 身份字段优先级：链路 id → 组件 DB 行 id → 仅有编码（系统内置等只读件）。
+ */
+const kind = computed(() => {
+  const node = props.menu.node;
+  if (!node) {
+    return null;
+  }
+  if (node.type === DATABUS_RESOURCE_TYPE_MARKET_REF || node.type === DATABUS_RESOURCE_TYPE_DIRECTORY) {
+    return node.type;
+  }
+  if (node.chainId != null && node.chainId !== '') {
+    return DATABUS_RESOURCE_TYPE_CHAIN;
+  }
+  if (node.dbId != null) {
+    return DATABUS_RESOURCE_TYPE_COMPONENT;
+  }
+  return node.componentCode ? DATABUS_RESOURCE_TYPE_SYSTEM_LEAF : null;
+});
 
 const emit = defineEmits<{
   (e: 'close'): void;

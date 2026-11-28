@@ -4,6 +4,7 @@
     title="入参登记"
     width="1060px"
     append-to-body
+    class="db-scope"
     @update:model-value="onVisibleChange"
   >
     <div class="input-params-dialog">

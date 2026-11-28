@@ -20,15 +20,22 @@
               <p class="page-subtitle">链路每次执行的记录。</p>
             </div>
             <div class="header-actions">
-              <button
-                v-hasPermi="['databus:execution:remove']"
-                class="cleanup-btn"
-                :disabled="cleaning"
-                @click="handleCleanup"
+              <DbConfirmBubble
+                title="清理过期记录"
+                content="将物理清理保留期前的执行记录及节点明细，删除后不可恢复。"
+                confirm-text="确定清理"
+                danger
+                @confirm="handleCleanup"
               >
-                <el-icon><Delete /></el-icon>
-                <span>{{ cleaning ? '清理中…' : '清理过期记录' }}</span>
-              </button>
+                <button
+                  v-hasPermi="['databus:execution:remove']"
+                  class="cleanup-btn"
+                  :disabled="cleaning"
+                >
+                  <el-icon><Delete /></el-icon>
+                  <span>{{ cleaning ? '清理中…' : '清理过期记录' }}</span>
+                </button>
+              </DbConfirmBubble>
               <button
                 v-hasPermi="['databus:execution:execute']"
                 class="add-btn"
@@ -135,15 +142,21 @@
                   >
                     详情
                   </el-button>
-                  <el-button
-                    v-hasPermi="['databus:execution:execute']"
-                    link
-                    type="success"
-                    size="small"
-                    @click="handleRerunRow(row)"
+                  <DbConfirmBubble
+                    title="重跑确认"
+                    :content="`确认以原始入参重跑链路 #${row.chainCode}？将产生一条新执行记录，原记录不变。`"
+                    confirm-text="重跑"
+                    @confirm="handleRerunRow(row)"
                   >
-                    重跑
-                  </el-button>
+                    <el-button
+                      v-hasPermi="['databus:execution:execute']"
+                      link
+                      type="success"
+                      size="small"
+                    >
+                      重跑
+                    </el-button>
+                  </DbConfirmBubble>
                 </div>
               </li>
             </ul>
@@ -183,7 +196,7 @@
 <script setup lang="ts" name="ExecutionPane">
 import { ArrowLeft, Delete, VideoPlay } from '@element-plus/icons-vue';
 import { Icon } from '@iconify/vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import { cleanupExecution, listExecution, rerunExecution } from '@/api/databus/execution';
 import type {
   DatabusExecutionQuery,
@@ -197,6 +210,7 @@ import ManualExecuteDialog from '@/views/databus/execution/ManualExecuteDialog.v
 import { useLucideSubset } from '@/views/databus/workbench/composables/useLucideSubset';
 import ExecutionRecordBody from './ExecutionRecordBody.vue';
 import DbSeg from '@/views/databus/workspace/components/DbSeg.vue';
+import DbConfirmBubble from '@/views/databus/components/DbConfirmBubble.vue';
 import { EXECUTION_STATUS } from '@/constants/databus';
 
 /* 行图标走离线 lucide 子集，否则内网环境图标空白（详见 useLucideSubset 注释） */
@@ -348,15 +362,10 @@ const handleManualExecute = () => {
   executeDialogVisible.value = true;
 };
 
-/** 保留期清理：二次确认后调手动端点（与凌晨定时任务同入口），报删除行数并刷新 */
+/** 保留期清理：就地气泡确认后调手动端点（与凌晨定时任务同入口），报删除行数并刷新 */
 const cleaning = ref(false);
 
 const handleCleanup = async () => {
-  await ElMessageBox.confirm(
-    '将物理清理保留期（默认 30 天，以后端配置为准）之前的执行记录及节点明细，删除后不可恢复。是否继续？',
-    '清理过期记录',
-    { type: 'warning', confirmButtonText: '确定清理', cancelButtonText: '取消' }
-  );
   cleaning.value = true;
   try {
     const res = await cleanupExecution();
@@ -389,13 +398,8 @@ const openDetail = (row: DatabusExecutionVo) => {
   openRecord(row.id);
 };
 
-/** 列表行内重跑：二次确认 → 调接口 → 打开新记录 */
+/** 列表行内重跑：就地气泡确认 → 调接口 → 打开新记录 */
 const handleRerunRow = async (row: DatabusExecutionVo) => {
-  await ElMessageBox.confirm(
-    `确认以原始入参重跑链路 #${row.chainCode}？将产生一条新执行记录，原记录不变。`,
-    '重跑确认',
-    { type: 'warning', confirmButtonText: '重跑', cancelButtonText: '取消' }
-  );
   const res = await rerunExecution(row.id);
   await handleRerunResult(res.data);
 };

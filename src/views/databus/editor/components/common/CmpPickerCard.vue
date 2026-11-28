@@ -84,7 +84,8 @@ defineEmits<{
 /* 键盘高亮：primary 描边 + 外环，推荐浅底上也能辨识 */
 .cmp-picker-card.is-active {
   border-color: var(--el-color-primary);
-  box-shadow: 0 0 0 1px var(--el-color-primary), 0 2px 8px rgb(var(--el-color-primary-rgb) / 20%);
+  box-shadow: 0 0 0 1px var(--el-color-primary),
+    0 2px 8px color-mix(in srgb, var(--el-color-primary) 20%, transparent);
 }
 
 .cmp-picker-card.is-recommended {

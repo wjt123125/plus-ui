@@ -1,4 +1,4 @@
-import type { LoadingInstance, MessageBoxData } from 'element-plus';
+import type { ElMessageBoxOptions, LoadingInstance, MessageBoxData } from 'element-plus';
 
 let loadingInstance: LoadingInstance | undefined;
 export default {
@@ -51,11 +51,14 @@ export default {
     ElNotification.warning(content);
   },
   // 确认窗体
-  confirm(content: any): Promise<MessageBoxData> {
+  // options 为可选透传：databus 页面借此传入 customClass: 'db-scope'，让弹窗按钮吃主题令牌。
+  // 不传时行为与改动前完全一致（RuoYi 原生页面不受影响）。
+  confirm(content: any, options: ElMessageBoxOptions = {}): Promise<MessageBoxData> {
     return ElMessageBox.confirm(content, '系统提示', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
-      type: 'warning'
+      type: 'warning',
+      ...options
     });
   },
   // 提交内容

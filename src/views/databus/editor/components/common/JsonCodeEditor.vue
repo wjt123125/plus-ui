@@ -163,7 +163,7 @@ const extensions = computed(() => {
         fontFamily:
           'Menlo, Monaco, "Cascadia Code", "JetBrains Mono", Consolas, monospace'
       },
-      '.cm-content': { caretColor: '#409eff' },
+      '.cm-content': { caretColor: 'var(--db-accent, #1c1c1e)' },
       '.cm-gutters': {
         backgroundColor: '#fafafa',
         color: '#909399',

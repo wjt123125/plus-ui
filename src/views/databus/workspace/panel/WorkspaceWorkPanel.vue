@@ -2,7 +2,7 @@
   工作区中栏工作面板（单壳，常驻不可折叠）：多 kind tab 混排，pane 按 kind 分发（§2.1）。
   - canvas：链路画布（ChainCanvasPane workbench 宿主，v-show 保活）
   - detail / form / changes：组件详情 / 编辑 / 代码变更（原 WorkPanel 三 pane 平移）
-  tab 由宿主传入；v-show 切换不销毁（切走草稿保留）；关闭带脏圆点的 tab 弹确认（全站唯一模态）；
+  tab 由宿主传入；v-show 切换不销毁（切走草稿保留）；关闭带脏圆点的 tab 就地气泡确认（中键等无锚点入口走模态）；
   Ctrl+PageDown/PageUp 循环切 tab（焦点在输入区/编辑器内不抢键）。
   空态（tab 全关）由宿主经 #empty 插槽注入导航面板，缺省回退为一句提示。
 -->
@@ -22,9 +22,21 @@
         >
           <SvgIcon class="wb-tab__icon" :icon-class="tabIcon(tab.kind)" :color="tabColor(tab.kind)" />
           <span class="wb-tab__title">{{ tab.title }}</span>
-          <!-- 关闭位三态（VS Code 同款）：脏时圆点常显，悬停回退成 ×；点 × 走 requestClose 的确认弹窗 -->
-          <span class="wb-tab__tail" :class="{ 'is-dirty': tab.dirty }" @click.stop="requestClose(tab.key)">
-            <span v-if="tab.dirty" class="wb-tab__dirty" aria-label="未保存" />
+          <!-- 关闭位三态（VS Code 同款）：脏时圆点常显，悬停回退成 ×；
+               点 × 就地气泡确认（中键无锚点，仍走模态） -->
+          <DbConfirmBubble
+            v-if="tab.dirty"
+            content="内容尚未保存，关闭后修改将丢失。"
+            confirm-text="关闭"
+            danger
+            @confirm="emit('close', tab.key)"
+          >
+            <span class="wb-tab__tail is-dirty" @click.stop>
+              <span class="wb-tab__dirty" aria-label="未保存" />
+              <SvgIcon class="wb-tab__close" icon-class="lucide:x" />
+            </span>
+          </DbConfirmBubble>
+          <span v-else class="wb-tab__tail" @click.stop="requestClose(tab.key)">
             <SvgIcon class="wb-tab__close" icon-class="lucide:x" />
           </span>
         </div>
@@ -292,6 +304,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import modal from '@/plugins/modal';
+import DbConfirmBubble from '@/views/databus/components/DbConfirmBubble.vue';
 import { checkPermi } from '@/utils/permission';
 import { DATABUS_RESOURCE_TYPE_CHAIN } from '@/constants/databus-common';
 import type { ScriptSaveResult } from '@/api/databus/component/types';
@@ -410,7 +423,7 @@ const emit = defineEmits<{
   (e: 'market-reviewed', tab: WorkspaceTab): void;
   /** 依赖单据就地审完（闭包联审）：审核 tab 不关，宿主只刷新市场 pane 待审核冒泡 */
   (e: 'market-dep-reviewed'): void;
-  /** P1 看得见：审核「查看」——链按 sourceId 开画布、组件按 code 开详情（宿主分发，市场审核 tab 共用） */
+  /** 审核「查看」——链按 sourceId 开画布、组件按 code 开详情（宿主分发，市场审核 tab 共用） */
   (e: 'market-open-source', resourceType: 'COMPONENT' | 'CHAIN', sourceId: string | number, code: string | null, title: string): void;
   (e: 'market-open-market'): void;
   /** 去物料管理 tab（kind market-manage，全局单例）；带 scope＝顺便切到那个视角 */
@@ -711,7 +724,7 @@ watch(
   { immediate: true }
 );
 
-/** 关闭请求：脏 tab 先确认（全站唯一模态），其余直接关 */
+/** 关闭请求：脏 tab 无锚点（中键、表单取消）时走模态确认，其余直接关 */
 async function requestClose(key: string) {
   const tab = props.tabs.find((t) => t.key === key);
   if (!tab) {
@@ -722,7 +735,7 @@ async function requestClose(key: string) {
     return;
   }
   try {
-    await modal.confirm(`「${tab.title}」内容尚未保存，关闭后将丢失修改，确定关闭吗？`);
+    await modal.confirm(`「${tab.title}」内容尚未保存，关闭后将丢失修改，确定关闭吗？`, { customClass: 'db-scope' });
     emit('close', key);
   } catch {
     /* 用户取消，tab 保留 */
